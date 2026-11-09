@@ -91,6 +91,26 @@ test('a workspace that only exists on a remote host is reported as unsupported',
   await worker.deactivate()
 })
 
+test('opening the tab with a reveal posts it and hands it over once', async () => {
+  const root = fixture()
+  try {
+    const worker = await mountWorker(main, { host: host(root) })
+    const hash = sh(root, 'rev-parse', 'HEAD')
+    const reveal = { hashes: [hash], path: 'one.txt' }
+    assert.deepEqual(await worker.request('tab.open', { reveal }), { ok: true })
+    assert.deepEqual(worker.posts.at(-1), { event: 'tab.reveal', payload: { root, ...reveal } })
+    assert.deepEqual(await worker.request('tab.take', { root }), reveal)
+    assert.equal(await worker.request('tab.take', { root }), null)
+
+    const bad = await worker.request('tab.open', { reveal: { hashes: ['nothex'] } })
+    assert.equal(bad.ok, false)
+    assert.equal(await worker.request('tab.take', { root }), null)
+    await worker.deactivate()
+  } finally {
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
+})
+
 test('same-named workspaces are told apart by terminal titles, then by a previous choice', () => {
   const a = realpathSync.native(mkdtempSync(join(tmpdir(), 'git-log-a-')))
   const b = realpathSync.native(mkdtempSync(join(tmpdir(), 'git-log-b-')))

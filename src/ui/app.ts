@@ -1,4 +1,4 @@
-import type { ActionRequest, ActionResult, BranchAction, BranchActionResult, BranchRef, CommitDetails, CommitRow, LogFilter, RefsResult, RepoInfo, RepoResult, RewriteKind, SelectionFile, WorkspaceChoice } from '../shared/protocol.ts'
+import type { ActionRequest, ActionResult, BranchAction, BranchActionResult, BranchRef, CommitDetails, CommitRow, LogFilter, RefsResult, RepoInfo, RepoResult, RewriteKind, SelectionFile, TabReveal, WorkspaceChoice } from '../shared/protocol.ts'
 import { api, copyText, errorMessage, orca } from './api.ts'
 import { buildFileTree, dirPaths, orderedFiles, renderFileTree, type FileNode } from './filetree.ts'
 import { renderBranches } from './branches.ts'
@@ -494,7 +494,7 @@ function setRepo(next: RepoInfo): void {
   }
   if (next.operation) showOperationBanner()
   void loadRefs()
-  void reloadLog(same)
+  filterReload = reloadLog(same)
 }
 
 async function start(): Promise<void> {
@@ -514,8 +514,13 @@ async function start(): Promise<void> {
       if (saved && result.choices.some((c) => c.id === saved)) result = await api.resolve(undefined, saved)
     }
     choices = !result.ok ? (result.choices ?? []) : []
-    if (result.ok) setRepo(result.repo)
-    else {
+    if (result.ok) {
+      setRepo(result.repo)
+      if (MODE === 'editor') {
+        const reveal = await api.takeReveal(result.repo.root).catch(() => null)
+        if (reveal) void applyReveal(reveal)
+      }
+    } else {
       repo = null
       rows = []
       refs = null
@@ -675,6 +680,30 @@ function selectRange(to: number, additive: boolean): void {
   selectionChanged()
 }
 
+/** Selects the commits (and opens the file) the sidebar asked for, dropping filters that could hide them. */
+async function applyReveal(reveal: TabReveal): Promise<void> {
+  if (!repo) return
+  const { regex, matchCase } = filter
+  filter = { ...(regex ? { regex } : {}), ...(matchCase ? { matchCase } : {}) }
+  searchInput.value = ''
+  filterBar.update()
+  renderTree()
+  filterReload = reloadLog()
+  const found: string[] = []
+  for (const hash of reveal.hashes) {
+    await jumpTo(hash)
+    if (selected.has(hash)) found.push(hash)
+  }
+  if (!found.length) return
+  const newest = found.reduce((a, b) => (indexByHash.get(a)! <= indexByHash.get(b)! ? a : b))
+  await jumpTo(newest)
+  for (const hash of found) selected.add(hash)
+  selectionChanged()
+  await filesReady
+  const index = reveal.path ? selectionFiles.findIndex((file) => file.path === reveal.path) : -1
+  if (index >= 0) openFile(index)
+}
+
 async function jumpTo(hash: string): Promise<void> {
   await filterReload
   let index = indexByHash.get(hash)
@@ -789,6 +818,8 @@ let selectionFiles: SelectionFile[] = []
 let fileTree: FileNode[] = []
 let currentFile: string | null = null
 let filesToken = 0
+/** Settles when the files of the current selection have loaded (or failed to). */
+let filesReady: Promise<void> = Promise.resolve()
 const openFolders = new Set<string>()
 
 function renderFilesNote(text: string): void {
@@ -846,7 +877,7 @@ function openFile(index: number): void {
   currentFile = selectionFiles[index].path
   drawFiles()
   if (diffPane) showDiff()
-  else void api.openTab(repo?.workspaceId)
+  else void api.openTab(repo?.workspaceId, { hashes: selectedHashes(), path: selectionFiles[index].path })
 }
 
 function updateFiles(): void {
@@ -862,7 +893,7 @@ function updateFiles(): void {
     return
   }
   filesSection.setSummary('…')
-  api
+  filesReady = api
     .selectionFiles(repo.root, hashes)
     .then((files) => {
       if (token !== filesToken) return
@@ -1195,6 +1226,12 @@ tabButton.addEventListener('click', async () => {
   } catch (error) {
     showBanner(errorMessage(error), 'error')
   }
+})
+
+orca.plugin.on('tab.reveal', ({ root, hashes, path }: { root: string } & TabReveal) => {
+  if (MODE !== 'editor' || root !== repo?.root) return
+  void api.takeReveal(root).catch(() => undefined)
+  void applyReveal({ hashes, path })
 })
 
 orca.plugin.on('repo.changed', ({ root }: { root: string }) => {

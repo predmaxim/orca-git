@@ -1,8 +1,8 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import type { OrcaWorkerApi } from 'orca/worker'
-import { pickLocale, setLocale } from '../shared/i18n.ts'
-import type { RepoResult } from '../shared/protocol.ts'
+import { pickLocale, setLocale, t } from '../shared/i18n.ts'
+import type { RepoResult, TabReveal } from '../shared/protocol.ts'
 import { checkRewrite, runAction } from './actions.ts'
 import { fetchAll, runBranchAction } from './branchActions.ts'
 import { createGit, type Git } from './git.ts'
@@ -18,6 +18,9 @@ export const ANCHOR = '.orca-git-log.gitlog'
 let orcaApi: OrcaWorkerApi
 const repos = new Map<string, Git>()
 const watchers = new Map<string, Promise<RepoWatcher | null>>()
+/** Selections waiting for the Git tab of a repository to start and take them. */
+const pending = new Map<string, TabReveal>()
+const HASH = /^[0-9a-f]{40}$/
 
 async function setting<T>(key: string, fallback: T): Promise<T> {
   try {
@@ -51,7 +54,18 @@ async function exclude(git: Git, root: string, pattern: string): Promise<void> {
   appendFileSync(file, `${current && !current.endsWith('\n') ? '\n' : ''}${pattern}\n`)
 }
 
-async function openTab(prefer?: string): Promise<{ ok: boolean; reason?: string }> {
+function validReveal(r: any): r is TabReveal {
+  return (
+    Array.isArray(r?.hashes) &&
+    r.hashes.length > 0 &&
+    r.hashes.length <= 500 &&
+    r.hashes.every((h: unknown) => typeof h === 'string' && HASH.test(h)) &&
+    (r.path === undefined || typeof r.path === 'string')
+  )
+}
+
+async function openTab(prefer?: string, reveal?: TabReveal): Promise<{ ok: boolean; reason?: string }> {
+  if (reveal !== undefined && !validReveal(reveal)) return { ok: false, reason: t('revealInvalid') }
   const workspace = await focusedWorkspace(orcaApi, prefer)
   if ('reason' in workspace) return { ok: false, reason: workspace.reason }
   const path = await gitPath()
@@ -59,7 +73,10 @@ async function openTab(prefer?: string): Promise<{ ok: boolean; reason?: string 
   if (!root) return { ok: false, reason: 'This workspace is not a Git repository.' }
   writeFileSync(join(workspace.path, ANCHOR), `${JSON.stringify({ root, workspaceId: workspace.id }, null, 2)}\n`)
   await exclude(createGit(root, path), root, ANCHOR)
+  if (reveal) pending.set(root, { hashes: reveal.hashes, ...(reveal.path ? { path: reveal.path } : {}) })
   await orcaApi.host.call('editor.open', { workspaceId: workspace.id, path: ANCHOR })
+  // An already open tab takes it from this event; a new one asks for it with tab.take.
+  if (reveal) orcaApi.panels.post('tab.reveal', { root, ...pending.get(root)! })
   return { ok: true }
 }
 
@@ -135,7 +152,13 @@ export default function activate(orca: OrcaWorkerApi): void {
     return result
   })
 
-  handle('tab.open', (input) => openTab(input?.workspaceId))
+  handle('tab.open', (input) => openTab(input?.workspaceId, input?.reveal))
+
+  handle('tab.take', ({ root }) => {
+    const reveal = pending.get(root) ?? null
+    pending.delete(root)
+    return reveal
+  })
 
   orca.commands.register('open-tab', async () => {
     const result = await openTab()

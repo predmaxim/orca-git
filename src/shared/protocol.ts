@@ -180,6 +180,12 @@ export type PatchResult =
   | { ok: true; name: string; size: number; text?: string; tooLarge?: boolean; path?: string }
   | { ok: false; reason: string; exists?: boolean }
 
+/** Commits (and optionally a file) a freshly opened Git tab should select. */
+export interface TabReveal {
+  hashes: string[]
+  path?: string
+}
+
 declare module 'orca' {
   interface PluginRequests {
     'repo.resolve': { input: { root?: string; workspaceId?: string }; output: RepoResult }
@@ -195,9 +201,11 @@ declare module 'orca' {
     'action.run': { input: { root: string; action: ActionRequest }; output: ActionResult }
     'branch.run': { input: { root: string; action: BranchAction }; output: BranchActionResult }
     'repo.fetch': { input: { root: string }; output: ActionResult }
-    'tab.open': { input: { workspaceId?: string }; output: { ok: boolean; reason?: string } }
+    'tab.open': { input: { workspaceId?: string; reveal?: TabReveal }; output: { ok: boolean; reason?: string } }
+    'tab.take': { input: { root: string }; output: TabReveal | null }
   }
   interface PluginPanelEvents {
     'repo.changed': { root: string }
+    'tab.reveal': { root: string } & TabReveal
   }
 }

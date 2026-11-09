@@ -60,7 +60,8 @@ export const en = {
   branchRenaming: 'Renaming {name}…',
   branchDeleting: 'Deleting {name}…',
   branchMerging: 'Merging {name}…',
-  branchRebasing: 'Rebasing onto {name}…'
+  branchRebasing: 'Rebasing onto {name}…',
+  revealInvalid: 'Invalid commit selection.'
 } satisfies Record<string, Message>
 
 export const ru: Record<keyof typeof en, Message> = {
@@ -124,7 +125,8 @@ export const ru: Record<keyof typeof en, Message> = {
   branchRenaming: 'Переименование {name}…',
   branchDeleting: 'Удаление {name}…',
   branchMerging: 'Слияние {name}…',
-  branchRebasing: 'Перебазирование на {name}…'
+  branchRebasing: 'Перебазирование на {name}…',
+  revealInvalid: 'Некорректное выделение коммитов.'
 }
 
 export type MessageKey = keyof typeof en
