@@ -68,8 +68,8 @@ them, and a right-click menu to rewrite history. The interface follows Orca's la
   in a narrow column a commit takes two lines (message, then author and date). Clicking a file there
   opens the editor tab with the same selection and that file's diff.
 - **Editor tab**: run **Git: Open in Editor Tab** from the command palette (or click the ↗ button
-  in the panel) for the sections column on the left and the diff area on the right, with the Details
-  section under it. It opens a small anchor file,
+  in the panel) for the same four sections on the left (Details is the fourth) and the diff of the
+  chosen file on the right, at full height. It opens a small anchor file,
   `.orca-git-log.gitlog`, at the workspace root; the plugin adds it to `.git/info/exclude` so it never
   shows up as untracked.
 
@@ -79,13 +79,18 @@ them, and a right-click menu to rewrite history. The interface follows Orca's la
 orca plugin install https://github.com/predmaxim/orca-git-log-panel
 ```
 
+Installed from the Git URL the plugin gets the id `predmaxim.git-log`. Orca first lists the access it
+asks for and prints the command to re-run with `--approve <fingerprint>`. If the original plugin is
+installed too, turn it off so the two do not both show: `orca plugin disable emamalet.git-log` or
+`orca plugin uninstall emamalet.git-log`.
+
 Requires Orca 1.4.248 or later and `git` on the `PATH` (or set **Git executable** in the plugin
 settings). The plugin runs as a `trusted-worker`: it starts `git` with your user account.
 
 ### Develop
 
 ```sh
-orca plugin dev load .          # prints a fingerprint; re-run with --approve <fingerprint>
+orca plugin dev load .          # loads as local.git-log; prints a fingerprint, re-run with --approve <fingerprint>
 orca plugin test .              # worker and graph tests on temporary repositories
 orca plugin validate .
 orca plugin shot local.git-log --panel log
