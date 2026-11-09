@@ -689,17 +689,24 @@ async function applyReveal(reveal: TabReveal): Promise<void> {
   filterBar.update()
   renderTree()
   filterReload = reloadLog()
-  const found: string[] = []
-  for (const hash of reveal.hashes) {
-    await jumpTo(hash)
-    if (selected.has(hash)) found.push(hash)
-  }
+  await filterReload
+  const wanted = new Set(reveal.hashes)
+  const missing = () => reveal.hashes.filter((hash) => !indexByHash.has(hash))
+  while (missing().length && hasMore && rows.length < 10_000) await loadMore()
+  const found = reveal.hashes.filter((hash) => indexByHash.has(hash))
+  if (found.length < wanted.size) showBanner(t('revealMissing', { count: wanted.size - found.length }), 'info')
   if (!found.length) return
-  const newest = found.reduce((a, b) => (indexByHash.get(a)! <= indexByHash.get(b)! ? a : b))
-  await jumpTo(newest)
+  const newest = Math.min(...found.map((hash) => indexByHash.get(hash)!))
+  selected.clear()
   for (const hash of found) selected.add(hash)
+  anchor = cursor = newest
+  viewport.scrollTop = Math.max(0, newest * rowH - viewport.clientHeight / 3)
+  viewport.focus({ preventScroll: true })
   selectionChanged()
+  // The user may pick something else while the files load; then the path is not theirs to open.
+  const token = filesToken
   await filesReady
+  if (token !== filesToken) return
   const index = reveal.path ? selectionFiles.findIndex((file) => file.path === reveal.path) : -1
   if (index >= 0) openFile(index)
 }
@@ -1228,10 +1235,13 @@ tabButton.addEventListener('click', async () => {
   }
 })
 
-orca.plugin.on('tab.reveal', ({ root, hashes, path }: { root: string } & TabReveal) => {
+orca.plugin.on('tab.reveal', ({ root }: { root: string }) => {
   if (MODE !== 'editor' || root !== repo?.root) return
-  void api.takeReveal(root).catch(() => undefined)
-  void applyReveal({ hashes, path })
+  // Only a nudge: tab.take hands the reveal over once, whether start() or this event asks first.
+  void api
+    .takeReveal(root)
+    .then((reveal) => reveal && applyReveal(reveal))
+    .catch(() => undefined)
 })
 
 orca.plugin.on('repo.changed', ({ root }: { root: string }) => {

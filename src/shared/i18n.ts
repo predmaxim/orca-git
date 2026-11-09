@@ -61,7 +61,8 @@ export const en = {
   branchDeleting: 'Deleting {name}…',
   branchMerging: 'Merging {name}…',
   branchRebasing: 'Rebasing onto {name}…',
-  revealInvalid: 'Invalid commit selection.'
+  revealInvalid: 'Invalid commit selection.',
+  revealMissing: { one: '{count} commit is not in the log.', other: '{count} commits are not in the log.' }
 } satisfies Record<string, Message>
 
 export const ru: Record<keyof typeof en, Message> = {
@@ -126,7 +127,8 @@ export const ru: Record<keyof typeof en, Message> = {
   branchDeleting: 'Удаление {name}…',
   branchMerging: 'Слияние {name}…',
   branchRebasing: 'Перебазирование на {name}…',
-  revealInvalid: 'Некорректное выделение коммитов.'
+  revealInvalid: 'Некорректное выделение коммитов.',
+  revealMissing: { one: '{count} коммит не найден в логе.', few: '{count} коммита не найдено в логе.', many: '{count} коммитов не найдено в логе.', other: '{count} коммита не найдено в логе.' }
 }
 
 export type MessageKey = keyof typeof en
