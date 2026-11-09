@@ -162,17 +162,24 @@ function onSections(): void {
 // Below 520 px the log shows two lines per row; the row height follows so scrolling stays consistent.
 const TWO_LINE_BELOW = 520
 let rowH = ROW_HEIGHT
-new ResizeObserver(() => {
-  const next = viewport.clientWidth > 0 && viewport.clientWidth < TWO_LINE_BELOW ? TWO_LINE_ROW_HEIGHT : ROW_HEIGHT
+function fitRowHeight(): void {
+  // offsetWidth includes the scrollbar, so the mode never changes the measured width; the gap is hysteresis.
+  const width = viewport.offsetWidth
+  const narrow = width > 0 && (rowH === TWO_LINE_ROW_HEIGHT ? width < TWO_LINE_BELOW + 20 : width < TWO_LINE_BELOW)
+  const next = narrow ? TWO_LINE_ROW_HEIGHT : ROW_HEIGHT
   if (next !== rowH) {
     const firstRow = viewport.scrollTop / rowH
     rowH = next
     logPane.classList.toggle('two-line', next === TWO_LINE_ROW_HEIGHT)
     viewport.style.setProperty('--row-h', `${rowH}px`)
+    // Grow the sizer now, or scrollTop is clamped to the old scroll height.
+    sizer.style.height = `${(rows.length + (hasMore ? 1 : 0)) * rowH}px`
     viewport.scrollTop = firstRow * rowH
   }
   renderRows()
-}).observe(viewport)
+}
+// Hiding the header resizes the viewport, so apply on the next frame to avoid a resize loop.
+new ResizeObserver(() => requestAnimationFrame(fitRowHeight)).observe(viewport)
 
 function dragSplitter(splitter: HTMLElement, onMove: (dx: number, dy: number, start: Prefs) => void): void {
   splitter.addEventListener('mousedown', (event) => {
