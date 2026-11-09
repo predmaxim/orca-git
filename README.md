@@ -128,10 +128,15 @@ keeps them all.
 
 - The worker makes the backup in the same request, before the operation, with
   `git branch --no-track <name> <commit>` or `git tag <name> <commit>`. An existing branch or tag is
-  never overwritten; if the backup fails, the operation does not run.
-- A hard reset can also save the uncommitted changes to the stash (`git stash create`, then
-  `git stash store`): the work tree is not touched, and the "changes will be lost" question is skipped.
-  Untracked files are not saved.
+  never overwritten; if the backup fails, the operation does not run (if only saving the stash fails,
+  the message names the backup already made).
+- The worker checks the name when you press the button, and the dialog stays open with the reason: a
+  name git refuses, one under `refs/` or longer than 200 bytes, a taken name, or one that clashes with
+  an existing ref folder (`backup/main` and `backup/main/x` cannot both exist).
+- A hard reset first checks the work tree. When tracked files have uncommitted changes, it can also
+  save them to the stash (`git stash create`, then `git stash store`; the work tree is not touched).
+  The hard reset is still confirmed: the stash does not keep untracked files, and both dialogs list the
+  untracked (and ignored) files the reset would overwrite.
 - The banner names the backup and offers Undo and **Show Backup**, which opens its folder in the branch
   tree.
 - Backup branches sit in the `backup/` folder of the branch tree, backup tags among the tags. Their menu
