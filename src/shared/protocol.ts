@@ -165,6 +165,17 @@ export interface ActionResult {
   previousHead?: string
 }
 
+export type BranchAction =
+  | { kind: 'rename'; name: string; newName: string }
+  | { kind: 'delete'; name: string; force: boolean }
+  | { kind: 'merge'; name: string }
+  | { kind: 'rebaseOnto'; name: string }
+
+export interface BranchActionResult extends ActionResult {
+  /** The branch is not fully merged; deleting it needs force. */
+  needsForce?: boolean
+}
+
 export type PatchResult =
   | { ok: true; name: string; size: number; text?: string; tooLarge?: boolean; path?: string }
   | { ok: false; reason: string; exists?: boolean }
@@ -182,6 +193,8 @@ declare module 'orca' {
     'patch.create': { input: { root: string; hashes: string[]; path?: string; overwrite?: boolean }; output: PatchResult }
     'action.check': { input: { root: string; kind: RewriteKind; hashes: string[] }; output: CheckResult }
     'action.run': { input: { root: string; action: ActionRequest }; output: ActionResult }
+    'branch.run': { input: { root: string; action: BranchAction }; output: BranchActionResult }
+    'repo.fetch': { input: { root: string }; output: ActionResult }
     'tab.open': { input: { workspaceId?: string }; output: { ok: boolean; reason?: string } }
   }
   interface PluginPanelEvents {

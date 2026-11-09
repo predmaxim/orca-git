@@ -21,7 +21,7 @@ function assertHashes(hashes: unknown): string[] {
   return hashes as string[]
 }
 
-async function assertName(git: Git, name: string, kind: 'branch' | 'tag'): Promise<string> {
+export async function assertName(git: Git, name: string, kind: 'branch' | 'tag'): Promise<string> {
   const trimmed = name.trim()
   const args = kind === 'branch' ? ['check-ref-format', '--branch', trimmed] : ['check-ref-format', `refs/tags/${trimmed}`]
   if (!trimmed || trimmed.startsWith('-') || !(await git.run(args)).ok) throw new Error(`"${trimmed}" is not a valid ${kind} name.`)

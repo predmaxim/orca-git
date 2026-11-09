@@ -3,6 +3,7 @@ import { dirname, join, resolve } from 'node:path'
 import type { OrcaWorkerApi } from 'orca/worker'
 import type { RepoResult } from '../shared/protocol.ts'
 import { checkRewrite, runAction } from './actions.ts'
+import { fetchAll, runBranchAction } from './branchActions.ts'
 import { createGit, type Git } from './git.ts'
 import { readDetails, readLogPage, readRefs } from './log.ts'
 import { focusedWorkspace, resolveRepo, toplevel } from './repo.ts'
@@ -111,6 +112,18 @@ export default function activate(orca: OrcaWorkerApi): void {
   orca.panels.handle('action.run', async ({ root, action }) => {
     const result = await runAction(await gitFor(root), action)
     orca.panels.post('repo.changed', { root })
+    return result
+  })
+
+  orca.panels.handle('branch.run', async ({ root, action }) => {
+    const result = await runBranchAction(await gitFor(root), action)
+    orca.panels.post('repo.changed', { root })
+    return result
+  })
+
+  orca.panels.handle('repo.fetch', async ({ root }) => {
+    const result = await fetchAll(await gitFor(root))
+    if (result.ok) orca.panels.post('repo.changed', { root })
     return result
   })
 
