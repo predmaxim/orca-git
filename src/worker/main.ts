@@ -79,7 +79,7 @@ async function openTab(prefer?: string, reveal?: TabReveal): Promise<{ ok: boole
   if (reveal) pending.set(root, { root, hashes: reveal.hashes, ...(reveal.path ? { path: reveal.path } : {}) })
   await orcaApi.host.call('editor.open', { workspaceId: workspace.id, path: ANCHOR })
   // An already open tab takes it from this event; a new one asks for it with tab.take.
-  if (reveal) orcaApi.panels.post('tab.reveal', { root, ...pending.get(root)! })
+  if (reveal) orcaApi.panels.post('tab.reveal', pending.get(root)!)
   return { ok: true }
 }
 
