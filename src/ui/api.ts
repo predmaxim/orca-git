@@ -58,7 +58,8 @@ export const api = {
     call('patch.create', { root, hashes, ...(path ? { path, overwrite } : {}) }, LONG),
   check: (root: string, kind: RewriteKind, hashes: string[]): Promise<CheckResult> =>
     call('action.check', { root, kind, hashes }, LONG),
-  branch: (root: string, action: BranchAction): Promise<BranchActionResult> => call('branch.run', { root, action }, LONG),
+  // Outlasts the worker's 120 s merge or rebase, so its message arrives instead of a frame timeout.
+  branch: (root: string, action: BranchAction): Promise<BranchActionResult> => call('branch.run', { root, action }, { timeoutMs: 150_000 }),
   branchCheck: (root: string, name: string): Promise<{ pushed: string[] }> => call('branch.check', { root, name }, LONG),
   run: (root: string, action: ActionRequest): Promise<ActionResult> => call('action.run', { root, action }, LONG),
   // Outlasts the worker's 120 s git fetch timeout, so its message arrives instead of a frame timeout.
