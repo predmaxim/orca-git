@@ -216,21 +216,23 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { dispo
   }
 
   function onKey(event: KeyboardEvent): void {
+    const target = event.target as HTMLElement | null
+    // Leave typing and open dialogs or menus alone; the file tree and commit list still get the shortcuts.
+    if (event.defaultPrevented || target?.closest?.('input, textarea, select, [contenteditable], .overlay, .menu') || target?.isContentEditable) return
     if (event.altKey && event.key === 'ArrowUp') go(index - 1)
     else if (event.altKey && event.key === 'ArrowDown') go(index + 1)
     else if (event.key === 'F7') jump(event.shiftKey ? -1 : 1)
     else return
     event.preventDefault()
-    event.stopPropagation()
   }
 
-  document.addEventListener('keydown', onKey, true)
+  document.addEventListener('keydown', onKey)
   container.replaceChildren(view)
   void load()
   return {
     dispose() {
       token++
-      document.removeEventListener('keydown', onKey, true)
+      document.removeEventListener('keydown', onKey)
     }
   }
 }
