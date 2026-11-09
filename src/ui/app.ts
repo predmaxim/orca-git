@@ -7,7 +7,7 @@ import { askName, askPatch, askRebasePlan, askReset, busy, confirm, editMessage,
 import { h, icon } from './dom.ts'
 import { createFilterBar } from './filters.ts'
 import { reachableFrom, refLabels, relativeDate, fullDate, shortHash } from './format.ts'
-import { computeGraph, graphSvg, ROW_HEIGHT, type GraphRow } from './graph.ts'
+import { computeGraph, graphSvg, ROW_HEIGHT, TWO_LINE_ROW_HEIGHT, type GraphRow } from './graph.ts'
 import { showMenu, type MenuEntry } from './menu.ts'
 import { createColumn, normalizeSections, type SectionPrefs } from './sections.ts'
 import { pickLocale, setLocale, t } from '../shared/i18n.ts'
@@ -159,7 +159,20 @@ function onSections(): void {
 }
 
 // The visible rows depend on the log's own height, which the section splitters change too.
-new ResizeObserver(() => renderRows()).observe(viewport)
+// Below 520 px the log shows two lines per row; the row height follows so scrolling stays consistent.
+const TWO_LINE_BELOW = 520
+let rowH = ROW_HEIGHT
+new ResizeObserver(() => {
+  const next = viewport.clientWidth > 0 && viewport.clientWidth < TWO_LINE_BELOW ? TWO_LINE_ROW_HEIGHT : ROW_HEIGHT
+  if (next !== rowH) {
+    const firstRow = viewport.scrollTop / rowH
+    rowH = next
+    logPane.classList.toggle('two-line', next === TWO_LINE_ROW_HEIGHT)
+    viewport.style.setProperty('--row-h', `${rowH}px`)
+    viewport.scrollTop = firstRow * rowH
+  }
+  renderRows()
+}).observe(viewport)
 
 function dragSplitter(splitter: HTMLElement, onMove: (dx: number, dy: number, start: Prefs) => void): void {
   splitter.addEventListener('mousedown', (event) => {
@@ -301,10 +314,13 @@ function rowElement(index: number): HTMLElement {
   const dim = !isFiltered() && reachable.size > 0 && !reachable.has(commit.hash)
   const labels = refLabels(commit.refs, repo?.head.branch ?? null)
   const subject = h('div', { class: 'cell subject' })
-  subject.innerHTML = graphSvg(graph[index], { head: isHead, dim, merge: commit.parents.length > 1 })
-  subject.append(h('span', { class: 'text' }, commit.subject))
+  subject.innerHTML = graphSvg(graph[index], { head: isHead, dim, merge: commit.parents.length > 1, height: rowH })
+  const twoLine = rowH === TWO_LINE_ROW_HEIGHT
+  const line = twoLine ? h('div', { class: 'line' }) : subject
+  if (twoLine) subject.append(h('div', { class: 'stack' }, line, h('div', { class: 'meta' }, `${commit.author} \u00b7 ${relativeDate(commit.authorTime)}`)))
+  line.append(h('span', { class: 'text' }, commit.subject))
   if (labels.length) {
-    subject.append(
+    line.append(
       h(
         'span',
         { class: 'refs' },
@@ -323,14 +339,14 @@ function rowElement(index: number): HTMLElement {
   return h(
     'div',
     {
-      class: `row columns${selected.has(commit.hash) ? ' selected' : ''}${dim ? ' dim' : ''}${isHead ? ' head' : ''}`,
-      style: `top:${index * ROW_HEIGHT}px`,
+      class: `row ${twoLine ? 'two' : 'columns'}${selected.has(commit.hash) ? ' selected' : ''}${dim ? ' dim' : ''}${isHead ? ' head' : ''}`,
+      style: `top:${index * rowH}px`,
       dataset: { index: String(index) },
       role: 'row',
       'aria-selected': String(selected.has(commit.hash))
     },
     subject,
-    h(
+    ...(twoLine ? [] : [h(
       'div',
       {
         class: `cell author${refs?.me && commit.author === refs.me ? ' me' : ''}`,
@@ -339,7 +355,7 @@ function rowElement(index: number): HTMLElement {
       commit.author + (committerDiffers ? '*' : '')
     ),
     h('div', { class: 'cell date', title: fullDate(commit.authorTime) }, relativeDate(commit.authorTime)),
-    h('div', { class: 'cell hash mono', title: commit.hash }, shortHash(commit.hash))
+    h('div', { class: 'cell hash mono', title: commit.hash }, shortHash(commit.hash))])
   )
 }
 
@@ -351,13 +367,13 @@ function renderRows(): void {
     renderQueued = false
     const top = viewport.scrollTop
     const height = viewport.clientHeight || 600
-    const first = Math.max(0, Math.floor(top / ROW_HEIGHT) - 10)
-    const last = Math.min(rows.length, Math.ceil((top + height) / ROW_HEIGHT) + 10)
-    sizer.style.height = `${(rows.length + (hasMore ? 1 : 0)) * ROW_HEIGHT}px`
+    const first = Math.max(0, Math.floor(top / rowH) - 10)
+    const last = Math.min(rows.length, Math.ceil((top + height) / rowH) + 10)
+    sizer.style.height = `${(rows.length + (hasMore ? 1 : 0)) * rowH}px`
     const children: HTMLElement[] = []
     for (let i = first; i < last; i++) children.push(rowElement(i))
     if (hasMore && last >= rows.length) {
-      children.push(h('div', { class: 'loading-more', style: `top:${rows.length * ROW_HEIGHT}px` }, h('div', { class: 'spin' })))
+      children.push(h('div', { class: 'loading-more', style: `top:${rows.length * rowH}px` }, h('div', { class: 'spin' })))
     }
     sizer.replaceChildren(...children)
     renderEmpty()
@@ -609,9 +625,9 @@ function selectedHashes(): string[] {
 }
 
 function ensureVisible(index: number): void {
-  const top = index * ROW_HEIGHT
+  const top = index * rowH
   if (top < viewport.scrollTop) viewport.scrollTop = top
-  else if (top + ROW_HEIGHT > viewport.scrollTop + viewport.clientHeight) viewport.scrollTop = top + ROW_HEIGHT - viewport.clientHeight
+  else if (top + rowH > viewport.scrollTop + viewport.clientHeight) viewport.scrollTop = top + rowH - viewport.clientHeight
 }
 
 function selectionChanged(): void {
@@ -649,7 +665,7 @@ async function jumpTo(hash: string): Promise<void> {
     return
   }
   selectOnly(index)
-  viewport.scrollTop = Math.max(0, index * ROW_HEIGHT - viewport.clientHeight / 3)
+  viewport.scrollTop = Math.max(0, index * rowH - viewport.clientHeight / 3)
   viewport.focus({ preventScroll: true })
 }
 
@@ -681,7 +697,7 @@ viewport.addEventListener('contextmenu', (event) => {
 
 viewport.addEventListener('keydown', (event) => {
   const mod = event.ctrlKey || event.metaKey
-  const page = Math.max(1, Math.floor(viewport.clientHeight / ROW_HEIGHT) - 1)
+  const page = Math.max(1, Math.floor(viewport.clientHeight / rowH) - 1)
   const move = (to: number) => {
     to = clamp(to, 0, rows.length - 1)
     if (event.shiftKey) selectRange(to, mod)
@@ -725,7 +741,7 @@ viewport.addEventListener('keydown', (event) => {
     case 'ContextMenu': {
       if (!selected.size) return
       const rect = viewport.getBoundingClientRect()
-      commitMenu(rect.left + 40, rect.top + Math.max(0, (cursor + 1) * ROW_HEIGHT - viewport.scrollTop))
+      commitMenu(rect.left + 40, rect.top + Math.max(0, (cursor + 1) * rowH - viewport.scrollTop))
       break
     }
     case 'Escape':

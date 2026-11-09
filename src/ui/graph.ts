@@ -84,12 +84,14 @@ export function computeGraph(rows: GraphInput[], linear = false): GraphRow[] {
 
 export const LANE_WIDTH = 14
 export const ROW_HEIGHT = 24
+/** A narrow commits column shows author and date under the message. */
+export const TWO_LINE_ROW_HEIGHT = 40
 
 const x = (lane: number) => lane * LANE_WIDTH + LANE_WIDTH / 2
 
 /** One row of the graph as SVG markup; `head` draws the node as a ring. */
-export function graphSvg(row: GraphRow, options: { head?: boolean; dim?: boolean; merge?: boolean } = {}): string {
-  const h = ROW_HEIGHT
+export function graphSvg(row: GraphRow, options: { head?: boolean; dim?: boolean; merge?: boolean; height?: number } = {}): string {
+  const h = options.height ?? ROW_HEIGHT
   const mid = h / 2
   const width = row.width * LANE_WIDTH
   const parts: string[] = []

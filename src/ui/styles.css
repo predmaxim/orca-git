@@ -789,6 +789,39 @@ textarea {
   }
 }
 
+/* Narrow commits column: message and refs on top, author and time below. */
+.pane.log.two-line > .header {
+  display: none;
+}
+.row.two {
+  display: flex;
+}
+.row.two .cell.subject {
+  flex: 1;
+  align-items: center;
+}
+.row.two .stack {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding-left: 4px;
+}
+.row.two .line {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.row.two .meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--muted-fg);
+}
+
 /* ---------- Details ---------- */
 
 .details {
