@@ -912,7 +912,7 @@ function openFile(index: number): void {
   currentFile = selectionFiles[index].path
   drawFiles()
   if (diffPane) showDiff()
-  else void api.openTab(repo?.workspaceId, { hashes: selectedHashes(), path: selectionFiles[index].path })
+  else void openTab({ hashes: selectedHashes(), path: selectionFiles[index].path })
 }
 
 function updateFiles(): void {
@@ -1278,14 +1278,15 @@ fetchButton.addEventListener('click', async () => {
     fetchButton.disabled = false
   }
 })
-tabButton.addEventListener('click', async () => {
+async function openTab(reveal?: TabReveal): Promise<void> {
   try {
-    const result = await api.openTab(repo?.workspaceId)
+    const result = await api.openTab(repo?.workspaceId, reveal)
     if (!result.ok) showBanner(result.reason ?? t('openTabFailed'), 'error')
   } catch (error) {
     showBanner(errorMessage(error), 'error')
   }
-})
+}
+tabButton.addEventListener('click', () => void openTab())
 
 orca.plugin.on('tab.reveal', ({ root }: { root: string }) => {
   if (MODE !== 'editor' || root !== repo?.root) return
