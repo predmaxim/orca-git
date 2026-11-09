@@ -25,7 +25,9 @@ function assertHashes(hashes: unknown): string[] {
 export async function assertName(git: Git, name: string, kind: 'branch' | 'tag'): Promise<string> {
   const trimmed = name.trim()
   const args = kind === 'branch' ? ['check-ref-format', '--branch', trimmed] : ['check-ref-format', `refs/tags/${trimmed}`]
-  if (!trimmed || trimmed.startsWith('-') || !(await git.run(args)).ok) throw new Error(t(kind === 'branch' ? 'invalidBranchName' : 'invalidTagName', { name: trimmed }))
+  // --branch expands @{-1} and @{u} to the branch they name: refuse "@{" and any name git does not keep as is.
+  const result = trimmed && !trimmed.startsWith('-') && !trimmed.includes('@{') ? await git.run(args) : null
+  if (!result?.ok || (kind === 'branch' && result.stdout.trim() !== trimmed)) throw new Error(t(kind === 'branch' ? 'invalidBranchName' : 'invalidTagName', { name: trimmed }))
   return trimmed
 }
 

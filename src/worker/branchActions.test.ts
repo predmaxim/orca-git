@@ -4,6 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
+import { runAction } from './actions.ts'
 import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
 import { createGit } from './git.ts'
 
@@ -59,6 +60,33 @@ test('rename moves the branch', async () => {
   assert.deepEqual([result.ok, result.message], [true, 'Renamed old to new.'])
   assert.ok(hasRef(root, 'refs/heads/new'))
   assert.ok(!hasRef(root, 'refs/heads/old'))
+})
+
+test('rename and new branch refuse names git expands to another branch', async () => {
+  const root = newRepo()
+  commit(root, 'a.txt', '1\n', 'c1')
+  // @{-1} names the previous branch, deleted since; @{u} names an upstream that does not exist yet.
+  sh(root, 'checkout', '-q', '-b', 'gone')
+  sh(root, 'checkout', '-q', 'main')
+  sh(root, 'branch', '-q', '-D', 'gone')
+  sh(root, 'config', 'branch.main.remote', '.')
+  sh(root, 'config', 'branch.main.merge', 'refs/heads/upstream')
+  sh(root, 'branch', 'old')
+  const git = createGit(root)
+  const hash = sh(root, 'rev-parse', 'HEAD')
+  const refs = () => sh(root, 'for-each-ref', '--format=%(refname)')
+  const before = refs()
+  for (const name of ['@{-1}', '@{u}', 'a@{1}']) {
+    const refused = [false, `"${name}" is not a valid branch name.`]
+    const renamed = await runBranchAction(git, { kind: 'rename', name: 'old', newName: name })
+    assert.deepEqual([renamed.ok, renamed.message], refused, `rename to ${name}`)
+    for (const checkout of [false, true]) {
+      const created = await runAction(git, { kind: 'branch', hash, name, checkout })
+      assert.deepEqual([created.ok, created.message], refused, `new branch ${name}`)
+    }
+  }
+  assert.equal(refs(), before)
+  assert.equal(sh(root, 'branch', '--show-current'), 'main')
 })
 
 test('delete removes a merged branch and refuses the current one', async () => {
