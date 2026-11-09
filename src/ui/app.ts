@@ -1,4 +1,4 @@
-import type { ActionRequest, ActionResult, BranchRef, CommitDetails, CommitRow, LogFilter, RefsResult, RepoInfo, RepoResult, RewriteKind, SelectionFile, WorkspaceChoice } from '../shared/protocol.ts'
+import type { ActionRequest, ActionResult, BranchAction, BranchActionResult, BranchRef, CommitDetails, CommitRow, LogFilter, RefsResult, RepoInfo, RepoResult, RewriteKind, SelectionFile, WorkspaceChoice } from '../shared/protocol.ts'
 import { api, copyText, errorMessage, orca } from './api.ts'
 import { buildFileTree, dirPaths, orderedFiles, renderFileTree, type FileNode } from './filetree.ts'
 import { renderBranches } from './branches.ts'
@@ -619,6 +619,19 @@ function branchMenu(event: MouseEvent, ref: BranchRef & { kind: 'local' | 'remot
     { icon: 'search', label: filter.branches?.includes(ref.full) ? 'Show All Branches' : `Show Only '${ref.name}'`, run: () => applyFilter({ branches: filter.branches?.includes(ref.full) ? [] : [ref.full] }) },
     { label: 'Copy Name', icon: 'copy', run: () => copyText(ref.name) }
   ]
+  if (ref.kind === 'local' || ref.kind === 'remote') {
+    entries.push('separator')
+    if (ref.kind === 'local') {
+      entries.push({ label: t('branchRename'), icon: 'edit', run: () => void renameBranch(ref.name) })
+      if (!current) entries.push({ label: t('branchDelete'), icon: 'drop', run: () => void deleteBranch(ref.name) })
+    }
+    if (!current) {
+      entries.push(
+        { label: t('branchMerge'), icon: 'branch', run: () => void act({ kind: 'merge', name: ref.name }, t('branchMerging', { name: ref.name })) },
+        { label: t('branchRebase'), icon: 'rebase', run: () => void act({ kind: 'rebaseOnto', name: ref.name }, t('branchRebasing', { name: ref.name })) }
+      )
+    }
+  }
   showMenu(event.clientX, event.clientY, entries)
 }
 
@@ -919,15 +932,16 @@ function updateDetails(): void {
 
 // ---------- Actions ----------
 
-const UNDOABLE = new Set<ActionRequest['kind']>(['cherryPick', 'revert', 'reset', 'squash', 'fixup', 'drop', 'reword', 'rebase'])
+const UNDOABLE = new Set<string>(['cherryPick', 'revert', 'reset', 'squash', 'fixup', 'drop', 'reword', 'rebase', 'merge', 'rebaseOnto'])
+const BRANCH_KINDS = new Set<string>(['rename', 'delete', 'merge', 'rebaseOnto'])
 
-async function act(action: ActionRequest, progress: string): Promise<ActionResult | null> {
+async function act(action: ActionRequest | BranchAction, progress: string): Promise<BranchActionResult | null> {
   if (!repo) return null
   const root = repo.root
   const done = busy(progress)
-  let result: ActionResult
+  let result: BranchActionResult
   try {
-    result = await api.run(root, action)
+    result = BRANCH_KINDS.has(action.kind) ? await api.branch(root, action as BranchAction) : await api.run(root, action as ActionRequest)
   } catch (error) {
     result = { ok: false, message: errorMessage(error) }
   } finally {
@@ -939,7 +953,7 @@ async function act(action: ActionRequest, progress: string): Promise<ActionResul
       ? [{ label: 'Undo', run: () => void act({ kind: 'reset', hash: previous, mode: 'keep' }, 'Undoing…').then((r) => r?.ok && showBanner(`Restored HEAD to ${shortHash(previous)}.`, 'success')) }]
       : []
     showBanner(result.message, 'success', undo)
-  } else showBanner(result.message, 'error')
+  } else if (!result.needsForce) showBanner(result.message, 'error')
   await refreshAll()
   return result
 }
@@ -1007,6 +1021,19 @@ async function undoCommit(hash: string): Promise<void> {
 async function newBranch(hash: string): Promise<void> {
   const answer = await askName('Create New Branch', 'Branch name', 'Create', { label: 'Checkout branch', checked: true })
   if (answer) await act({ kind: 'branch', hash, name: answer.name, checkout: answer.checked }, 'Creating branch…')
+}
+
+async function renameBranch(name: string): Promise<void> {
+  const answer = await askName(t('branchRenameTitle'), t('branchNewName'), t('branchRenameOk'), undefined, name)
+  if (answer && answer.name !== name) await act({ kind: 'rename', name, newName: answer.name }, t('branchRenaming', { name }))
+}
+
+async function deleteBranch(name: string): Promise<void> {
+  if (!(await confirm(t('branchDeleteTitle'), t('branchDeleteConfirm', { name }), t('branchDelete'), true))) return
+  const result = await act({ kind: 'delete', name, force: false }, t('branchDeleting', { name }))
+  if (result?.needsForce && (await confirm(t('branchDeleteTitle'), t('branchDeleteForce', { name }), t('branchDelete'), true))) {
+    await act({ kind: 'delete', name, force: true }, t('branchDeleting', { name }))
+  }
 }
 
 async function newTag(hash: string): Promise<void> {

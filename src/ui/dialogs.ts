@@ -114,9 +114,10 @@ export async function askName(
   title: string,
   label: string,
   ok: string,
-  checkbox?: { label: string; checked: boolean }
+  checkbox?: { label: string; checked: boolean },
+  initial = ''
 ): Promise<{ name: string; checked: boolean } | null> {
-  const input = h('input', { class: 'field', spellcheck: false, placeholder: label }) as HTMLInputElement
+  const input = h('input', { class: 'field', spellcheck: false, placeholder: label, value: initial }) as HTMLInputElement
   const box = checkbox ? (h('input', { type: 'checkbox', checked: checkbox.checked }) as HTMLInputElement) : null
   const result = await dialog<string>({
     title,

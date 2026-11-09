@@ -2,6 +2,8 @@
 import type {
   ActionRequest,
   ActionResult,
+  BranchAction,
+  BranchActionResult,
   CheckResult,
   CommitDetails,
   FileChange,
@@ -55,6 +57,7 @@ export const api = {
     call('patch.create', { root, hashes, ...(path ? { path, overwrite } : {}) }, LONG),
   check: (root: string, kind: RewriteKind, hashes: string[]): Promise<CheckResult> =>
     call('action.check', { root, kind, hashes }, LONG),
+  branch: (root: string, action: BranchAction): Promise<BranchActionResult> => call('branch.run', { root, action }, LONG),
   run: (root: string, action: ActionRequest): Promise<ActionResult> => call('action.run', { root, action }, LONG),
   // Outlasts the worker's 120 s git fetch timeout, so its message arrives instead of a frame timeout.
   fetch: (root: string): Promise<ActionResult> => call('repo.fetch', { root }, { timeoutMs: 150_000 }),

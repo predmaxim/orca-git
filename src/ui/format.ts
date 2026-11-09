@@ -99,6 +99,35 @@ export function groupRemotes(remotes: BranchRef[]): Map<string, BranchRef[]> {
   return groups
 }
 
+export type BranchNode =
+  | { kind: 'folder'; name: string; path: string; children: BranchNode[] }
+  | { kind: 'branch'; label: string; ref: BranchRef }
+
+/** Branches nested into folders by their `/` prefixes: folders first, then branches, each sorted by name. `strip` removes a leading prefix (the remote name). */
+export function groupByPrefix(refs: BranchRef[], strip = ''): BranchNode[] {
+  const root: BranchNode[] = []
+  for (const ref of refs) {
+    const name = strip && ref.name.startsWith(`${strip}/`) ? ref.name.slice(strip.length + 1) : ref.name
+    const parts = name.split('/')
+    let level = root
+    parts.slice(0, -1).forEach((part, i) => {
+      const path = parts.slice(0, i + 1).join('/')
+      let folder = level.find((n) => n.kind === 'folder' && n.name === part)
+      if (!folder) level.push((folder = { kind: 'folder', name: part, path, children: [] }))
+      level = (folder as Extract<BranchNode, { kind: 'folder' }>).children
+    })
+    level.push({ kind: 'branch', label: parts[parts.length - 1], ref })
+  }
+  const sort = (nodes: BranchNode[]) => {
+    nodes.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'folder' ? -1 : 1) || nodeName(a).localeCompare(nodeName(b)))
+    for (const n of nodes) if (n.kind === 'folder') sort(n.children)
+  }
+  sort(root)
+  return root
+}
+
+const nodeName = (n: BranchNode) => (n.kind === 'folder' ? n.name : n.label)
+
 export const STATUS_NAMES: Record<string, string> = {
   A: 'Added',
   M: 'Modified',

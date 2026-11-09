@@ -1,6 +1,7 @@
 import type { BranchRef, RefsResult } from '../shared/protocol.ts'
 import { h, icon } from './dom.ts'
-import { groupRemotes } from './format.ts'
+import { t } from '../shared/i18n.ts'
+import { groupByPrefix, groupRemotes, type BranchNode } from './format.ts'
 
 export interface BranchesHost {
   refs: RefsResult | null
@@ -8,9 +9,9 @@ export interface BranchesHost {
   filtered: string[]
   collapsed: Set<string>
   onCollapse(): void
-  /** Single click: select the commit in the log. */
+  /** Double click: select the commit in the log. */
   select(hash: string): void
-  /** Double click: show only this ref. */
+  /** Single click: show only this ref. */
   filterTo(full: string): void
   menu(event: MouseEvent, ref: BranchRef & { kind: 'local' | 'remote' | 'tag' | 'head' }): void
 }
@@ -55,9 +56,9 @@ export function renderBranches(container: HTMLElement, host: BranchesHost, query
         {
           class: `node-row${filtered ? ' filtered' : ''}`,
           style: `padding-left:${4 + depth * 14 + 16}px`,
-          title: `${ref.full}${ref.upstream ? `\nTracking ${ref.upstream}` : ''}\nDouble-click to show only this ${kind === 'tag' ? 'tag' : 'branch'}`,
-          onclick: () => ref.hash && host.select(ref.hash),
-          ondblclick: () => host.filterTo(ref.full),
+          title: `${ref.full}${ref.upstream ? `\nTracking ${ref.upstream}` : ''}\n${t('branchRowTip', { kind: t(kind === 'tag' ? 'kindTag' : 'kindBranch') })}`,
+          onclick: () => host.filterTo(ref.full),
+          ondblclick: () => ref.hash && host.select(ref.hash),
           oncontextmenu: (event: MouseEvent) => {
             event.preventDefault()
             host.menu(event, { ...ref, kind })
@@ -74,16 +75,28 @@ export function renderBranches(container: HTMLElement, host: BranchesHost, query
     leaf({ name: 'HEAD', full: 'HEAD', hash: refs.head.hash }, 'head', 'HEAD (Current Branch)', 0, true)
   }
 
+  // Folders keep their open state in `collapsed` under `<scope>:<path>`.
+  const tree = (nodes: BranchNode[], scope: string, kind: 'local' | 'remote', depth: number): void => {
+    for (const node of nodes) {
+      if (node.kind === 'branch') {
+        leaf(node.ref, kind, node.label, depth, kind === 'local' && node.ref.name === refs.head.branch)
+        continue
+      }
+      const count = (n: BranchNode): number => (n.kind === 'branch' ? 1 : n.children.reduce((sum, c) => sum + count(c), 0))
+      if (group(`${scope}:${node.path}`, node.name, depth, count(node))) tree(node.children, scope, kind, depth + 1)
+    }
+  }
+
   const locals = refs.locals.filter((r) => matches(r.name))
   if (locals.length && group('local', 'Local', 0, locals.length)) {
-    for (const ref of locals) leaf(ref, 'local', ref.name, 1, ref.name === refs.head.branch)
+    tree(groupByPrefix(locals), 'local', 'local', 1)
   }
 
   const remotes = refs.remotes.filter((r) => matches(r.name))
   if (remotes.length && group('remote', 'Remote', 0, remotes.length)) {
     for (const [remote, list] of groupRemotes(remotes)) {
       if (group(`remote/${remote}`, remote, 1, list.length)) {
-        for (const ref of list) leaf(ref, 'remote', ref.name.slice(remote.length + 1), 2)
+        tree(groupByPrefix(list, remote), `remote/${remote}`, 'remote', 2)
       }
     }
   }

@@ -43,7 +43,24 @@ export const en = {
   diffNoChanges: 'No content changes.',
   diffTruncated: 'This diff is too large: only the beginning is shown.',
   diffLoading: 'Loading…',
-  openInTab: 'Open in editor tab'
+  openInTab: 'Open in editor tab',
+  branchRowTip: 'Click to show only this {kind}. Double-click to jump to its commit.',
+  kindBranch: 'branch',
+  kindTag: 'tag',
+  branchRename: 'Rename…',
+  branchRenameTitle: 'Rename Branch',
+  branchNewName: 'New name',
+  branchRenameOk: 'Rename',
+  branchDelete: 'Delete',
+  branchDeleteTitle: 'Delete Branch',
+  branchDeleteConfirm: 'Delete branch {name}?',
+  branchDeleteForce: '{name} is not fully merged. Delete it anyway? Its commits may be lost.',
+  branchMerge: 'Merge into Current',
+  branchRebase: 'Rebase Current onto This',
+  branchRenaming: 'Renaming {name}…',
+  branchDeleting: 'Deleting {name}…',
+  branchMerging: 'Merging {name}…',
+  branchRebasing: 'Rebasing onto {name}…'
 } satisfies Record<string, Message>
 
 export const ru: Record<keyof typeof en, Message> = {
@@ -90,7 +107,24 @@ export const ru: Record<keyof typeof en, Message> = {
   diffNoChanges: 'Содержимое не изменилось.',
   diffTruncated: 'Дифф слишком большой: показано только начало.',
   diffLoading: 'Загрузка…',
-  openInTab: 'Открыть во вкладке'
+  openInTab: 'Открыть во вкладке',
+  branchRowTip: 'Клик: показать только этот объект ({kind}). Двойной клик: перейти к его коммиту.',
+  kindBranch: 'ветка',
+  kindTag: 'тег',
+  branchRename: 'Переименовать…',
+  branchRenameTitle: 'Переименовать ветку',
+  branchNewName: 'Новое имя',
+  branchRenameOk: 'Переименовать',
+  branchDelete: 'Удалить',
+  branchDeleteTitle: 'Удалить ветку',
+  branchDeleteConfirm: 'Удалить ветку {name}?',
+  branchDeleteForce: 'Ветка {name} слита не полностью. Всё равно удалить? Её коммиты могут пропасть.',
+  branchMerge: 'Слить в текущую',
+  branchRebase: 'Перебазировать текущую на эту',
+  branchRenaming: 'Переименование {name}…',
+  branchDeleting: 'Удаление {name}…',
+  branchMerging: 'Слияние {name}…',
+  branchRebasing: 'Перебазирование на {name}…'
 }
 
 export type MessageKey = keyof typeof en

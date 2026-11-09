@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { computeGraph, graphSvg } from './graph.ts'
-import { reachableFrom, refLabels, relativeDate } from './format.ts'
+import { groupByPrefix, reachableFrom, refLabels, relativeDate } from './format.ts'
 import { changedRange, changeStarts, splitRows } from './diffmodel.ts'
 
 const row = (hash: string, ...parents: string[]) => ({ hash, parents })
@@ -68,4 +68,15 @@ test('side-by-side rows pair deletions with additions and highlight the changed 
   assert.deepEqual(changedRange('let x = 1', 'let x = 42'), [8, 9, 10])
   assert.equal(changedRange('abc', 'xyz'), null)
   assert.deepEqual(changeStarts([false, true, true, false, true], Boolean), [1, 4])
+})
+
+
+test('groupByPrefix nests branches by their prefix', () => {
+  const ref = (name: string) => ({ name, full: `refs/heads/${name}`, hash: 'a' })
+  const tree = groupByPrefix(['fix/ABC-1', 'fix/ABC-2', 'feature/x/y', 'main', 'release-candidate'].map(ref))
+  const shape = (nodes: ReturnType<typeof groupByPrefix>): unknown[] =>
+    nodes.map((n) => (n.kind === 'folder' ? { [n.path]: shape(n.children) } : n.label))
+  assert.deepEqual(shape(tree), [{ feature: [{ 'feature/x': ['y'] }] }, { fix: ['ABC-1', 'ABC-2'] }, 'main', 'release-candidate'])
+  const remote = groupByPrefix([ref('origin/a/b')], 'origin')
+  assert.deepEqual(shape(remote), [{ a: ['b'] }])
 })
