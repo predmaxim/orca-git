@@ -26,7 +26,7 @@ export async function readSelectionFiles(git: Git, hashes: string[]): Promise<Se
     throw new Error(t('invalidSelection'))
   }
   const order = await oldestFirst(git, hashes)
-  const log = await git.out(['log', '--no-walk=unsorted', '--format=%x1e%H%x1f%P', '-z', '--name-status', '-M', '--diff-merges=first-parent', ...order, '--'])
+  const log = await git.out(['log', '--no-walk=unsorted', '--format=%x1e%H%x1f%P', '-z', '--name-status', '-M', '--root', '--diff-merges=first-parent', ...order, '--'])
   const entries = new Map<string, Entry>()
   for (const record of log.split('\x1e').filter(Boolean)) {
     const end = record.indexOf('\0')

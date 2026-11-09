@@ -87,8 +87,9 @@ test('a rename followed by a delete reports the original file as deleted', async
   assert.deepEqual(files, [{ path: 'a.txt', status: 'D', from: h[0], to: h[2] }])
 })
 
-test('the root commit diffs against the empty tree', async () => {
+test('the root commit diffs against the empty tree, even with log.showRoot off', async () => {
   const { root, hashes: h } = repoWith([write('f1.txt', '1\n')])
+  sh(root, 'config', 'log.showRoot', 'false')
   const git = createGit(root)
   assert.deepEqual(await readSelectionFiles(git, [h[0]]), [{ path: 'f1.txt', status: 'A', from: null, to: h[0] }])
   const diff = await readRangeDiff(git, null, h[0], 'f1.txt')
