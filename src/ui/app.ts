@@ -1325,4 +1325,5 @@ addEventListener('focus', () => {
 
 applyLayout()
 renderEmpty()
+showDiff()
 void start()
