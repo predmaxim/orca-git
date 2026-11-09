@@ -2,26 +2,21 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { dirname, join, resolve } from 'node:path'
 import type { OrcaWorkerApi } from 'orca/worker'
 import { pickLocale, setLocale, t } from '../shared/i18n.ts'
-import type { DiffTabState, RepoResult, TabReveal } from '../shared/protocol.ts'
+import type { DiffTabState, RepoResult } from '../shared/protocol.ts'
 import { checkRewrite, runAction } from './actions.ts'
 import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
 import { DIFF_ANCHOR, validDiffState, workspaceFor } from './diffTab.ts'
 import { createGit, type Git } from './git.ts'
 import { readDetails, readLogPage, readRefs } from './log.ts'
-import { focusedWorkspace, resolveRepo, toplevel } from './repo.ts'
+import { resolveRepo, toplevel } from './repo.ts'
 import { readFileDiff } from './diff.ts'
 import { readRangeDiff, readSelectionFiles } from './selection.ts'
 import { createPatch } from './patch.ts'
 import { watchRepo, type RepoWatcher } from './watch.ts'
 
-export const ANCHOR = '.orca-git-log.gitlog'
-
 let orcaApi: OrcaWorkerApi
 const repos = new Map<string, Git>()
 const watchers = new Map<string, Promise<RepoWatcher | null>>()
-/** Selections waiting for the Git tab of a repository to start and take them. */
-const pending = new Map<string, TabReveal>()
-const HASH = /^[0-9a-f]{40}$/
 /** What each repository's Diff tab shows; the tab reads it when it starts and on `diff.show`. */
 const diffStates = new Map<string, DiffTabState>()
 
@@ -55,35 +50,6 @@ async function exclude(git: Git, root: string, pattern: string): Promise<void> {
   if (current.split(/\r?\n/).includes(pattern)) return
   mkdirSync(dirname(file), { recursive: true })
   appendFileSync(file, `${current && !current.endsWith('\n') ? '\n' : ''}${pattern}\n`)
-}
-
-function validReveal(r: any): r is TabReveal {
-  return (
-    Array.isArray(r?.hashes) &&
-    r.hashes.length > 0 &&
-    r.hashes.length <= 500 &&
-    r.hashes.every((h: unknown) => typeof h === 'string' && HASH.test(h)) &&
-    (r.path === undefined || typeof r.path === 'string')
-  )
-}
-
-async function openTab(prefer?: string, reveal?: TabReveal): Promise<{ ok: boolean; reason?: string }> {
-  if (Array.isArray(reveal?.hashes) && reveal.hashes.length > 500) return { ok: false, reason: t('selectionTooLarge') }
-  if (reveal !== undefined && !validReveal(reveal)) return { ok: false, reason: t('invalidSelection') }
-  const workspace = await focusedWorkspace(orcaApi, prefer)
-  if ('reason' in workspace) return { ok: false, reason: workspace.reason }
-  const path = await gitPath()
-  const root = await toplevel(workspace.path, path)
-  if (!root) return { ok: false, reason: t('workspaceNotRepo') }
-  // Focus may have moved since the sidebar read its repository: its commits must not land in another one.
-  if (reveal && reveal.root !== root) return { ok: false, reason: t('revealOtherRepo') }
-  writeFileSync(join(workspace.path, ANCHOR), `${JSON.stringify({ root, workspaceId: workspace.id }, null, 2)}\n`)
-  await exclude(createGit(root, path), root, ANCHOR)
-  if (reveal) pending.set(root, { root, hashes: reveal.hashes, ...(reveal.path ? { path: reveal.path } : {}) })
-  await orcaApi.host.call('editor.open', { workspaceId: workspace.id, path: ANCHOR })
-  // An already open tab takes it from this event; a new one asks for it with tab.take.
-  if (reveal) orcaApi.panels.post('tab.reveal', pending.get(root)!)
-  return { ok: true }
 }
 
 async function openDiff(input: any): Promise<{ ok: boolean; reason?: string }> {
@@ -175,23 +141,9 @@ export default function activate(orca: OrcaWorkerApi): void {
     return result
   })
 
-  handle('tab.open', (input) => openTab(input?.workspaceId, input?.reveal))
-
-  handle('tab.take', ({ root }) => {
-    const reveal = pending.get(root) ?? null
-    pending.delete(root)
-    return reveal
-  })
-
   handle('diff.open', openDiff)
 
   handle('diff.state', ({ root }) => diffStates.get(root) ?? null)
-
-  orca.commands.register('open-tab', async () => {
-    const result = await openTab()
-    if (!result.ok) orca.log(`open-tab: ${result.reason}`)
-    return result
-  })
 }
 
 export function deactivate(): void {

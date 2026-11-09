@@ -245,13 +245,6 @@ textarea {
   text-decoration: underline;
 }
 
-.main {
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-  display: flex;
-}
-
 .pane {
   min-width: 0;
   min-height: 0;
@@ -259,38 +252,11 @@ textarea {
   flex-direction: column;
 }
 
-.splitter {
-  flex: none;
-  width: 1px;
-  background: var(--border);
-  position: relative;
-  cursor: col-resize;
-}
-
-.splitter::after {
-  content: '';
-  position: absolute;
-  inset: 0 -3px;
-}
-
 .tool:disabled {
   opacity: 0.45;
 }
 
 /* ---------- Sections ---------- */
-
-.left {
-  width: var(--left-w, 40%);
-  flex: none;
-}
-
-.right {
-  flex: 1;
-}
-
-.right > .pane {
-  flex: 1;
-}
 
 .column {
   flex: 1;

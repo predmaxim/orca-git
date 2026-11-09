@@ -6,6 +6,7 @@ import type {
   BranchActionResult,
   CheckResult,
   CommitDetails,
+  DiffTabState,
   FileChange,
   FileDiff,
   LogFilter,
@@ -14,8 +15,7 @@ import type {
   RefsResult,
   RepoResult,
   RewriteKind,
-  SelectionFile,
-  TabReveal
+  SelectionFile
 } from '../shared/protocol.ts'
 
 interface Disposable {
@@ -64,9 +64,8 @@ export const api = {
   run: (root: string, action: ActionRequest): Promise<ActionResult> => call('action.run', { root, action }, LONG),
   // Outlasts the worker's 120 s git fetch timeout, so its message arrives instead of a frame timeout.
   fetch: (root: string): Promise<ActionResult> => call('repo.fetch', { root }, { timeoutMs: 150_000 }),
-  openTab: (workspaceId?: string | null, reveal?: TabReveal): Promise<{ ok: boolean; reason?: string }> =>
-    call('tab.open', { ...(workspaceId ? { workspaceId } : {}), ...(reveal ? { reveal } : {}) }),
-  takeReveal: (root: string): Promise<TabReveal | null> => call('tab.take', { root })
+  openDiff: (state: DiffTabState): Promise<{ ok: boolean; reason?: string }> => call('diff.open', state),
+  diffState: (root: string): Promise<DiffTabState | null> => call('diff.state', { root })
 }
 
 export function errorMessage(error: unknown): string {

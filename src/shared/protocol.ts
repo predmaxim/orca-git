@@ -1,4 +1,4 @@
-// The panel/editor <-> worker contract. Both sides import these types; nothing here runs.
+// The sidebar/Diff tab <-> worker contract. Both sides import these types; nothing here runs.
 
 export interface RepoInfo {
   root: string
@@ -182,14 +182,6 @@ export type PatchResult =
   | { ok: true; name: string; size: number; text?: string; tooLarge?: boolean; path?: string }
   | { ok: false; reason: string; exists?: boolean }
 
-/** Commits (and optionally a file) a freshly opened Git tab should select. */
-export interface TabReveal {
-  /** The repository the commits come from; the worker opens nothing for a workspace in another one. */
-  root: string
-  hashes: string[]
-  path?: string
-}
-
 /** What the Diff tab of a repository shows: the files of the selection a file was opened from. */
 export interface DiffTabState {
   root: string
@@ -214,15 +206,12 @@ declare module 'orca' {
     /** Remote branches holding commits that rebasing the current branch onto `name` would rewrite. */
     'branch.check': { input: { root: string; name: string }; output: { pushed: string[] } }
     'repo.fetch': { input: { root: string }; output: ActionResult }
-    'tab.open': { input: { workspaceId?: string; reveal?: TabReveal }; output: { ok: boolean; reason?: string } }
-    'tab.take': { input: { root: string }; output: TabReveal | null }
     /** Shows the state in the Diff tab of the workspace that holds `root`, opening the tab if needed. */
     'diff.open': { input: DiffTabState; output: { ok: boolean; reason?: string } }
     'diff.state': { input: { root: string }; output: DiffTabState | null }
   }
   interface PluginPanelEvents {
     'repo.changed': { root: string }
-    'tab.reveal': { root: string } & TabReveal
     /** The Diff tab of `root` has a new state to show. */
     'diff.show': { root: string }
   }

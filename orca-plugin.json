@@ -31,14 +31,11 @@
     ],
     "customEditors": [
       {
-        "id": "log-tab",
-        "title": "Git",
-        "extensions": [".gitlog"],
-        "entry": "src/ui/editor.html"
+        "id": "diff-tab",
+        "title": "Diff",
+        "extensions": [".gitdiff"],
+        "entry": "src/ui/diff.html"
       }
-    ],
-    "commands": [
-      { "id": "open-tab", "title": "Git: Open in Editor Tab", "when": "workspace" }
     ],
     "settings": [
       {
