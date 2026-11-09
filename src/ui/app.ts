@@ -3,7 +3,7 @@ import { api, copyText, errorMessage, orca } from './api.ts'
 import { buildFileTree, dirPaths, orderedFiles, renderFileTree, type FileNode } from './filetree.ts'
 import { renderBranches } from './branches.ts'
 import { renderDetails, renderMany, renderPlaceholder } from './details.ts'
-import { openDiff, type DiffMode } from './diff.ts'
+import { mountDiff, showDiffPlaceholder, type DiffMode } from './diff.ts'
 import { askName, askPatch, askRebasePlan, askReset, busy, confirm, editMessage, pushedWarning } from './dialogs.ts'
 import { h, icon } from './dom.ts'
 import { createFilterBar } from './filters.ts'
@@ -777,7 +777,7 @@ function copyHashes(): void {
 
 // ---------- Files ----------
 
-/** The files changed by the whole selection, in drawn order; Task 8 shows `selectionFiles[index]` in the diff. */
+/** The files changed by the whole selection, in drawn order; the diff shows one of them. */
 let selectionFiles: SelectionFile[] = []
 let fileTree: FileNode[] = []
 let currentFile: string | null = null
@@ -803,11 +803,43 @@ function setAllFolders(open: boolean): void {
   if (fileTree.length) drawFiles()
 }
 
-/** Marks `selectionFiles[index]` as the current file; the embedded diff hooks in here. */
+const diffPane = document.getElementById('diff')
+let diffView: { dispose(): void } | null = null
+
+function showDiff(): void {
+  diffView?.dispose()
+  diffView = null
+  if (!diffPane) return
+  const index = selectionFiles.findIndex((file) => file.path === currentFile)
+  if (!repo || index < 0) {
+    showDiffPlaceholder(diffPane)
+    return
+  }
+  diffView = mountDiff(diffPane, {
+    root: repo.root,
+    files: selectionFiles,
+    index,
+    mode: prefs.diffMode ?? (innerWidth < 1100 ? 'unified' : 'split'),
+    wholeFile: Boolean(prefs.diffWholeFile),
+    onPrefs: (mode, wholeFile) => {
+      prefs.diffMode = mode
+      prefs.diffWholeFile = wholeFile
+      savePrefs()
+    },
+    onIndex: (next) => {
+      currentFile = selectionFiles[next].path
+      drawFiles()
+    }
+  })
+}
+
+/** Makes `selectionFiles[index]` the current file and shows its diff (the sidebar has none: it opens the tab). */
 function openFile(index: number): void {
   if (index < 0 || index >= selectionFiles.length) return
   currentFile = selectionFiles[index].path
   drawFiles()
+  if (diffPane) showDiff()
+  else void api.openTab(repo?.workspaceId)
 }
 
 function updateFiles(): void {
@@ -815,8 +847,9 @@ function updateFiles(): void {
   const hashes = selectedHashes()
   selectionFiles = []
   fileTree = []
-  currentFile = null
   if (!repo || !hashes.length) {
+    currentFile = null
+    showDiff()
     filesSection.setSummary('')
     renderFilesNote(t('filesPlaceholder'))
     return
@@ -830,12 +863,17 @@ function updateFiles(): void {
       selectionFiles = orderedFiles(fileTree)
       openFolders.clear()
       for (const path of dirPaths(fileTree)) openFolders.add(path)
+      // The open file stays open when the new selection still changes it.
+      if (!selectionFiles.some((file) => file.path === currentFile)) currentFile = null
+      showDiff()
       filesSection.setSummary(t('filesCount', { count: files.length }))
       if (files.length) drawFiles()
       else renderFilesNote('')
     })
     .catch((error) => {
       if (token !== filesToken) return
+      currentFile = null
+      showDiff()
       filesSection.setSummary('')
       renderFilesNote(errorMessage(error))
     })
@@ -869,20 +907,7 @@ function updateDetails(): void {
       if (token === detailsToken)
         renderDetails(detailsPane, details, {
           select: (hash) => void jumpTo(hash),
-          openDiff: (index) =>
-            openDiff({
-              root,
-              hash: details.hash,
-              files: details.files,
-              index,
-              mode: prefs.diffMode,
-              wholeFile: prefs.diffWholeFile,
-              onPrefs: (mode, wholeFile) => {
-                prefs.diffMode = mode
-                prefs.diffWholeFile = wholeFile
-                savePrefs()
-              }
-            })
+          openDiff: (index) => openFile(selectionFiles.findIndex((file) => file.path === details.files[index]?.path))
         })
     } catch (error) {
       if (token === detailsToken) renderPlaceholder(detailsPane, errorMessage(error))

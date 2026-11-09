@@ -1,24 +1,23 @@
-import type { DiffHunk, DiffLine, FileChange, FileDiff } from '../shared/protocol.ts'
+import type { DiffHunk, DiffLine, FileDiff, SelectionFile } from '../shared/protocol.ts'
 import { api, errorMessage } from './api.ts'
 import { h, icon } from './dom.ts'
 import { changedRange, changeStarts, splitRows } from './diffmodel.ts'
 import { shortHash, STATUS_NAMES } from './format.ts'
-import { closePopups } from './menu.ts'
+import { t } from '../shared/i18n.ts'
 
 export type DiffMode = 'split' | 'unified'
 
 export interface DiffOptions {
   root: string
-  hash: string
-  files: FileChange[]
+  files: SelectionFile[]
   index: number
-  mode?: DiffMode
-  wholeFile?: boolean
+  mode: DiffMode
+  wholeFile: boolean
   /** Called when the user switches layout or context, to remember it. */
-  onPrefs?(mode: DiffMode, wholeFile: boolean): void
+  onPrefs(mode: DiffMode, wholeFile: boolean): void
+  /** Called when the user moves to another file with the arrows. */
+  onIndex(index: number): void
 }
-
-let closeOpen: (() => void) | null = null
 
 /** Highlight ranges for lines paired with a counterpart: only the changed middle is emphasised. */
 function wordRanges(hunks: DiffHunk[]): Map<DiffLine, [number, number]> {
@@ -55,6 +54,7 @@ const num = (value: number | undefined, kind?: string) =>
 const hunkRow = (hunk: DiffHunk) =>
   h('div', { class: 'd-hunk' }, `@@ -${hunk.oldStart} +${hunk.newStart} @@`, hunk.section ? h('span', { class: 'section' }, hunk.section) : null)
 
+/** The single place that turns hunks into rows. */
 function renderLines(diff: FileDiff, mode: DiffMode): { rows: HTMLElement[]; changes: HTMLElement[] } {
   const ranges = wordRanges(diff.hunks)
   const rows: HTMLElement[] = []
@@ -82,63 +82,68 @@ function renderLines(diff: FileDiff, mode: DiffMode): { rows: HTMLElement[]; cha
   return { rows, changes: changeStarts(changed, Boolean).map((i) => rows[i]) }
 }
 
-/** Opens the full-window viewer on `files[index]`; Escape closes it, Alt+↑/↓ moves between files. */
-export function openDiff(options: DiffOptions): void {
-  closeOpen?.()
-  closePopups()
-  const { root, hash, files } = options
+/** Fills the container with the hint shown while no file is open. */
+export function showDiffPlaceholder(container: HTMLElement): void {
+  container.replaceChildren(h('div', { class: 'diff-view' }, h('div', { class: 'diff-note muted' }, t('diffSelectFile'))))
+}
+
+/** Shows `files[index]` in the container; Alt+↑/↓ moves between files, F7 between changes. */
+export function mountDiff(container: HTMLElement, options: DiffOptions): { dispose(): void } {
+  const { root, files, onPrefs, onIndex } = options
   let index = Math.max(0, Math.min(options.index, files.length - 1))
-  let mode: DiffMode = options.mode ?? (innerWidth < 700 ? 'unified' : 'split')
-  let wholeFile = Boolean(options.wholeFile)
+  let mode = options.mode
+  let wholeFile = options.wholeFile
   let diff: FileDiff | null = null
   let changes: HTMLElement[] = []
   let token = 0
 
   const title = h('div', { class: 'diff-title' })
   const counter = h('span', { class: 'muted' })
+  const info = h('div', { class: 'diff-info mono muted' })
   const body = h('div', { class: 'diff-body', tabindex: '-1' })
-  const button = (iconName: Parameters<typeof icon>[0], tip: string, run: () => void) =>
-    h('button', { class: 'tool', title: tip, 'aria-label': tip, onclick: run }, icon(iconName))
-  const prevFile = button('up', 'Previous file (Alt+↑)', () => go(index - 1))
-  const nextFile = button('down', 'Next file (Alt+↓)', () => go(index + 1))
-  const modeButton = h('button', { class: 'tool', onclick: () => setMode(mode === 'split' ? 'unified' : 'split') })
-  const wholeButton = h('button', { class: 'tool', title: 'Show the whole file instead of the changed regions', onclick: () => setWhole(!wholeFile) }, 'Whole file')
+  const arrow = (label: string, tip: string, run: () => void) => h('button', { class: 'tool', title: tip, 'aria-label': tip, onclick: run }, label)
+  const prevFile = arrow('←', t('diffPrevFile'), () => go(index - 1))
+  const nextFile = arrow('→', t('diffNextFile'), () => go(index + 1))
+  const splitButton = h('button', { class: 'tool', title: t('diffSplitTip'), onclick: () => setMode('split') }, t('diffSplit'))
+  const unifiedButton = h('button', { class: 'tool', title: t('diffUnifiedTip'), onclick: () => setMode('unified') }, t('diffUnified'))
+  const wholeButton = h('button', { class: 'tool', title: t('diffWholeFileTip'), onclick: () => setWhole(!wholeFile) }, t('diffWholeFile'))
   const view = h(
     'div',
-    { class: 'diff-view', role: 'dialog', 'aria-modal': 'true' },
+    { class: 'diff-view' },
     h(
       'div',
       { class: 'diff-header' },
-      title,
-      h('div', { class: 'spacer' }),
-      h('button', { class: 'tool', title: 'Previous change (Shift+F7)', onclick: () => jump(-1) }, '↑ Change'),
-      h('button', { class: 'tool', title: 'Next change (F7)', onclick: () => jump(1) }, '↓ Change'),
+      h('button', { class: 'tool', title: t('diffPrevChangeTip'), onclick: () => jump(-1) }, t('diffPrevChange')),
+      h('button', { class: 'tool', title: t('diffNextChangeTip'), onclick: () => jump(1) }, t('diffNextChange')),
       h('span', { class: 'sep' }),
       prevFile,
       counter,
       nextFile,
       h('span', { class: 'sep' }),
-      modeButton,
-      wholeButton,
-      button('close', 'Close (Esc)', () => close())
+      title,
+      h('div', { class: 'spacer' }),
+      splitButton,
+      unifiedButton,
+      wholeButton
     ),
+    info,
     body
   )
 
   function syncHeader(): void {
     const file = files[index]
     const letter = file.status[0] ?? 'M'
+    const path = file.oldPath && file.oldPath !== file.path ? `${file.oldPath} → ${file.path}` : file.path
     title.replaceChildren(
       h('span', { class: `status-letter st-${letter}`, title: STATUS_NAMES[letter] ?? file.status }, letter),
-      h('span', { class: 'path', title: file.path }, file.oldPath && file.oldPath !== file.path ? `${file.oldPath} → ${file.path}` : file.path),
-      h('span', { class: 'mono muted' }, shortHash(hash))
+      h('span', { class: 'path', title: path }, path)
     )
-    counter.textContent = `${index + 1}/${files.length}`
+    info.textContent = `${file.from ? shortHash(file.from) : t('diffFromEmpty')}..${shortHash(file.to)}  ${path}`
+    counter.textContent = t('diffFileCounter', { index: index + 1, count: files.length })
     prevFile.disabled = index === 0
     nextFile.disabled = index === files.length - 1
-    modeButton.textContent = mode === 'split' ? 'Side-by-side' : 'Unified'
-    modeButton.title = mode === 'split' ? 'Switch to a unified view' : 'Switch to a side-by-side view'
-    modeButton.classList.toggle('on', mode === 'split')
+    splitButton.classList.toggle('on', mode === 'split')
+    unifiedButton.classList.toggle('on', mode === 'unified')
     wholeButton.classList.toggle('on', wholeFile)
   }
 
@@ -146,12 +151,12 @@ export function openDiff(options: DiffOptions): void {
     if (!diff) return
     const note = (text: string) => h('div', { class: 'diff-note muted' }, text)
     if (diff.binary) {
-      body.replaceChildren(note('Binary file: no text changes to show.'))
+      body.replaceChildren(note(t('diffBinary')))
       changes = []
       return
     }
     if (!diff.hunks.length) {
-      body.replaceChildren(note(files[index].oldPath ? 'File renamed without content changes.' : 'No content changes.'))
+      body.replaceChildren(note(files[index].oldPath ? t('diffRenamedOnly') : t('diffNoChanges')))
       changes = []
       return
     }
@@ -159,16 +164,16 @@ export function openDiff(options: DiffOptions): void {
     const rendered = renderLines(diff, mode)
     changes = rendered.changes
     const lines = h('div', { class: `diff-lines ${mode}`, style: `--num-w: ${digits + 2}ch` }, ...rendered.rows)
-    body.replaceChildren(...(diff.truncated ? [note('This diff is too large: only the beginning is shown.')] : []), lines)
+    body.replaceChildren(...(diff.truncated ? [note(t('diffTruncated'))] : []), lines)
   }
 
   async function load(): Promise<void> {
     const mine = ++token
     syncHeader()
     diff = null
-    body.replaceChildren(h('div', { class: 'diff-note muted' }, 'Loading…'))
+    body.replaceChildren(h('div', { class: 'diff-note muted' }, t('diffLoading')))
     try {
-      const result = await api.diff(root, hash, files[index], wholeFile)
+      const result = await api.rangeDiff(root, files[index], wholeFile)
       if (mine !== token) return
       diff = result
       render()
@@ -182,19 +187,21 @@ export function openDiff(options: DiffOptions): void {
   function go(next: number): void {
     if (next < 0 || next >= files.length || next === index) return
     index = next
+    onIndex(index)
     void load()
   }
 
   function setMode(next: DiffMode): void {
+    if (next === mode) return
     mode = next
-    options.onPrefs?.(mode, wholeFile)
+    onPrefs(mode, wholeFile)
     syncHeader()
     render()
   }
 
   function setWhole(next: boolean): void {
     wholeFile = next
-    options.onPrefs?.(mode, wholeFile)
+    onPrefs(mode, wholeFile)
     void load()
   }
 
@@ -209,8 +216,7 @@ export function openDiff(options: DiffOptions): void {
   }
 
   function onKey(event: KeyboardEvent): void {
-    if (event.key === 'Escape') close()
-    else if (event.altKey && event.key === 'ArrowUp') go(index - 1)
+    if (event.altKey && event.key === 'ArrowUp') go(index - 1)
     else if (event.altKey && event.key === 'ArrowDown') go(index + 1)
     else if (event.key === 'F7') jump(event.shiftKey ? -1 : 1)
     else return
@@ -218,18 +224,13 @@ export function openDiff(options: DiffOptions): void {
     event.stopPropagation()
   }
 
-  const previousFocus = document.activeElement as HTMLElement | null
-  function close(): void {
-    token++
-    document.removeEventListener('keydown', onKey, true)
-    view.remove()
-    closeOpen = null
-    previousFocus?.focus({ preventScroll: true })
-  }
-
-  closeOpen = close
   document.addEventListener('keydown', onKey, true)
-  document.body.append(view)
-  body.focus({ preventScroll: true })
+  container.replaceChildren(view)
   void load()
+  return {
+    dispose() {
+      token++
+      document.removeEventListener('keydown', onKey, true)
+    }
+  }
 }
