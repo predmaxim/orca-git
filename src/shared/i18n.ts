@@ -13,6 +13,9 @@ export const en = {
   selectedCount: { one: '{count} selected', other: '{count} selected' },
   filesPlaceholder: 'Select commits to see their files',
   detailsPlaceholder: 'Select a commit to see its details',
+  filesCount: { one: '{count} file', other: '{count} files' },
+  expandAll: 'Expand all',
+  collapseAll: 'Collapse all',
   refresh: 'Refresh',
   fetch: 'Fetch',
   openInTab: 'Open in editor tab'
@@ -32,6 +35,9 @@ export const ru: Record<keyof typeof en, Message> = {
   selectedCount: { one: '{count} выбран', few: '{count} выбрано', many: '{count} выбрано', other: '{count} выбрано' },
   filesPlaceholder: 'Выберите коммиты, чтобы увидеть их файлы',
   detailsPlaceholder: 'Выберите коммит, чтобы увидеть его описание',
+  filesCount: { one: '{count} файл', few: '{count} файла', many: '{count} файлов', other: '{count} файла' },
+  expandAll: 'Развернуть всё',
+  collapseAll: 'Свернуть всё',
   refresh: 'Обновить',
   fetch: 'Получить',
   openInTab: 'Открыть во вкладке'

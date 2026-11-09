@@ -1,5 +1,6 @@
-import type { ActionRequest, ActionResult, BranchRef, CommitRow, LogFilter, RefsResult, RepoInfo, RepoResult, RewriteKind, WorkspaceChoice } from '../shared/protocol.ts'
+import type { ActionRequest, ActionResult, BranchRef, CommitRow, LogFilter, RefsResult, RepoInfo, RepoResult, RewriteKind, SelectionFile, WorkspaceChoice } from '../shared/protocol.ts'
 import { api, copyText, errorMessage, orca } from './api.ts'
+import { buildFileTree, dirPaths, orderedFiles, renderFileTree, type FileNode } from './filetree.ts'
 import { renderBranches } from './branches.ts'
 import { renderDetails, renderMany, renderPlaceholder } from './details.ts'
 import { openDiff, type DiffMode } from './diff.ts'
@@ -130,7 +131,13 @@ const column = createColumn(MODE === 'editor' ? ['branches', 'commits', 'files']
 const detailsColumn = MODE === 'editor' ? createColumn(['details'], prefs.sections, onSections) : column
 column.section('branches').body.append(treeSearch, tree)
 column.section('commits').body.append(filterRow, logPane)
-column.section('files').body.append(h('div', { class: 'sec-note' }, t('filesPlaceholder')))
+const filesSection = column.section('files')
+const filesPane = filesSection.body
+filesSection.header.append(
+  h('button', { class: 'tool', title: t('expandAll'), 'aria-label': t('expandAll'), onclick: () => setAllFolders(true) }, icon('chevronDown')),
+  h('button', { class: 'tool', title: t('collapseAll'), 'aria-label': t('collapseAll'), onclick: () => setAllFolders(false) }, icon('chevronRight'))
+)
+renderFilesNote(t('filesPlaceholder'))
 const detailsPane = detailsColumn.section('details').body
 
 const leftSplit = h('div', { class: 'splitter' })
@@ -639,6 +646,7 @@ function ensureVisible(index: number): void {
 
 function selectionChanged(): void {
   renderRows()
+  updateFiles()
   updateDetails()
 }
 
@@ -765,6 +773,72 @@ viewport.addEventListener('keydown', (event) => {
 function copyHashes(): void {
   const hashes = selectedHashes()
   if (copyText(hashes.join(' '))) showBanner(`Copied ${hashes.length === 1 ? shortHash(hashes[0]) : `${hashes.length} hashes`}.`, 'success')
+}
+
+// ---------- Files ----------
+
+/** The files changed by the whole selection, in drawn order; Task 8 shows `selectionFiles[index]` in the diff. */
+let selectionFiles: SelectionFile[] = []
+let fileTree: FileNode[] = []
+let currentFile: string | null = null
+let filesToken = 0
+const openFolders = new Set<string>()
+
+function renderFilesNote(text: string): void {
+  filesPane.replaceChildren(h('div', { class: 'sec-note' }, text))
+}
+
+function drawFiles(): void {
+  renderFileTree(filesPane, fileTree, {
+    expanded: openFolders,
+    current: currentFile,
+    open: (file) => openFile(selectionFiles.indexOf(file)),
+    onToggle: drawFiles
+  })
+}
+
+function setAllFolders(open: boolean): void {
+  openFolders.clear()
+  if (open) for (const path of dirPaths(fileTree)) openFolders.add(path)
+  if (fileTree.length) drawFiles()
+}
+
+/** Marks `selectionFiles[index]` as the current file; the embedded diff hooks in here. */
+function openFile(index: number): void {
+  if (index < 0 || index >= selectionFiles.length) return
+  currentFile = selectionFiles[index].path
+  drawFiles()
+}
+
+function updateFiles(): void {
+  const token = ++filesToken
+  const hashes = selectedHashes()
+  selectionFiles = []
+  fileTree = []
+  currentFile = null
+  if (!repo || !hashes.length) {
+    filesSection.setSummary('')
+    renderFilesNote(t('filesPlaceholder'))
+    return
+  }
+  filesSection.setSummary('…')
+  api
+    .selectionFiles(repo.root, hashes)
+    .then((files) => {
+      if (token !== filesToken) return
+      fileTree = buildFileTree(files)
+      selectionFiles = orderedFiles(fileTree)
+      openFolders.clear()
+      for (const path of dirPaths(fileTree)) openFolders.add(path)
+      filesSection.setSummary(t('filesCount', { count: files.length }))
+      if (files.length) drawFiles()
+      else renderFilesNote('')
+    })
+    .catch((error) => {
+      if (token !== filesToken) return
+      filesSection.setSummary('')
+      renderFilesNote(errorMessage(error))
+    })
 }
 
 // ---------- Details ----------

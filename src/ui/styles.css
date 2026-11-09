@@ -1296,6 +1296,57 @@ textarea.field {
   box-shadow: 0 6px 18px rgb(0 0 0 / 30%);
 }
 
+/* ---------- Files tree ---------- */
+
+.ft {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 2px 0;
+}
+
+.ft-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  min-width: 0;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ft-row:hover {
+  background: var(--hover);
+}
+
+.ft-row:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: -1px;
+}
+
+.ft-row.current {
+  background: var(--selection);
+}
+
+.ft-row .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.ft .ft-row.file {
+  margin: 0;
+  border-radius: 0;
+}
+
+.ft-count {
+  margin-left: auto;
+  padding-right: 8px;
+  color: var(--muted-fg);
+  font-size: 11px;
+}
+
 /* ---------- Diff viewer ---------- */
 
 .file.openable {

@@ -11,7 +11,8 @@ import type {
   PatchResult,
   RefsResult,
   RepoResult,
-  RewriteKind
+  RewriteKind,
+  SelectionFile
 } from '../shared/protocol.ts'
 
 interface Disposable {
@@ -47,6 +48,9 @@ export const api = {
   details: (root: string, hash: string): Promise<CommitDetails> => call('commit.details', { root, hash }),
   diff: (root: string, hash: string, file: FileChange, wholeFile: boolean): Promise<FileDiff> =>
     call('file.diff', { root, hash, path: file.path, ...(file.oldPath ? { oldPath: file.oldPath } : {}), wholeFile }, LONG),
+  selectionFiles: (root: string, hashes: string[]): Promise<SelectionFile[]> => call('selection.files', { root, hashes }, LONG),
+  rangeDiff: (root: string, file: SelectionFile, wholeFile: boolean): Promise<FileDiff> =>
+    call('range.diff', { root, from: file.from, to: file.to, path: file.path, ...(file.oldPath ? { oldPath: file.oldPath } : {}), wholeFile }, LONG),
   patch: (root: string, hashes: string[], path?: string, overwrite = false): Promise<PatchResult> =>
     call('patch.create', { root, hashes, ...(path ? { path, overwrite } : {}) }, LONG),
   check: (root: string, kind: RewriteKind, hashes: string[]): Promise<CheckResult> =>
