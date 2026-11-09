@@ -968,21 +968,18 @@ async function act(scope: Scope, action: ActionRequest | BranchAction | BackupDe
   const made = backup && result.backup ? `refs/${backup.kind === 'tag' ? 'tags' : 'heads'}/${result.backup}` : null
   const show = made ? [{ label: t('showBackup'), run: () => reveal(made) }] : []
   const text = [result.message, result.backup && t('backupMade', { name: result.backup }), result.stash && t('backupStashed', { hash: shortHash(result.stash) })].filter(Boolean).join(' ')
-  /** HEAD once the log shows this action's result: Undo runs only while HEAD is still there. */
-  let after: string | null | undefined
   if (result.ok) {
     if (action.kind === 'rename') followBranch(action.name, action.newName)
     else if (action.kind === 'delete') followBranch(action.name)
     else if (action.kind === 'deleteBackup') dropFilter(`refs/${action.ref === 'tag' ? 'tags' : 'heads'}/${action.name}`)
     const previous = result.previousHead
-    // The Undo stays bound to this repository and to the HEAD this action left.
+    // The Undo stays bound to this repository and, through the worker, to the HEAD this action left.
     const undo = previous && UNDOABLE.has(action.kind)
-      ? [{ label: t('undo'), run: () => void act({ root, head: after }, { kind: 'reset', hash: previous, mode: 'keep' }, t('progUndoing')).then((r) => r?.ok && showBanner(t('restoredHead', { hash: shortHash(previous) }), 'success')) }]
+      ? [{ label: t('undo'), run: () => void act({ root, head: result.head }, { kind: 'reset', hash: previous, mode: 'keep' }, t('progUndoing')).then((r) => r?.ok && showBanner(t('restoredHead', { hash: shortHash(previous) }), 'success')) }]
       : []
     showBanner(text, result.warning ? 'info' : 'success', [...undo, ...show], result.warning)
   } else if (!result.needsForce) showBanner(text, 'error', show)
   await refreshAll()
-  if (repo?.root === root) after = repo.head.hash
   return result
 }
 

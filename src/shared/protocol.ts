@@ -167,6 +167,8 @@ export interface ActionResult {
   backup?: string
   /** The stash commit holding the uncommitted changes saved with the backup. */
   stash?: string
+  /** HEAD after an action sent with `expectHead` or a backup ran, for its Undo to expect. */
+  head?: string
 }
 
 /** A branch or tag the worker creates at `target` (40 hex) before a risky action; never overwrites a ref. */

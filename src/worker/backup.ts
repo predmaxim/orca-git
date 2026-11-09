@@ -53,7 +53,7 @@ export interface Guard {
 /**
  * Runs `run` only while HEAD is still `expectHead` and after the backup, when one is asked for, is made.
  * The backup must point at `tip`: HEAD, or the branch an action deletes. A failed action still reports
- * the backup it left.
+ * the backup it left; one that ran reports the HEAD it left, for Undo to expect.
  */
 export async function runGuarded<R extends ActionResult>(git: Git, guard: Guard, tip: 'HEAD' | { branch: string }, run: () => Promise<R>): Promise<R | ActionResult> {
   const { expectHead, backup } = guard
@@ -73,7 +73,8 @@ export async function runGuarded<R extends ActionResult>(git: Git, guard: Guard,
     return refused(error)
   }
   const result = await run()
-  return made ? { ...result, backup: made.name, ...(made.stash ? { stash: made.stash } : {}) } : result
+  const head = result.ok ? (await readHead(git)).hash : null
+  return { ...result, ...(made ? { backup: made.name, ...(made.stash ? { stash: made.stash } : {}) } : {}), ...(head ? { head } : {}) }
 }
 
 /** Deletes a `backup/` branch or tag, only while it still points at `hash`, the commit the user saw. Never throws. */

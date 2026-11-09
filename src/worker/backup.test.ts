@@ -59,6 +59,7 @@ for (const kind of ['branch', 'tag'] as const) {
     )
     assert.equal(result.ok, true, result.message)
     assert.equal(result.backup, NAME)
+    assert.equal(result.head, rev(root, 'HEAD'))
     const ref = kind === 'branch' ? `refs/heads/${NAME}` : `refs/tags/${NAME}`
     assert.equal(rev(root, ref), head)
     assert.ok(reachable(root, c2, ref) && reachable(root, c3, ref))
@@ -194,7 +195,7 @@ test('a moved HEAD refuses the action and makes no backup', async () => {
   assert.equal(ran, false)
   assert.equal(refs(root), before)
   const head = rev(root, 'HEAD')
-  assert.deepEqual(await runGuarded(git, { expectHead: head }, 'HEAD', run), { ok: true, message: 'ran' })
+  assert.deepEqual(await runGuarded(git, { expectHead: head }, 'HEAD', run), { ok: true, message: 'ran', head })
 })
 
 test('delete backup removes only backup/ refs that still point where the user saw them', async () => {
