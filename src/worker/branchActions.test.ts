@@ -80,6 +80,10 @@ test('an unmerged branch needs force, and force deletes it', async () => {
   assert.equal(first.ok, false)
   assert.equal(first.needsForce, true)
   assert.ok(hasRef(root, 'refs/heads/topic'))
+  // Only a literal true forces: anything else a frame sends stays the safe -d.
+  const loose = await runBranchAction(git, { kind: 'delete', name: 'topic', force: 'true' as unknown as boolean })
+  assert.equal(loose.needsForce, true)
+  assert.ok(hasRef(root, 'refs/heads/topic'))
   const forced = await runBranchAction(git, { kind: 'delete', name: 'topic', force: true })
   assert.equal(forced.ok, true)
   assert.ok(!hasRef(root, 'refs/heads/topic'))
@@ -169,6 +173,60 @@ test('merge and rebase onto warn, without undo, when the uncommitted changes can
   assert.match(sh(rebased, 'stash', 'list'), /autostash/)
 })
 
+/** c1 has a.txt and b.txt; topic and main both edit a.txt; HEAD is on main. */
+function conflicting(): string {
+  const root = newRepo()
+  writeFileSync(join(root, 'b.txt'), '1\n')
+  commit(root, 'a.txt', '1\n', 'c1')
+  sh(root, 'checkout', '-q', '-b', 'topic')
+  commit(root, 'a.txt', 'topic\n', 'topic edit')
+  sh(root, 'checkout', '-q', 'main')
+  commit(root, 'a.txt', 'main\n', 'main edit')
+  return root
+}
+
+/** Everything a failed action must leave as it was. */
+const snapshot = (root: string) => [sh(root, 'for-each-ref', '--format=%(refname) %(objectname)'), sh(root, 'symbolic-ref', 'HEAD'), sh(root, 'status', '--porcelain'), sh(root, 'stash', 'list')]
+
+test('a conflicting merge or rebase onto is aborted and gives the uncommitted changes back', async () => {
+  const merged = conflicting()
+  writeFileSync(join(merged, 'b.txt'), 'local\n')
+  const before = snapshot(merged)
+  const merge = await runBranchAction(createGit(merged), { kind: 'merge', name: 'topic' })
+  assert.equal(merge.ok, false)
+  assert.ok(merge.message.startsWith('Merge failed and was aborted.'), merge.message)
+  assert.deepEqual(snapshot(merged), before)
+  assert.equal(readFileSync(join(merged, 'b.txt'), 'utf8'), 'local\n')
+
+  const rebased = conflicting()
+  sh(rebased, 'checkout', '-q', 'topic')
+  writeFileSync(join(rebased, 'b.txt'), 'local\n')
+  const beforeRebase = snapshot(rebased)
+  const rebase = await runBranchAction(createGit(rebased), { kind: 'rebaseOnto', name: 'main' })
+  assert.equal(rebase.ok, false)
+  assert.ok(rebase.message.startsWith('Rebase failed and was aborted.'), rebase.message)
+  assert.deepEqual(snapshot(rebased), beforeRebase)
+  assert.equal(readFileSync(join(rebased, 'b.txt'), 'utf8'), 'local\n')
+  assert.ok(!existsSync(join(rebased, '.git', 'rebase-merge')))
+})
+
+test('merge, rebase onto and their check refuse targets that are not one commit', async () => {
+  const root = forked()
+  writeFileSync(join(root, 'b.txt'), 'local\n')
+  const git = createGit(root)
+  const before = snapshot(root)
+  for (const name of ['-x', '--abort', '--upload-pack=touch x', '', '   ', 'main..topic', 'topic~9', 'nope', 123 as unknown as string]) {
+    for (const kind of ['merge', 'rebaseOnto'] as const) {
+      const result = await runBranchAction(git, { kind, name })
+      assert.equal(result.ok, false, `${kind} ${name}`)
+      assert.match(result.message, /is not a branch or commit/)
+    }
+    await assert.rejects(checkRebaseOnto(git, name), /is not a branch or commit/)
+  }
+  assert.deepEqual(snapshot(root), before)
+  assert.ok(!existsSync(join(root, 'x')))
+})
+
 test('the rebase onto check names the remote branches holding commits it would rewrite', async () => {
   const base = mkdtempSync(join(tmpdir(), 'git-log-pushed-'))
   dirs.push(base)
@@ -182,6 +240,10 @@ test('the rebase onto check names the remote branches holding commits it would r
   assert.deepEqual(await checkRebaseOnto(git, 'main'), { pushed: ['origin/topic'] })
   assert.deepEqual(await checkRebaseOnto(git, 'topic'), { pushed: [] })
   await assert.rejects(checkRebaseOnto(git, '--all'), /is not a branch or commit/)
+  // Only reads: the branch, the remote branches and the tree stay as they were.
+  const before = snapshot(root)
+  await checkRebaseOnto(git, 'main')
+  assert.deepEqual(snapshot(root), before)
 })
 
 test('merge is refused while a rebase is in progress', async () => {

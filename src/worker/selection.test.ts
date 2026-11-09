@@ -100,6 +100,17 @@ test('a long contiguous selection lists each file over the commits that touch it
   ].sort((a, b) => a.path.localeCompare(b.path)))
 })
 
+test('odd file names come through both from the log and from a range diff', async () => {
+  const names = ['-rf', ':(glob)*', 'with space.txt', 'юникод.txt', 'tab\there.txt']
+  const { root, hashes: h } = repoWith([
+    (r) => names.forEach((name) => writeFileSync(join(r, name), '1\n')),
+    (r) => names.slice(0, 3).forEach((name) => writeFileSync(join(r, name), '2\n'))
+  ])
+  const files = await readSelectionFiles(createGit(root), [h[0], h[1]])
+  // The first three changed twice (range diff), the last two once (taken from the log).
+  assert.deepEqual(files, names.map((path) => ({ path, status: 'A', from: null, to: names.indexOf(path) < 3 ? h[1] : h[0] })).sort((a, b) => a.path.localeCompare(b.path)))
+})
+
 test('a path renamed away and added again is listed once', async () => {
   const { root, hashes: h } = repoWith([
     write('a.txt', 'one\ntwo\nthree\nfour\n'),
@@ -144,7 +155,9 @@ test("selection spanning a merge lists the merge's first-parent changes and the 
 test('invalid hashes are refused', async () => {
   const { root, hashes: h } = repoWith([write('a.txt', '1\n')])
   const git = createGit(root)
-  await assert.rejects(readSelectionFiles(git, ['HEAD']), /Invalid commit selection/)
+  for (const bad of [['HEAD'], [], [`--output=${join(root, 'x')}`], [h[0].toUpperCase()], [h[0].slice(0, 39)], 'nope', [h[0], 7]]) {
+    await assert.rejects(readSelectionFiles(git, bad as string[]), /Invalid commit selection/)
+  }
   await assert.rejects(readSelectionFiles(git, Array(501).fill(h[0])), /Select at most 500 commits/)
   await assert.rejects(readRangeDiff(git, '--x', h[0], 'a'))
 })
