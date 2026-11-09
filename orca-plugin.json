@@ -24,7 +24,7 @@
     "panels": [
       {
         "id": "log",
-        "title": "Git Log",
+        "title": "Git",
         "icon": "activity",
         "entry": "src/ui/panel.html"
       }
@@ -32,13 +32,13 @@
     "customEditors": [
       {
         "id": "log-tab",
-        "title": "Git Log",
+        "title": "Git",
         "extensions": [".gitlog"],
         "entry": "src/ui/editor.html"
       }
     ],
     "commands": [
-      { "id": "open-tab", "title": "Git Log: Open in Editor Tab", "when": "workspace" }
+      { "id": "open-tab", "title": "Git: Open in Editor Tab", "when": "workspace" }
     ],
     "settings": [
       {

@@ -1,4 +1,4 @@
-# Git Log for Orca
+# Git for Orca
 
 ![Git tab: branches, commits and files on the left, a side-by-side diff on the right](images/log-dark.png)
 
@@ -64,10 +64,10 @@ them, and a right-click menu to rewrite history. The interface follows Orca's la
 
 ## Where it shows
 
-- **Right sidebar panel** "Git Log": the Branches, Commits, Files and Details sections in one column;
+- **Right sidebar panel** "Git": the Branches, Commits, Files and Details sections in one column;
   in a narrow column a commit takes two lines (message, then author and date). Clicking a file there
   opens the editor tab with the same selection and that file's diff.
-- **Editor tab**: run **Git Log: Open in Editor Tab** from the command palette (or click the ↗ button
+- **Editor tab**: run **Git: Open in Editor Tab** from the command palette (or click the ↗ button
   in the panel) for the sections column on the left and the diff area on the right, with the Details
   section under it. It opens a small anchor file,
   `.orca-git-log.gitlog`, at the workspace root; the plugin adds it to `.git/info/exclude` so it never
