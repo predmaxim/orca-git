@@ -55,6 +55,8 @@ export async function readSelectionFiles(git: Git, hashes: string[]): Promise<Se
   }
   const tree = await emptyTree(git)
   const queue = [...groups.values()]
+  // Each group keeps its own changes: the parallel diffs finish in any order.
+  const found = new Map(queue.map((items) => [items, [] as SelectionFile[]]))
   const diffGroups = async () => {
     for (let items = queue.shift(); items; items = queue.shift()) {
       const { from, to } = items[0][1]
@@ -62,13 +64,18 @@ export async function readSelectionFiles(git: Git, hashes: string[]): Promise<Se
       const diff = await git.out(['diff', '--name-status', '-z', '-M', from ?? tree, to, '--', ...paths])
       for (const change of parseNameStatus(diff)) {
         // A change shows under the current path, or under the original one when the file was renamed and then deleted.
-        if (items.some(([path, e]) => path === change.path || (change.status === 'D' && e.orig === change.path) || e.orig === change.oldPath)) result.push({ ...change, from, to })
+        if (items.some(([path, e]) => path === change.path || (change.status === 'D' && e.orig === change.path) || e.orig === change.oldPath)) found.get(items)!.push({ ...change, from, to })
       }
     }
   }
-  // A few git processes at a time: a large selection can have hundreds of groups.
-  await Promise.all(Array.from({ length: 8 }, diffGroups))
-  return result.sort((a, b) => a.path.localeCompare(b.path))
+  // A few git processes at a time: a large selection can have hundreds of groups. The first failure stops the rest.
+  await Promise.all(Array.from({ length: 8 }, diffGroups)).catch((error) => {
+    queue.length = 0
+    throw error
+  })
+  const position = new Map(order.map((hash, i) => [hash, i]))
+  // A path can come twice (deleted, then added again): the older change first.
+  return [...result, ...[...found.values()].flat()].sort((a, b) => a.path.localeCompare(b.path) || position.get(a.to)! - position.get(b.to)!)
 }
 
 /** The diff of one file between two revisions; `from` null means the empty tree. */

@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
-import { createGit } from './git.ts'
+import { createGit, type Git } from './git.ts'
 import { readRangeDiff, readSelectionFiles } from './selection.ts'
 
 const dirs: string[] = []
@@ -85,6 +85,57 @@ test('a rename followed by a delete reports the original file as deleted', async
   ])
   const files = await readSelectionFiles(createGit(root), [h[1], h[2]])
   assert.deepEqual(files, [{ path: 'a.txt', status: 'D', from: h[0], to: h[2] }])
+})
+
+/** `git` whose diff number `slow` (from 0) answers 50 ms late, so the parallel diffs finish in another order. */
+function slowDiff(git: Git, slow: number): Git {
+  let diffs = 0
+  return {
+    ...git,
+    out: async (args, options) => {
+      if (args[0] === 'diff' && diffs++ === slow) await new Promise((resolve) => setTimeout(resolve, 50))
+      return git.out(args, options)
+    }
+  }
+}
+
+test('a path listed twice comes out in selection order, whichever diff finishes first', async () => {
+  const { root, hashes: h } = repoWith([
+    write('a.txt', 'one\ntwo\nthree\nfour\n'),
+    (r) => sh(r, 'mv', 'a.txt', 'b.txt'),
+    (r) => unlinkSync(join(r, 'b.txt')),
+    write('a.txt', 'new\n'),
+    write('a.txt', 'new\nmore\n')
+  ])
+  const git = createGit(root)
+  for (const slow of [0, 1]) {
+    assert.deepEqual(await readSelectionFiles(slowDiff(git, slow), h.slice(1)), [
+      { path: 'a.txt', status: 'D', from: h[0], to: h[2] },
+      { path: 'a.txt', status: 'A', from: h[2], to: h[4] }
+    ])
+  }
+})
+
+test('the first failing diff stops the queue: no new git process starts after it', async () => {
+  // Each commit adds a file and changes the previous one, so every file has a range, and a diff, of its own.
+  const { root, hashes: h } = repoWith(Array.from({ length: 20 }, (_, i) => (r: string) => {
+    writeFileSync(join(r, `f${i}.txt`), 'new\n')
+    if (i) writeFileSync(join(r, `f${i - 1}.txt`), 'changed\n')
+  }))
+  const git = createGit(root)
+  let diffs = 0
+  const failing: Git = {
+    ...git,
+    out: async (args, options) => {
+      if (args[0] !== 'diff') return git.out(args, options)
+      if (diffs++ === 0) throw new Error('diff failed')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      return git.out(args, options)
+    }
+  }
+  await assert.rejects(readSelectionFiles(failing, h), /diff failed/)
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  assert.ok(diffs <= 8, `${diffs} diffs ran: the failing one and the seven already running, no more`)
 })
 
 test('a long contiguous selection lists each file over the commits that touch it', async () => {
