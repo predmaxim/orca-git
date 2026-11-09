@@ -84,6 +84,7 @@ export function renderFileTree(container: HTMLElement, nodes: FileNode[], host: 
             {
               class: 'ft-row ft-dir',
               style: `padding-left:${pad}`,
+              dataset: { path: node.path },
               tabindex: '0',
               role: 'treeitem',
               'aria-expanded': String(open),
@@ -111,6 +112,7 @@ export function renderFileTree(container: HTMLElement, nodes: FileNode[], host: 
             {
               class: `ft-row file openable st-${letter}${host.current === file.path ? ' current' : ''}`,
               style: `padding-left:${pad}`,
+              dataset: { path: file.path },
               tabindex: '0',
               role: 'treeitem',
               title: `${statusName(letter) ?? file.status}: ${file.oldPath ? `${file.oldPath} → ` : ''}${file.path}`,
@@ -130,5 +132,8 @@ export function renderFileTree(container: HTMLElement, nodes: FileNode[], host: 
     }
   }
   walk(nodes, 0)
+  // A redraw replaces the rows; keep keyboard focus on the row it was on.
+  const focused = container.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.path : undefined
   container.replaceChildren(h('div', { class: 'ft', role: 'tree' }, ...rows))
+  if (focused !== undefined) rows.find((row) => row.dataset.path === focused)?.focus()
 }
