@@ -190,8 +190,8 @@ const resetModes = (): { mode: ResetMode; label: string; help: string }[] => [
   { mode: 'keep', label: 'Keep', help: t('resetKeepHelp') }
 ]
 
-/** The untracked files a hard reset overwrites, at most 10 listed. */
-export function overwrittenWarning(files: string[]): HTMLElement {
+/** The untracked files a hard reset overwrites, at most 10 listed; `stash`: the dialog offers the stash, which does not keep them. */
+export function overwrittenWarning(files: string[], stash: boolean): HTMLElement {
   return h(
     'div',
     { class: 'warning danger' },
@@ -199,7 +199,7 @@ export function overwrittenWarning(files: string[]): HTMLElement {
     h(
       'div',
       null,
-      t('hardResetOverwritten', { count: files.length }),
+      t(stash ? 'hardResetOverwrittenStash' : 'hardResetOverwritten', { count: files.length }),
       h('ul', { class: 'file-list mono' }, ...files.slice(0, 10).map((file) => h('li', null, file))),
       files.length > 10 ? t('pushedMore', { count: files.length - 10 }).trim() : null
     )
@@ -209,7 +209,8 @@ export function overwrittenWarning(files: string[]): HTMLElement {
 /** `state`: what a hard reset would lose; the stash offer and the overwritten files show with Hard. */
 export async function askReset(branch: string | null, hash: string, backup?: BackupBlock, state?: ResetCheck): Promise<ResetMode | null> {
   let chosen: ResetMode = 'mixed'
-  const overwritten = state?.overwritten.length ? overwrittenWarning(state.overwritten) : null
+  // The warning shows with Hard, and so does the stash row whenever there is a backup offer and something to stash.
+  const overwritten = state?.overwritten.length ? overwrittenWarning(state.overwritten, Boolean(backup && state.dirty)) : null
   const choose = (mode: ResetMode) => {
     chosen = mode
     backup?.showStash(mode === 'hard' && Boolean(state?.dirty))
