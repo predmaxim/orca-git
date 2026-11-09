@@ -494,7 +494,9 @@ async function refreshAll(): Promise<void> {
     repo = { ...result.repo, workspaceId: repo.workspaceId }
     if (repo.operation) showOperationBanner()
     else if (wasOperation) hideBanner()
-    await Promise.all([loadRefs(), reloadLog(true)])
+    // A jump waits for this reload too, so it lands on the refreshed rows.
+    filterReload = reloadLog(true)
+    await Promise.all([loadRefs(), filterReload])
   })().finally(() => (refreshing = null))
   return refreshing
 }
