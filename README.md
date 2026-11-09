@@ -55,7 +55,8 @@ them, and a right-click menu to rewrite history. The interface follows Orca's la
   - Edit Commit Message…, Fixup, Squash Commits…, Drop Commits, Interactively Rebase from Here…
   - New Branch…, New Tag…
 - **Undo** banner after each rewrite (resets back to the previous HEAD with `--keep`).
-- Commits already pushed to a remote branch trigger a warning before they are rewritten.
+- Commits already pushed to a remote branch trigger a warning before they are rewritten: by Edit Commit
+  Message, Fixup, Squash, Drop, the interactive rebase, Undo Commit or Rebase Current onto This.
 - **Refresh** re-reads the log and branches; **Fetch** runs `git fetch --all` (without `--prune`) and
   reports the result in the banner. It never asks for a password: it works through the SSH agent and
   git's credential helpers.

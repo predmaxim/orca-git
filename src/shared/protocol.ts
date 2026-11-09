@@ -202,6 +202,8 @@ declare module 'orca' {
     'action.check': { input: { root: string; kind: RewriteKind; hashes: string[] }; output: CheckResult }
     'action.run': { input: { root: string; action: ActionRequest }; output: ActionResult }
     'branch.run': { input: { root: string; action: BranchAction }; output: BranchActionResult }
+    /** Remote branches holding commits that rebasing the current branch onto `name` would rewrite. */
+    'branch.check': { input: { root: string; name: string }; output: { pushed: string[] } }
     'repo.fetch': { input: { root: string }; output: ActionResult }
     'tab.open': { input: { workspaceId?: string; reveal?: TabReveal }; output: { ok: boolean; reason?: string } }
     'tab.take': { input: { root: string }; output: TabReveal | null }

@@ -4,7 +4,7 @@ import type { OrcaWorkerApi } from 'orca/worker'
 import { pickLocale, setLocale, t } from '../shared/i18n.ts'
 import type { RepoResult, TabReveal } from '../shared/protocol.ts'
 import { checkRewrite, runAction } from './actions.ts'
-import { fetchAll, runBranchAction } from './branchActions.ts'
+import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
 import { createGit, type Git } from './git.ts'
 import { readDetails, readLogPage, readRefs } from './log.ts'
 import { focusedWorkspace, resolveRepo, toplevel } from './repo.ts'
@@ -145,6 +145,8 @@ export default function activate(orca: OrcaWorkerApi): void {
     orca.panels.post('repo.changed', { root })
     return result
   })
+
+  handle('branch.check', async ({ root, name }) => checkRebaseOnto(await gitFor(root), name))
 
   handle('repo.fetch', async ({ root }) => {
     const result = await fetchAll(await gitFor(root))

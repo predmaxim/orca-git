@@ -661,7 +661,7 @@ function branchMenu(event: MouseEvent, ref: BranchRef & { kind: 'local' | 'remot
     if (!current) {
       entries.push(
         { label: t('branchMerge'), icon: 'branch', run: () => void act({ kind: 'merge', name: ref.name }, t('branchMerging', { name: ref.name })) },
-        { label: t('branchRebase'), icon: 'rebase', run: () => void act({ kind: 'rebaseOnto', name: ref.name }, t('branchRebasing', { name: ref.name })) }
+        { label: t('branchRebase'), icon: 'rebase', run: () => void rebaseOnto(ref.name) }
       )
     }
   }
@@ -1097,6 +1097,21 @@ async function deleteBranch(name: string): Promise<void> {
   if (result?.needsForce && (await confirm(t('branchDeleteTitle'), t('branchDeleteForce', { name }), t('branchDelete'), true))) {
     await act({ kind: 'delete', name, force: true }, t('branchDeleting', { name }))
   }
+}
+
+async function rebaseOnto(name: string): Promise<void> {
+  if (!repo) return
+  const done = busy(t('checking'))
+  let pushed: string[]
+  try {
+    pushed = (await api.branchCheck(repo.root, name)).pushed
+  } catch (error) {
+    showBanner(errorMessage(error), 'error')
+    return
+  } finally {
+    done()
+  }
+  if (await confirmPushed(pushed, t('btnRebase'))) await act({ kind: 'rebaseOnto', name }, t('branchRebasing', { name }))
 }
 
 async function newTag(hash: string): Promise<void> {

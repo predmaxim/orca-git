@@ -3,7 +3,7 @@ import { assertName } from './actions.ts'
 import { lastLines, type Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
 import { readHead } from './log.ts'
-import { operationInProgress } from './rebase.ts'
+import { operationInProgress, pushedTo } from './rebase.ts'
 
 const NETWORK_TIMEOUT_MS = 120_000
 
@@ -41,13 +41,32 @@ async function perform(git: Git, action: BranchAction): Promise<BranchActionResu
   }
 }
 
-async function integrate(git: Git, kind: 'merge' | 'rebase', target: string): Promise<BranchActionResult> {
-  const busy = await operationInProgress(git)
-  if (busy) throw new Error(t('opInProgress', { operation: busy }))
-  const name = target.trim()
+/** `target` trimmed, once git confirms it names a commit. */
+async function assertTarget(git: Git, target: unknown): Promise<string> {
+  const name = typeof target === 'string' ? target.trim() : ''
   if (!name || name.startsWith('-') || !(await git.run(['rev-parse', '--verify', '-q', '--end-of-options', `${name}^{commit}`])).ok) {
     throw new Error(t('notBranchOrCommit', { name }))
   }
+  return name
+}
+
+/** Remote branches that already hold commits a rebase of HEAD onto `target` would rewrite. */
+export async function checkRebaseOnto(git: Git, target: string): Promise<{ pushed: string[] }> {
+  const name = await assertTarget(git, target)
+  const rows = (await git.out(['rev-list', '--parents', '--end-of-options', `${name}..HEAD`, '--'])).split('\n').filter(Boolean).map((line) => line.split(' '))
+  const range = new Set(rows.map(([hash]) => hash))
+  // A remote branch holding any of these commits holds one of the oldest too, so only those are checked.
+  const pushed = new Set<string>()
+  for (const [hash, ...parents] of rows) {
+    if (!parents.some((parent) => range.has(parent))) for (const ref of await pushedTo(git, hash)) pushed.add(ref)
+  }
+  return { pushed: [...pushed] }
+}
+
+async function integrate(git: Git, kind: 'merge' | 'rebase', target: string): Promise<BranchActionResult> {
+  const busy = await operationInProgress(git)
+  if (busy) throw new Error(t('opInProgress', { operation: busy }))
+  const name = await assertTarget(git, target)
   const previousHead = (await readHead(git)).hash ?? undefined
   const args = kind === 'merge' ? ['merge', '--no-edit', '--autostash', name] : ['rebase', '--autostash', name]
   const result = await git.run(args, { timeoutMs: NETWORK_TIMEOUT_MS })

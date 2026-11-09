@@ -59,6 +59,7 @@ export const api = {
   check: (root: string, kind: RewriteKind, hashes: string[]): Promise<CheckResult> =>
     call('action.check', { root, kind, hashes }, LONG),
   branch: (root: string, action: BranchAction): Promise<BranchActionResult> => call('branch.run', { root, action }, LONG),
+  branchCheck: (root: string, name: string): Promise<{ pushed: string[] }> => call('branch.check', { root, name }, LONG),
   run: (root: string, action: ActionRequest): Promise<ActionResult> => call('action.run', { root, action }, LONG),
   // Outlasts the worker's 120 s git fetch timeout, so its message arrives instead of a frame timeout.
   fetch: (root: string): Promise<ActionResult> => call('repo.fetch', { root }, { timeoutMs: 150_000 }),

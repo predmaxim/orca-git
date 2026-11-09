@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
-import { fetchAll, runBranchAction } from './branchActions.ts'
+import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
 import { createGit } from './git.ts'
 
 const dirs: string[] = []
@@ -167,6 +167,21 @@ test('merge and rebase onto warn, without undo, when the uncommitted changes can
   assert.equal(rebase.previousHead, undefined)
   assert.ok(rebase.message.startsWith('Rebased the current branch onto main.'), rebase.message)
   assert.match(sh(rebased, 'stash', 'list'), /autostash/)
+})
+
+test('the rebase onto check names the remote branches holding commits it would rewrite', async () => {
+  const base = mkdtempSync(join(tmpdir(), 'git-log-pushed-'))
+  dirs.push(base)
+  sh(base, 'init', '-q', '--bare', 'origin.git')
+  const root = forked()
+  sh(root, 'remote', 'add', 'origin', join(base, 'origin.git'))
+  sh(root, 'checkout', '-q', 'topic')
+  const git = createGit(root)
+  assert.deepEqual(await checkRebaseOnto(git, 'main'), { pushed: [] })
+  sh(root, 'push', '-q', 'origin', 'main', 'topic')
+  assert.deepEqual(await checkRebaseOnto(git, 'main'), { pushed: ['origin/topic'] })
+  assert.deepEqual(await checkRebaseOnto(git, 'topic'), { pushed: [] })
+  await assert.rejects(checkRebaseOnto(git, '--all'), /is not a branch or commit/)
 })
 
 test('merge is refused while a rebase is in progress', async () => {
