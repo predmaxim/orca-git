@@ -57,6 +57,9 @@ them, and a right-click menu to rewrite history. The interface follows Orca's la
 - **Undo** banner after each rewrite (resets back to the previous HEAD with `--keep`).
 - Commits already pushed to a remote branch trigger a warning before they are rewritten: by Edit Commit
   Message, Fixup, Squash, Drop, the interactive rebase, Undo Commit or Rebase Current onto This.
+- An action runs in the repository its menu was opened on. If the workspace switches to another
+  repository while a dialog is open (or, for an action on the current branch, HEAD moves), nothing
+  runs and a banner says so. New branch and rename refuse names git would expand, like `@{-1}`.
 - **Refresh** re-reads the log and branches; **Fetch** runs `git fetch --all` (without `--prune`) and
   reports the result in the banner. It never asks for a password: it works through the SSH agent and
   git's credential helpers.
