@@ -4,15 +4,15 @@
   "id": "git-log",
   "name": "Git",
   "version": "0.2.0",
-  "description": "WebStorm-style Git log for Orca: branches, commits and the files of a multi-commit selection with a side-by-side diff. Fork of emamalet/Orca-git-log-panel.",
+  "description": "WebStorm-style Git log for Orca: branches, commits and the files of a multi-commit selection in the sidebar, their diffs in a Diff tab. Fork of emamalet/Orca-git-log-panel.",
   "license": "MIT",
   "repository": "https://github.com/predmaxim/orca-git-log-panel",
   "icon": "images/icon.png",
-  "cover": { "path": "images/log-dark.png", "alt": "Git tab with the branches, commits, files and details sections on the left and a side-by-side diff of a TypeScript file on the right" },
+  "cover": { "path": "images/git-dark.png", "alt": "Git sidebar on the right with six selected commits and their files, and the Diff tab with a unified diff of one of those files on the left" },
   "screenshots": [
-    { "path": "images/log-dark.png", "alt": "Six selected commits across two merges, the files they changed as a tree, and a side-by-side diff of one file", "caption": "Select commits, see the files of the whole selection and a highlighted diff beside them", "theme": "dark" },
-    { "path": "images/diff-dark.png", "alt": "Unified diff of a TypeScript file with added and removed lines and syntax highlighting", "caption": "Unified or side-by-side diff with syntax highlighting", "theme": "dark" },
-    { "path": "images/branches-dark.png", "alt": "Branches section expanded: local and remote branches grouped into folders by prefix", "caption": "Branch tree grouped into folders, with checkout, rename, merge and rebase actions", "theme": "dark" }
+    { "path": "images/git-dark.png", "alt": "Six selected commits across two merges, the files they changed as a tree and the details of each commit in the sidebar; the Diff tab shows one of the files", "caption": "Select commits in the sidebar, see the files of the whole selection and open one in the Diff tab", "theme": "dark" },
+    { "path": "images/diff-dark.png", "alt": "Diff tab with a side-by-side diff of a TypeScript file and syntax highlighting", "caption": "Click a file to see its diff in the Diff tab, side by side or unified", "theme": "dark" },
+    { "path": "images/branches-dark.png", "alt": "Branches section of the sidebar expanded: local and remote branches grouped into folders by prefix", "caption": "Branch tree grouped into folders, with checkout, rename, merge and rebase actions", "theme": "dark" }
   ],
   "engines": {
     "orca": ">=1.4.248"

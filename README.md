@@ -1,10 +1,10 @@
 # Git for Orca
 
-![Git tab: branches, commits and files on the left, a side-by-side diff on the right](images/log-dark.png)
+![Git sidebar with six selected commits and their files on the right, the Diff tab with one of the files on the left](images/git-dark.png)
 
 ## About this fork
 
-This is a fork of [emamalet/Orca-git-log-panel](https://github.com/emamalet/Orca-git-log-panel) that reshapes the interface after the WebStorm Git tool window: a branches tree, the commit list and the files of a multi-commit selection with a side-by-side diff. The Git engine (`src/worker`) is kept as close to upstream as possible. The design is in [docs/superpowers](docs/superpowers) and the engine review in [docs/engine-review.md](docs/engine-review.md).
+This is a fork of [emamalet/Orca-git-log-panel](https://github.com/emamalet/Orca-git-log-panel) that reshapes the interface after the WebStorm Git tool window: a sidebar with a branches tree, the commit list and the files of a multi-commit selection, and a Diff tab for the file you click. The Git engine (`src/worker`) is kept as close to upstream as possible. The design is in [docs/superpowers](docs/superpowers) and the engine review in [docs/engine-review.md](docs/engine-review.md).
 
 To pull in upstream changes:
 
@@ -15,10 +15,10 @@ git fetch upstream && git log --oneline main..upstream/main
 Then bring over what you need with `git cherry-pick` or `git merge upstream/main`. Pull requests are not sent to upstream.
 
 An [Orca](https://www.onorca.dev) plugin that adds a WebStorm-style **Git** view to Orca: a branch tree, a
-colored commit graph, the files changed by a whole multi-commit selection, a syntax-highlighted diff beside
-them, and a right-click menu to rewrite history. The interface follows Orca's language (English and Russian).
+colored commit graph, the files changed by a whole multi-commit selection, a syntax-highlighted diff in an
+editor tab, and a right-click menu to rewrite history. The interface follows Orca's language (English and Russian).
 
-![Unified diff with syntax highlighting](images/diff-dark.png)
+![Diff tab: a side-by-side diff of a TypeScript file with syntax highlighting](images/diff-dark.png)
 
 ![Branch tree grouped into folders](images/branches-dark.png)
 
@@ -38,14 +38,15 @@ them, and a right-click menu to rewrite history. The interface follows Orca's la
 - **Files of the selection**: the changed files of all selected commits as a folder tree with status
   letters (added, modified, deleted, renamed), expand/collapse all. For each file the diff runs from its
   state before the earliest selected commit that touched it to its state after the latest one, so a
-  selection across a merge works too. One click opens the file's diff.
+  selection across a merge works too. A click (or Enter) opens the file's diff in the Diff tab.
 - **Details section**: one row per selected commit (short hash, title, author); click a row to expand
   the full message, author, committer, date and branches. A single selected commit is expanded at once.
-- **Diff viewer**: shown beside the sections in the editor tab. Side by side or unified, with changed
-  words highlighted and syntax highlighting for 26 languages (light and dark palettes in the style of
-  WebStorm, the plugin's own because Orca does not pass theme token colors to plugins). Toggle **Whole
-  file** for full context, jump between changes with F7 / Shift+F7 and between files with the arrows in
-  the header or Alt+↑ / Alt+↓. Merge commits are compared with their first parent.
+- **Diff tab**: one editor tab per repository; the next file you open replaces its content. Side by
+  side or unified, with changed words highlighted and syntax highlighting for 26 languages (light and
+  dark palettes in the style of WebStorm, the plugin's own because Orca does not pass theme token colors
+  to plugins). Toggle **Whole file** for full context, jump between changes with F7 / Shift+F7 and
+  between the files of the selection it was opened from with the arrows in the header or Alt+↑ /
+  Alt+↓ (counter "3/5 files"). Merge commits are compared with their first parent.
 - **Multi-select**: click, Ctrl/⌘-click, Shift-click, arrows, Page Up/Down, Home/End, Ctrl+A.
 - **Right-click menu** with icons (or Shift+F10):
   - Copy Revision Number (Ctrl+C), Cherry-Pick, Create Patch… (`git format-patch` of the selection,
@@ -67,14 +68,14 @@ them, and a right-click menu to rewrite history. The interface follows Orca's la
 
 ## Where it shows
 
-- **Right sidebar panel** "Git": the Branches, Commits, Files and Details sections in one column;
-  in a narrow column a commit takes two lines (message, then author and date). Clicking a file there
-  opens the editor tab with the same selection and that file's diff.
-- **Editor tab**: run **Git: Open in Editor Tab** from the command palette (or click the ↗ button
-  in the panel) for the same four sections on the left (Details is the fourth) and the diff of the
-  chosen file on the right, at full height. It opens a small anchor file,
-  `.orca-git-log.gitlog`, at the workspace root; the plugin adds it to `.git/info/exclude` so it never
-  shows up as untracked.
+- **Right sidebar panel** "Git", the plugin's only view: the Branches, Commits, Files and Details
+  sections in one column; in a narrow column a commit takes two lines (message, then author and date).
+- **Diff tab**: opens when you click a file in the panel. Orca has no API for a plugin tab without a
+  file, so the tab is a custom editor on a small anchor file, `.orca-git-log.gitdiff`, that the plugin
+  writes at the root of the workspace holding the repository and adds to `.git/info/exclude`, so it
+  never shows up as untracked. It is opened only in a workspace whose repository is the panel's. An
+  anchor `.orca-git-log.gitlog` left by an earlier version (with a full "Git" tab) stays hidden the
+  same way and can be deleted.
 
 ## Install
 
@@ -97,6 +98,7 @@ orca plugin dev load .          # loads as local.git-log; prints a fingerprint, 
 orca plugin test .              # worker and graph tests on temporary repositories
 orca plugin validate .
 orca plugin shot local.git-log --panel log
+orca plugin shot local.git-log --editor <repo>/.orca-git-log.gitdiff   # the Diff tab, once a file was opened from the panel
 ```
 
 ## How history rewriting works
@@ -110,6 +112,10 @@ a conflict it is aborted, and the branch is left exactly as it was.
 
 - Local workspaces only: SSH, WSL and paired-host workspaces are not supported yet.
 - The diff viewer is read-only, and very large diffs are cut after 20,000 lines.
+- The Diff tab steps through at most 2,000 files: for a larger selection it gets the 2,000 around the
+  file you clicked.
+- The Diff tab's content lives in the plugin's worker: after Orca restarts, a restored Diff tab shows
+  its placeholder until you open a file again.
 - Conflicts during a rewrite, cherry-pick or revert are not resolved in the panel; the operation is
   aborted (or, when Git is left mid-operation by a terminal command, a banner says so).
 - When several workspaces share the same name and branch, the panel matches the focused one through
