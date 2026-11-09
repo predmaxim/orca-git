@@ -1,6 +1,6 @@
 # Git Log for Orca
 
-![Git Log for Orca: commit graph and right-click menu to squash, fixup or drop commits](images/cover.png)
+![Git tab: branches, commits and files on the left, a side-by-side diff on the right](images/log-dark.png)
 
 ## About this fork
 
@@ -14,33 +14,38 @@ git fetch upstream && git log --oneline main..upstream/main
 
 Then bring over what you need with `git cherry-pick` or `git merge upstream/main`. Pull requests are not sent to upstream.
 
-An [Orca](https://www.onorca.dev) plugin that adds a full **Git Log** view to Orca:
-a colored commit graph with branch and tag labels, author/date/hash columns, filters, a branch tree,
-a details pane with file diffs, and a right-click menu to rewrite history on a multi-selection.
+An [Orca](https://www.onorca.dev) plugin that adds a WebStorm-style **Git** view to Orca: a branch tree, a
+colored commit graph, the files changed by a whole multi-commit selection, a syntax-highlighted diff beside
+them, and a right-click menu to rewrite history. The interface follows Orca's language (English and Russian).
 
-![Git Log with a multi-selection and its context menu](images/log-dark.png)
+![Unified diff with syntax highlighting](images/diff-dark.png)
 
-![Side-by-side diff of a changed file](images/diff-dark.png)
-
-![Interactive rebase dialog](images/rebase-dark.png)
-
-![Light theme](images/log-light.png)
+![Branch tree grouped into folders](images/branches-dark.png)
 
 ## Features
 
-- **Sections**: Branches, Commits and Files stack in a column, like the WebStorm Git tool window. Click
+- **Sections**: Branches, Commits, Files and Details stack in a column, like the WebStorm Git tool window. Click
   a header to collapse a section to one line with its summary (current branch, number of selected
   commits); drag the line between open sections to resize them. The layout is remembered.
 - **Commit graph**: colored lanes, merges, ref labels (`origin & main`, tags, HEAD), commits not
   reachable from HEAD are dimmed.
 - **Filters**: text or hash (with regex `.*` and match case `Cc`), Branch, User, Date and Paths.
-- **Branch tree**: Local, Remote and Tags; click a branch to jump to its commit, double-click to show
-  only that branch, right-click to check it out.
-- **Details section**: message, author, committer, refs, parents and changed files of the selected commit.
-- **Diff viewer**: double-click a changed file (or press Enter on it) to see what the commit changed,
-  side by side or unified, with changed words highlighted. Toggle **Whole file** for full context,
-  jump between changes with F7 / Shift+F7 and between files with Alt+↑ / Alt+↓; Esc closes it.
-  Merge commits are compared with their first parent.
+- **Branch tree**: HEAD, Local, Remote and Tags, with branches grouped into folders by prefix (`feature/`,
+  `fix/`); search by name. Click a branch to filter the log by it (click again to clear), double-click
+  to jump to its commit. Right-click for checkout, new branch from it, rename,
+  delete (local only; an unmerged branch asks first), merge into the current branch and rebase the
+  current branch onto it.
+- **Files of the selection**: the changed files of all selected commits as a folder tree with status
+  letters (added, modified, deleted, renamed), expand/collapse all. For each file the diff runs from its
+  state before the earliest selected commit that touched it to its state after the latest one, so a
+  selection across a merge works too. One click opens the file's diff.
+- **Details section**: one row per selected commit (short hash, title, author); click a row to expand
+  the full message, author, committer, date and branches. A single selected commit is expanded at once.
+- **Diff viewer**: shown beside the sections in the editor tab. Side by side or unified, with changed
+  words highlighted and syntax highlighting for 26 languages (light and dark palettes in the style of
+  WebStorm, the plugin's own because Orca does not pass theme token colors to plugins). Toggle **Whole
+  file** for full context, jump between changes with F7 / Shift+F7 and between files with the arrows in
+  the header or Alt+↑ / Alt+↓. Merge commits are compared with their first parent.
 - **Multi-select**: click, Ctrl/⌘-click, Shift-click, arrows, Page Up/Down, Home/End, Ctrl+A.
 - **Right-click menu** with icons (or Shift+F10):
   - Copy Revision Number (Ctrl+C), Cherry-Pick, Create Patch… (`git format-patch` of the selection,
@@ -59,7 +64,8 @@ a details pane with file diffs, and a right-click menu to rewrite history on a m
 ## Where it shows
 
 - **Right sidebar panel** "Git Log": the Branches, Commits, Files and Details sections in one column;
-  the log drops columns as the panel narrows.
+  in a narrow column a commit takes two lines (message, then author and date). Clicking a file there
+  opens the editor tab with the same selection and that file's diff.
 - **Editor tab**: run **Git Log: Open in Editor Tab** from the command palette (or click the ↗ button
   in the panel) for the sections column on the left and the diff area on the right, with the Details
   section under it. It opens a small anchor file,
@@ -69,7 +75,7 @@ a details pane with file diffs, and a right-click menu to rewrite history on a m
 ## Install
 
 ```sh
-orca plugin install https://github.com/emamalet/Orca-git-log-panel
+orca plugin install https://github.com/predmaxim/orca-git-log-panel
 ```
 
 Requires Orca 1.4.248 or later and `git` on the `PATH` (or set **Git executable** in the plugin

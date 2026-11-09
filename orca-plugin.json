@@ -8,12 +8,11 @@
   "license": "MIT",
   "repository": "https://github.com/predmaxim/orca-git-log-panel",
   "icon": "images/icon.png",
-  "cover": { "path": "images/cover.png", "alt": "Git Log title and logo next to the commit graph with three selected commits and the right-click menu to squash, fixup or drop them" },
+  "cover": { "path": "images/log-dark.png", "alt": "Git tab with the branches, commits, files and details sections on the left and a side-by-side diff of a TypeScript file on the right" },
   "screenshots": [
-    { "path": "images/log-dark.png", "alt": "Commit log with three selected commits and the right-click menu open", "caption": "Multi-select commits and rewrite them from the context menu", "theme": "dark" },
-    { "path": "images/diff-dark.png", "alt": "Side-by-side diff of a TypeScript file with added and removed lines highlighted", "caption": "Double-click a changed file to see its diff, side by side or unified", "theme": "dark" },
-    { "path": "images/rebase-dark.png", "alt": "Interactive rebase dialog listing four commits with pick actions", "caption": "Interactive rebase: reorder, squash, fixup, reword or drop", "theme": "dark" },
-    { "path": "images/log-light.png", "alt": "Commit graph with branch tree and commit details in the light theme", "caption": "Commit graph, branch tree and details", "theme": "light" }
+    { "path": "images/log-dark.png", "alt": "Six selected commits across two merges, the files they changed as a tree, and a side-by-side diff of one file", "caption": "Select commits, see the files of the whole selection and a highlighted diff beside them", "theme": "dark" },
+    { "path": "images/diff-dark.png", "alt": "Unified diff of a TypeScript file with added and removed lines and syntax highlighting", "caption": "Unified or side-by-side diff with syntax highlighting", "theme": "dark" },
+    { "path": "images/branches-dark.png", "alt": "Branches section expanded: local and remote branches grouped into folders by prefix", "caption": "Branch tree grouped into folders, with checkout, rename, merge and rebase actions", "theme": "dark" }
   ],
   "engines": {
     "orca": ">=1.4.248"
