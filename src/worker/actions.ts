@@ -29,10 +29,11 @@ async function assertName(git: Git, name: string, kind: 'branch' | 'tag'): Promi
 }
 
 /** `hashes` sorted oldest first (topological), for cherry-pick. */
-async function oldestFirst(git: Git, hashes: string[]): Promise<string[]> {
-  const out = await git.out(['rev-list', '--no-walk=sorted', '--topo-order', ...hashes])
-  const order = out.split(/\r?\n/).filter(Boolean)
-  return order.reverse()
+export async function oldestFirst(git: Git, hashes: string[]): Promise<string[]> {
+  // --no-walk ignores --topo-order and orders by commit time, which ties within one second; walk the history instead.
+  const wanted = new Set(hashes)
+  const out = await git.out(['rev-list', '--topo-order', '--reverse', ...hashes])
+  return out.split(/\r?\n/).filter((hash) => wanted.has(hash))
 }
 
 async function sequencer(git: Git, verb: 'cherry-pick' | 'revert', args: string[]): Promise<void> {

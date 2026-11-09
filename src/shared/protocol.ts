@@ -74,6 +74,12 @@ export interface FileChange {
   oldPath?: string
 }
 
+/** A file changed by a commit selection, between two revisions (`from` null: the empty tree). */
+export interface SelectionFile extends FileChange {
+  from: string | null
+  to: string
+}
+
 export interface CommitDetails {
   hash: string
   parents: string[]
@@ -171,6 +177,8 @@ declare module 'orca' {
     'log.page': { input: { root: string; filter: LogFilter; skip: number; limit?: number }; output: LogPage }
     'commit.details': { input: { root: string; hash: string }; output: CommitDetails }
     'file.diff': { input: { root: string; hash: string; path: string; oldPath?: string; wholeFile?: boolean }; output: FileDiff }
+    'selection.files': { input: { root: string; hashes: string[] }; output: SelectionFile[] }
+    'range.diff': { input: { root: string; from: string | null; to: string; path: string; oldPath?: string; wholeFile?: boolean }; output: FileDiff }
     'patch.create': { input: { root: string; hashes: string[]; path?: string; overwrite?: boolean }; output: PatchResult }
     'action.check': { input: { root: string; kind: RewriteKind; hashes: string[] }; output: CheckResult }
     'action.run': { input: { root: string; action: ActionRequest }; output: ActionResult }
