@@ -418,8 +418,33 @@ async function reloadLog(keepCount = false): Promise<void> {
   updateDetails()
 }
 
-async function loadMore(): Promise<void> {
-  if (!repo || loading || !hasMore) return
+/** The page being fetched, so a second caller waits for it instead of returning at once. */
+let pageLoad: Promise<void> | null = null
+
+function loadMore(): Promise<void> {
+  if (loading) return pageLoad ?? filterReload
+  if (!repo || !hasMore) return Promise.resolve()
+  const load = loadPage().finally(() => {
+    if (pageLoad === load) pageLoad = null
+  })
+  pageLoad = load
+  return load
+}
+
+/** Pages in rows until `done()`, the log ends or 10 000 rows are loaded; stops when a page changes nothing. */
+async function loadUntil(done: () => boolean): Promise<void> {
+  await filterReload
+  while (!done() && hasMore && rows.length < 10_000) {
+    const token = loadToken
+    const before = rows.length
+    await loadMore()
+    if (token !== loadToken) await filterReload // a reload replaced the list; start over on the new one
+    else if (rows.length === before && hasMore) return
+  }
+}
+
+async function loadPage(): Promise<void> {
+  if (!repo) return
   const token = loadToken
   loading = true
   try {
@@ -692,7 +717,7 @@ async function applyReveal(reveal: TabReveal): Promise<void> {
   await filterReload
   const wanted = new Set(reveal.hashes)
   const missing = () => reveal.hashes.filter((hash) => !indexByHash.has(hash))
-  while (missing().length && hasMore && rows.length < 10_000) await loadMore()
+  await loadUntil(() => !missing().length)
   const found = reveal.hashes.filter((hash) => indexByHash.has(hash))
   if (found.length < wanted.size) showBanner(t('revealMissing', { count: wanted.size - found.length }), 'info')
   if (!found.length) return
@@ -712,12 +737,8 @@ async function applyReveal(reveal: TabReveal): Promise<void> {
 }
 
 async function jumpTo(hash: string): Promise<void> {
-  await filterReload
-  let index = indexByHash.get(hash)
-  while (index === undefined && hasMore && rows.length < 10_000) {
-    await loadMore()
-    index = indexByHash.get(hash)
-  }
+  await loadUntil(() => indexByHash.has(hash))
+  const index = indexByHash.get(hash)
   if (index === undefined) {
     showBanner(isFiltered() || filter.branches?.length ? 'That commit is hidden by the current filters.' : 'That commit is not in the log.', 'info')
     return
