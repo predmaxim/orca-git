@@ -4,6 +4,7 @@ import { h, icon } from './dom.ts'
 import { changedRange, changeStarts, splitRows } from './diffmodel.ts'
 import { shortHash, STATUS_NAMES } from './format.ts'
 import { t } from '../shared/i18n.ts'
+import { highlightLines, languageFor, markRange } from './highlight.ts'
 
 export type DiffMode = 'split' | 'unified'
 
@@ -34,10 +35,32 @@ function wordRanges(hunks: DiffHunk[]): Map<DiffLine, [number, number]> {
   return ranges
 }
 
-function code(line: DiffLine | undefined, ranges: Map<DiffLine, [number, number]>): HTMLElement {
+/** Highlighted HTML per line: each hunk's old side (context and `-`) and new side (context and `+`) are highlighted on their own. */
+function highlightHunks(hunks: DiffHunk[], language: string | null): Map<DiffLine, string> {
+  const html = new Map<DiffLine, string>()
+  if (!language) return html
+  for (const hunk of hunks) {
+    for (const [side, skip] of [['new', '-'], ['old', '+']] as const) {
+      const lines = hunk.lines.filter((line) => line.kind !== skip)
+      const result = highlightLines(lines.map((line) => line.text), language)
+      // The old pass only fills the lines the new pass does not have.
+      lines.forEach((line, i) => (side === 'new' || line.kind === '-') && html.set(line, result[i]))
+    }
+  }
+  return html
+}
+
+function code(line: DiffLine | undefined, ranges: Map<DiffLine, [number, number]>, html: Map<DiffLine, string>): HTMLElement {
   if (!line) return h('div', { class: 'd-code d-empty' })
   const range = ranges.get(line)
   const cls = `d-code ${line.kind === '+' ? 'add' : line.kind === '-' ? 'del' : ''}`
+  const colored = html.get(line)
+  if (colored !== undefined) {
+    const el = h('div', { class: cls })
+    const marked = range && range[0] !== range[1] ? markRange(colored, range[0], range[1], 'word') : colored
+    el.innerHTML = marked || '\u200b'
+    return el
+  }
   if (!range || range[0] === range[1]) return h('div', { class: cls }, line.text || '\u200b')
   return h(
     'div',
@@ -57,6 +80,7 @@ const hunkRow = (hunk: DiffHunk) =>
 /** The single place that turns hunks into rows. */
 function renderLines(diff: FileDiff, mode: DiffMode): { rows: HTMLElement[]; changes: HTMLElement[] } {
   const ranges = wordRanges(diff.hunks)
+  const html = highlightHunks(diff.hunks, languageFor(diff.path))
   const rows: HTMLElement[] = []
   const changed: boolean[] = []
   for (const hunk of diff.hunks) {
@@ -68,13 +92,13 @@ function renderLines(diff: FileDiff, mode: DiffMode): { rows: HTMLElement[]; cha
       for (const { left, right } of splitRows(hunk)) {
         const isChange = left?.kind !== ' ' || right?.kind !== ' '
         rows.push(
-          h('div', { class: `d-row${isChange ? ' change' : ''}` }, num(left?.old, left?.kind), code(left, ranges), num(right?.new, right?.kind), code(right, ranges))
+          h('div', { class: `d-row${isChange ? ' change' : ''}` }, num(left?.old, left?.kind), code(left, ranges, html), num(right?.new, right?.kind), code(right, ranges, html))
         )
         changed.push(isChange)
       }
     } else {
       for (const line of hunk.lines) {
-        rows.push(h('div', { class: `d-row${line.kind === ' ' ? '' : ' change'}` }, num(line.old, line.kind), num(line.new, line.kind), code(line, ranges)))
+        rows.push(h('div', { class: `d-row${line.kind === ' ' ? '' : ' change'}` }, num(line.old, line.kind), num(line.new, line.kind), code(line, ranges, html)))
         changed.push(line.kind !== ' ')
       }
     }

@@ -1539,3 +1539,81 @@ textarea.field {
   color: var(--fg);
   opacity: 0.75;
 }
+
+/* Syntax colors in the WebStorm palette: Orca gives frames no token colors, only the dark/light class. */
+:root {
+  --hl-keyword: #cf8e6d;
+  --hl-string: #6aab73;
+  --hl-number: #2aacb8;
+  --hl-comment: #7a7e85;
+  --hl-function: #56a8f5;
+  --hl-attr: #c77dbb;
+  --hl-tag: #d5b778;
+  --hl-type: #16baac;
+  --hl-meta: #b3ae60;
+}
+
+:root.light {
+  --hl-keyword: #0033b3;
+  --hl-string: #067d17;
+  --hl-number: #1750eb;
+  --hl-comment: #8c8c8c;
+  --hl-function: #00627a;
+  --hl-attr: #871094;
+  --hl-tag: #0033b3;
+  --hl-type: #008080;
+  --hl-meta: #9e880d;
+}
+
+.diff-lines .hljs-keyword,
+.diff-lines .hljs-literal,
+.diff-lines .hljs-selector-tag,
+.diff-lines .hljs-doctag {
+  color: var(--hl-keyword);
+}
+
+.diff-lines .hljs-string,
+.diff-lines .hljs-regexp,
+.diff-lines .hljs-symbol,
+.diff-lines .hljs-addition {
+  color: var(--hl-string);
+}
+
+.diff-lines .hljs-number {
+  color: var(--hl-number);
+}
+
+.diff-lines .hljs-comment,
+.diff-lines .hljs-quote {
+  color: var(--hl-comment);
+  font-style: italic;
+}
+
+.diff-lines .hljs-title.function_,
+.diff-lines .hljs-function > .hljs-title {
+  color: var(--hl-function);
+}
+
+.diff-lines .hljs-attr,
+.diff-lines .hljs-attribute,
+.diff-lines .hljs-property,
+.diff-lines .hljs-variable,
+.diff-lines .hljs-template-variable {
+  color: var(--hl-attr);
+}
+
+.diff-lines .hljs-tag,
+.diff-lines .hljs-name {
+  color: var(--hl-tag);
+}
+
+.diff-lines .hljs-type,
+.diff-lines .hljs-built_in,
+.diff-lines .hljs-title.class_ {
+  color: var(--hl-type);
+}
+
+.diff-lines .hljs-meta,
+.diff-lines .hljs-meta .hljs-keyword {
+  color: var(--hl-meta);
+}

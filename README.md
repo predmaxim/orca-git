@@ -100,6 +100,10 @@ a conflict it is aborted, and the branch is left exactly as it was.
 - When several workspaces share the same name and branch, the panel matches the focused one through
   its terminal titles; if that is not enough it asks you to pick, and remembers the choice.
 
+## Third-party code
+
+The diff is highlighted with [highlight.js](https://highlightjs.org) 11.12.0 (BSD-3-Clause), vendored as ES modules in `src/vendor/highlight/` (core and 26 language files, 128 KiB, license next to them). They are the npm package `@highlightjs/cdn-assets` byte for byte; the plugin has no build step.
+
 ## License
 
 MIT
