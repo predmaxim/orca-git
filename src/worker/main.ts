@@ -2,9 +2,10 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { dirname, join, resolve } from 'node:path'
 import type { OrcaWorkerApi } from 'orca/worker'
 import { pickLocale, setLocale, t } from '../shared/i18n.ts'
-import type { RepoResult, TabReveal } from '../shared/protocol.ts'
+import type { DiffTabState, RepoResult, TabReveal } from '../shared/protocol.ts'
 import { checkRewrite, runAction } from './actions.ts'
 import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
+import { DIFF_ANCHOR, validDiffState, workspaceFor } from './diffTab.ts'
 import { createGit, type Git } from './git.ts'
 import { readDetails, readLogPage, readRefs } from './log.ts'
 import { focusedWorkspace, resolveRepo, toplevel } from './repo.ts'
@@ -21,6 +22,8 @@ const watchers = new Map<string, Promise<RepoWatcher | null>>()
 /** Selections waiting for the Git tab of a repository to start and take them. */
 const pending = new Map<string, TabReveal>()
 const HASH = /^[0-9a-f]{40}$/
+/** What each repository's Diff tab shows; the tab reads it when it starts and on `diff.show`. */
+const diffStates = new Map<string, DiffTabState>()
 
 async function setting<T>(key: string, fallback: T): Promise<T> {
   try {
@@ -80,6 +83,21 @@ async function openTab(prefer?: string, reveal?: TabReveal): Promise<{ ok: boole
   await orcaApi.host.call('editor.open', { workspaceId: workspace.id, path: ANCHOR })
   // An already open tab takes it from this event; a new one asks for it with tab.take.
   if (reveal) orcaApi.panels.post('tab.reveal', pending.get(root)!)
+  return { ok: true }
+}
+
+async function openDiff(input: any): Promise<{ ok: boolean; reason?: string }> {
+  if (!validDiffState(input)) return { ok: false, reason: t('diffInvalid') }
+  const git = await gitFor(input.root)
+  const root: string = input.root
+  const workspace = await workspaceFor(orcaApi, root, await gitPath())
+  if (!workspace) return { ok: false, reason: t('diffNoWorkspace') }
+  await exclude(git, root, DIFF_ANCHOR)
+  writeFileSync(join(workspace.path, DIFF_ANCHOR), `${JSON.stringify({ root, workspaceId: workspace.id }, null, 2)}\n`)
+  diffStates.set(root, { root, files: input.files, index: input.index })
+  await orcaApi.host.call('editor.open', { workspaceId: workspace.id, path: DIFF_ANCHOR })
+  // An open tab reads the new state on this event; a new one reads it when it starts.
+  orcaApi.panels.post('diff.show', { root })
   return { ok: true }
 }
 
@@ -164,6 +182,10 @@ export default function activate(orca: OrcaWorkerApi): void {
     pending.delete(root)
     return reveal
   })
+
+  handle('diff.open', openDiff)
+
+  handle('diff.state', ({ root }) => diffStates.get(root) ?? null)
 
   orca.commands.register('open-tab', async () => {
     const result = await openTab()

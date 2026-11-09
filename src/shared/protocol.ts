@@ -190,6 +190,13 @@ export interface TabReveal {
   path?: string
 }
 
+/** What the Diff tab of a repository shows: the files of the selection a file was opened from. */
+export interface DiffTabState {
+  root: string
+  files: SelectionFile[]
+  index: number
+}
+
 declare module 'orca' {
   interface PluginRequests {
     'repo.resolve': { input: { root?: string; workspaceId?: string }; output: RepoResult }
@@ -209,9 +216,14 @@ declare module 'orca' {
     'repo.fetch': { input: { root: string }; output: ActionResult }
     'tab.open': { input: { workspaceId?: string; reveal?: TabReveal }; output: { ok: boolean; reason?: string } }
     'tab.take': { input: { root: string }; output: TabReveal | null }
+    /** Shows the state in the Diff tab of the workspace that holds `root`, opening the tab if needed. */
+    'diff.open': { input: DiffTabState; output: { ok: boolean; reason?: string } }
+    'diff.state': { input: { root: string }; output: DiffTabState | null }
   }
   interface PluginPanelEvents {
     'repo.changed': { root: string }
     'tab.reveal': { root: string } & TabReveal
+    /** The Diff tab of `root` has a new state to show. */
+    'diff.show': { root: string }
   }
 }

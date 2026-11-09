@@ -30,7 +30,7 @@ export type Match = { workspace: ListedWorkspace } | { remote: true } | { ambigu
 
 const shortBranch = (branch: string | null | undefined) => (branch ?? '').replace(/^refs\/heads\//, '')
 const slashes = (path: string) => path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
-const isLocal = (w: ListedWorkspace) => (!w.hostId || w.hostId === 'local') && existsSync(w.path)
+export const isLocal = (w: ListedWorkspace) => (!w.hostId || w.hostId === 'local') && existsSync(w.path)
 
 /** True when `text` names `path` (Windows or MSYS spelling), not just a longer sibling path. */
 function mentions(text: string, path: string): boolean {

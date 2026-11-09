@@ -133,6 +133,101 @@ test('a reveal from another repository than the focused workspace opens nothing'
   }
 })
 
+const ANCHOR = '.orca-git-log.gitdiff'
+
+function diffState(root: string) {
+  const [to, from] = sh(root, 'rev-list', '-2', 'HEAD').split('\n')
+  return {
+    root,
+    files: [
+      { status: 'R', path: 'one.txt', oldPath: 'uno.txt', from, to },
+      { status: 'A', path: 'three.txt', from: null, to }
+    ],
+    index: 1
+  }
+}
+
+test('opening a file shows it in the Diff tab of the workspace that holds its repository', async () => {
+  const root = fixture()
+  try {
+    const h = host(root)
+    const worker = await mountWorker(main, { host: h })
+    const state = diffState(root)
+    assert.deepEqual(await worker.request('diff.open', state), { ok: true })
+    assert.deepEqual(h.callsOf('editor.open'), [{ workspaceId: 'wt-1', path: ANCHOR }])
+    assert.deepEqual(JSON.parse(readFileSync(join(root, ANCHOR), 'utf8')), { root, workspaceId: 'wt-1' })
+    assert.match(readFileSync(join(root, '.git', 'info', 'exclude'), 'utf8'), /^\.orca-git-log\.gitdiff$/m)
+    assert.equal(sh(root, 'status', '--porcelain'), '')
+    assert.deepEqual(worker.posts.at(-1), { event: 'diff.show', payload: { root } })
+    assert.deepEqual(await worker.request('diff.state', { root }), state)
+    assert.equal(await worker.request('diff.state', { root: tmpdir() }), null)
+    await worker.deactivate()
+  } finally {
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
+})
+
+test('a Diff tab state with bad files, hashes or index opens nothing', async () => {
+  const root = fixture()
+  try {
+    const h = host(root)
+    const worker = await mountWorker(main, { host: h })
+    const good = diffState(root)
+    const file = good.files[0]
+    const bad: object[] = [
+      { files: 'one.txt' },
+      { files: [] },
+      { files: Array(2001).fill(file) },
+      { files: [null] },
+      { files: [{ ...file, path: '' }] },
+      { files: [{ ...file, path: 'a\0b' }] },
+      { files: [{ ...file, path: 1 }] },
+      { files: [{ ...file, oldPath: '' }] },
+      { files: [{ ...file, oldPath: 'a\0b' }] },
+      { files: [{ ...file, status: 'X' }] },
+      { files: [{ ...file, status: 'MM' }] },
+      { files: [{ ...file, from: 'HEAD' }] },
+      { files: [{ ...file, to: null }] },
+      { files: [{ ...file, to: file.to.toUpperCase() }] },
+      { index: -1 },
+      { index: 2 },
+      { index: 0.5 },
+      { index: '0' }
+    ]
+    for (const change of bad) {
+      const result = await worker.request('diff.open', { ...good, index: 0, ...change })
+      assert.deepEqual(result, { ok: false, reason: 'Invalid list of files.' }, JSON.stringify(change).slice(0, 100))
+    }
+    assert.deepEqual(h.callsOf('editor.open'), [])
+    assert.deepEqual(worker.posts, [])
+    assert.ok(!existsSync(join(root, ANCHOR)))
+    assert.ok(!readFileSync(join(root, '.git', 'info', 'exclude'), 'utf8').includes(ANCHOR))
+    assert.equal(await worker.request('diff.state', { root }), null)
+    await worker.deactivate()
+  } finally {
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
+})
+
+test('a repository that no workspace holds opens no Diff tab', async () => {
+  const root = fixture()
+  const other = fixture()
+  try {
+    const h = host(root)
+    const worker = await mountWorker(main, { host: h })
+    const result = await worker.request('diff.open', diffState(other))
+    assert.deepEqual(result, { ok: false, reason: 'No open workspace holds this repository. Nothing was opened.' })
+    assert.deepEqual(h.callsOf('editor.open'), [])
+    assert.deepEqual(worker.posts, [])
+    assert.ok(!existsSync(join(other, ANCHOR)) && !existsSync(join(root, ANCHOR)))
+    assert.ok(!readFileSync(join(other, '.git', 'info', 'exclude'), 'utf8').includes(ANCHOR))
+    assert.equal(await worker.request('diff.state', { root: other }), null)
+    await worker.deactivate()
+  } finally {
+    for (const dir of [root, other]) rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
+})
+
 test('same-named workspaces are told apart by terminal titles, then by a previous choice', () => {
   const a = realpathSync.native(mkdtempSync(join(tmpdir(), 'git-log-a-')))
   const b = realpathSync.native(mkdtempSync(join(tmpdir(), 'git-log-b-')))
