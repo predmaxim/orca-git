@@ -28,12 +28,15 @@ a details pane with file diffs, and a right-click menu to rewrite history on a m
 
 ## Features
 
+- **Sections**: Branches, Commits and Files stack in a column, like the WebStorm Git tool window. Click
+  a header to collapse a section to one line with its summary (current branch, number of selected
+  commits); drag the line between open sections to resize them. The layout is remembered.
 - **Commit graph**: colored lanes, merges, ref labels (`origin & main`, tags, HEAD), commits not
   reachable from HEAD are dimmed.
 - **Filters**: text or hash (with regex `.*` and match case `Cc`), Branch, User, Date and Paths.
 - **Branch tree**: Local, Remote and Tags; click a branch to jump to its commit, double-click to show
   only that branch, right-click to check it out.
-- **Details pane**: message, author, committer, refs, parents and changed files of the selected commit.
+- **Details section**: message, author, committer, refs, parents and changed files of the selected commit.
 - **Diff viewer**: double-click a changed file (or press Enter on it) to see what the commit changed,
   side by side or unified, with changed words highlighted. Toggle **Whole file** for full context,
   jump between changes with F7 / Shift+F7 and between files with Alt+↑ / Alt+↓; Esc closes it.
@@ -48,13 +51,18 @@ a details pane with file diffs, and a right-click menu to rewrite history on a m
   - New Branch…, New Tag…
 - **Undo** banner after each rewrite (resets back to the previous HEAD with `--keep`).
 - Commits already pushed to a remote branch trigger a warning before they are rewritten.
+- **Refresh** re-reads the log and branches; **Fetch** runs `git fetch --all` (without `--prune`) and
+  reports the result in the banner. It never asks for a password: it works through the SSH agent and
+  git's credential helpers.
 - Live refresh when the repository changes (commits, checkouts, fetches, rebases from a terminal).
 
 ## Where it shows
 
-- **Right sidebar panel** "Git Log": a compact layout that drops columns as the panel narrows.
+- **Right sidebar panel** "Git Log": the Branches, Commits, Files and Details sections in one column;
+  the log drops columns as the panel narrows.
 - **Editor tab**: run **Git Log: Open in Editor Tab** from the command palette (or click the ↗ button
-  in the panel) for the full-width layout with the branch tree. It opens a small anchor file,
+  in the panel) for the sections column on the left and the diff area on the right, with the Details
+  section under it. It opens a small anchor file,
   `.orca-git-log.gitlog`, at the workspace root; the plugin adds it to `.git/info/exclude` so it never
   shows up as untracked.
 

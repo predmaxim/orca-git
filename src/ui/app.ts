@@ -9,7 +9,8 @@ import { createFilterBar } from './filters.ts'
 import { reachableFrom, refLabels, relativeDate, fullDate, shortHash } from './format.ts'
 import { computeGraph, graphSvg, ROW_HEIGHT, type GraphRow } from './graph.ts'
 import { showMenu, type MenuEntry } from './menu.ts'
-import { pickLocale, setLocale } from '../shared/i18n.ts'
+import { createColumn, normalizeSections, type SectionPrefs } from './sections.ts'
+import { pickLocale, setLocale, t } from '../shared/i18n.ts'
 
 setLocale(pickLocale(orca.locale))
 
@@ -17,13 +18,13 @@ const MODE = document.body.dataset.mode === 'editor' ? 'editor' : 'panel'
 const PREFS_KEY = `git-log.prefs.${MODE}`
 
 interface Prefs {
-  branches: boolean
-  details: boolean
   regex: boolean
   matchCase: boolean
-  branchesWidth: number
-  detailsWidth: number
+  /** Width of the sections column in the editor tab, in percent. */
+  leftWidth: number
+  /** Height of the details section under the diff in the editor tab. */
   detailsHeight: number
+  sections: SectionPrefs
   collapsed: string[]
   /** Workspace picked by the user, keyed by the ids of the same-named workspaces it was picked among. */
   picked: Record<string, string>
@@ -31,23 +32,22 @@ interface Prefs {
   diffWholeFile?: boolean
 }
 
+const stored = (() => {
+  try {
+    return JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}')
+  } catch {
+    return {}
+  }
+})()
 const prefs: Prefs = {
-  branches: MODE === 'editor',
-  details: true,
   regex: false,
   matchCase: false,
-  branchesWidth: 220,
-  detailsWidth: 340,
+  leftWidth: 40,
   detailsHeight: 220,
   collapsed: ['tags'],
   picked: {},
-  ...(() => {
-    try {
-      return JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}')
-    } catch {
-      return {}
-    }
-  })()
+  ...stored,
+  sections: normalizeSections(stored?.sections)
 }
 const savePrefs = () => localStorage.setItem(PREFS_KEY, JSON.stringify(prefs))
 
@@ -82,10 +82,9 @@ const app = document.getElementById('app')!
 const searchInput = h('input', { placeholder: 'Text or hash', spellcheck: false, 'aria-label': 'Filter by text or hash' }) as HTMLInputElement
 const regexToggle = h('button', { class: `toggle${prefs.regex ? ' on' : ''}`, title: 'Regex' }, '.*')
 const caseToggle = h('button', { class: `toggle${prefs.matchCase ? ' on' : ''}`, title: 'Match case' }, 'Cc')
-const treeToggle = h('button', { class: 'tool', title: 'Show branches' }, icon('tree'))
-const detailsToggle = h('button', { class: 'tool', title: 'Show details' }, icon('details'))
-const refreshButton = h('button', { class: 'tool', title: 'Refresh' }, icon('refresh'))
-const tabButton = h('button', { class: 'tool', title: 'Open Git Log in an editor tab' }, icon('external'))
+const refreshButton = h('button', { class: 'tool', title: t('refresh') }, icon('refresh'))
+const fetchButton = h('button', { class: 'tool', title: t('fetch') }, icon('down'))
+const tabButton = h('button', { class: 'tool', title: t('openInTab') }, icon('external'))
 
 const filterBar = createFilterBar({
   get filter() {
@@ -97,17 +96,8 @@ const filterBar = createFilterBar({
   apply: (change) => applyFilter(change)
 })
 
-const toolbar = h(
-  'div',
-  { class: 'toolbar' },
-  treeToggle,
-  h('label', { class: 'search' }, icon('search'), searchInput, regexToggle, caseToggle),
-  ...filterBar.elements,
-  h('div', { class: 'spacer' }),
-  refreshButton,
-  MODE === 'panel' ? tabButton : null,
-  detailsToggle
-)
+const toolbar = h('div', { class: 'toolbar' }, h('div', { class: 'spacer' }), refreshButton, fetchButton, MODE === 'panel' ? tabButton : null)
+const filterRow = h('div', { class: 'toolbar' }, h('label', { class: 'search' }, icon('search'), searchInput, regexToggle, caseToggle), ...filterBar.elements)
 
 const bannerText = h('div', { class: 'text' })
 const bannerActions = h('div', { style: 'display:flex;gap:12px' })
@@ -121,8 +111,6 @@ const banner = h(
 
 const treeSearch = h('input', { class: 'field tree-search', placeholder: 'Search branches', spellcheck: false }) as HTMLInputElement
 const tree = h('div', { class: 'tree' })
-const branchesPane = h('aside', { class: 'pane branches' }, treeSearch, tree)
-const branchesSplit = h('div', { class: 'splitter' })
 
 const header = h(
   'div',
@@ -136,26 +124,42 @@ const sizer = h('div', { class: 'sizer' })
 const viewport = h('div', { class: 'viewport', tabindex: 0, role: 'grid', 'aria-multiselectable': 'true' }, sizer)
 const empty = h('div', { class: 'empty' })
 const logPane = h('section', { class: 'pane log' }, header, viewport, empty)
-const detailsSplit = h('div', { class: 'splitter details-split' })
-const detailsPane = h('aside', { class: 'pane details' })
-const center = h('div', { class: 'main center' }, logPane, detailsSplit, detailsPane)
 
-app.append(toolbar, banner, h('div', { class: 'main' }, branchesPane, branchesSplit, center))
+// The editor tab keeps the details under the diff; the sidebar stacks them as a fourth section.
+const column = createColumn(MODE === 'editor' ? ['branches', 'commits', 'files'] : ['branches', 'commits', 'files', 'details'], prefs.sections, onSections)
+const detailsColumn = MODE === 'editor' ? createColumn(['details'], prefs.sections, onSections) : column
+column.section('branches').body.append(treeSearch, tree)
+column.section('commits').body.append(filterRow, logPane)
+column.section('files').body.append(h('div', { class: 'sec-note' }, t('filesPlaceholder')))
+const detailsPane = detailsColumn.section('details').body
 
-function applyLayout(): void {
-  branchesPane.style.display = branchesSplit.style.display = prefs.branches ? '' : 'none'
-  detailsPane.style.display = detailsSplit.style.display = prefs.details ? '' : 'none'
-  treeToggle.classList.toggle('on', prefs.branches)
-  detailsToggle.classList.toggle('on', prefs.details)
-  app.style.setProperty('--branches-w', `${prefs.branchesWidth}px`)
-  app.style.setProperty('--details-w', `${prefs.detailsWidth}px`)
-  app.style.setProperty('--details-h', `${prefs.detailsHeight}px`)
+const leftSplit = h('div', { class: 'splitter' })
+const detailsSplit = h('div', { class: 'splitter rows' })
+const right = h('div', { class: 'pane right' })
+if (MODE === 'editor') {
+  right.append(h('div', { id: 'diff', class: 'pane' }), detailsSplit, detailsColumn.element)
+  app.append(banner, h('div', { class: 'main' }, h('div', { class: 'pane left' }, toolbar, column.element), leftSplit, right))
+} else {
+  app.append(toolbar, banner, column.element)
 }
 
-new ResizeObserver(() => {
-  app.classList.toggle('narrow', app.clientWidth < 640)
-  renderRows()
-}).observe(app)
+function applyLayout(): void {
+  app.style.setProperty('--left-w', `${prefs.leftWidth}%`)
+  if (MODE === 'editor') {
+    const closed = prefs.sections.collapsed.details
+    detailsSplit.hidden = closed
+    detailsColumn.element.style.height = closed ? '' : `${prefs.detailsHeight}px`
+  }
+}
+
+function onSections(): void {
+  savePrefs()
+  applyLayout()
+  if (detailsStale) updateDetails()
+}
+
+// The visible rows depend on the log's own height, which the section splitters change too.
+new ResizeObserver(() => renderRows()).observe(viewport)
 
 function dragSplitter(splitter: HTMLElement, onMove: (dx: number, dy: number, start: Prefs) => void): void {
   splitter.addEventListener('mousedown', (event) => {
@@ -176,11 +180,8 @@ function dragSplitter(splitter: HTMLElement, onMove: (dx: number, dy: number, st
 }
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v))
-dragSplitter(branchesSplit, (dx, _dy, start) => (prefs.branchesWidth = clamp(start.branchesWidth + dx, 120, 600)))
-dragSplitter(detailsSplit, (dx, dy, start) => {
-  if (app.classList.contains('narrow')) prefs.detailsHeight = clamp(start.detailsHeight - dy, 80, innerHeight - 120)
-  else prefs.detailsWidth = clamp(start.detailsWidth - dx, 200, 900)
-})
+dragSplitter(leftSplit, (dx, _dy, start) => (prefs.leftWidth = clamp(start.leftWidth + (dx / app.clientWidth) * 100, 15, 85)))
+dragSplitter(detailsSplit, (_dx, dy, start) => (prefs.detailsHeight = clamp(start.detailsHeight - dy, 60, right.clientHeight - 60)))
 
 // ---------- Banner ----------
 
@@ -499,10 +500,11 @@ async function start(): Promise<void> {
       rows = []
       refs = null
       loadError = result.reason
+      selected.clear()
       recompute()
       renderTree()
       renderRows()
-      renderPlaceholder(detailsPane, '')
+      updateDetails()
     }
   } catch (error) {
     loadError = errorMessage(error)
@@ -555,6 +557,8 @@ if (prefs.matchCase) filter.matchCase = true
 // ---------- Branches tree ----------
 
 function renderTree(): void {
+  const head = repo?.head
+  column.section('branches').setSummary(head?.branch ?? (head?.hash ? shortHash(head.hash) : ''))
   renderBranches(
     tree,
     {
@@ -744,12 +748,16 @@ function copyHashes(): void {
 
 let detailsTimer: ReturnType<typeof setTimeout> | undefined
 let detailsToken = 0
+/** The selection changed while the details section was collapsed: render it when it opens. */
+let detailsStale = false
 function updateDetails(): void {
   clearTimeout(detailsTimer)
-  if (!prefs.details) return
+  column.section('commits').setSummary(selected.size ? t('selectedCount', { count: selected.size }) : '')
+  detailsStale = prefs.sections.collapsed.details
+  if (detailsStale) return
   const hashes = selectedHashes()
   if (!repo || !hashes.length) {
-    renderPlaceholder(detailsPane, repo ? 'Select a commit to see its details.' : '')
+    renderPlaceholder(detailsPane, repo ? t('detailsPlaceholder') : '')
     return
   }
   if (hashes.length > 1) {
@@ -1012,18 +1020,19 @@ function commitMenu(x: number, y: number): void {
 
 // ---------- Toolbar & host events ----------
 
-treeToggle.addEventListener('click', () => {
-  prefs.branches = !prefs.branches
-  savePrefs()
-  applyLayout()
-})
-detailsToggle.addEventListener('click', () => {
-  prefs.details = !prefs.details
-  savePrefs()
-  applyLayout()
-  updateDetails()
-})
 refreshButton.addEventListener('click', () => void refreshAll())
+fetchButton.addEventListener('click', async () => {
+  if (!repo) return
+  fetchButton.disabled = true
+  try {
+    const result = await api.fetch(repo.root)
+    showBanner(result.message, result.ok ? 'success' : 'error')
+  } catch (error) {
+    showBanner(errorMessage(error), 'error')
+  } finally {
+    fetchButton.disabled = false
+  }
+})
 tabButton.addEventListener('click', async () => {
   try {
     const result = await api.openTab(repo?.workspaceId)

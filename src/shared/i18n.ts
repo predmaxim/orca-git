@@ -5,7 +5,17 @@ type Plural = { one: string; few?: string; many?: string; other: string }
 type Message = string | Plural
 
 export const en = {
-  commitsSelected: { one: '{count} commit selected', other: '{count} commits selected' }
+  commitsSelected: { one: '{count} commit selected', other: '{count} commits selected' },
+  sectionBranches: 'Branches',
+  sectionCommits: 'Commits',
+  sectionFiles: 'Files',
+  sectionDetails: 'Details',
+  selectedCount: { one: '{count} selected', other: '{count} selected' },
+  filesPlaceholder: 'Select commits to see their files',
+  detailsPlaceholder: 'Select a commit to see its details',
+  refresh: 'Refresh',
+  fetch: 'Fetch',
+  openInTab: 'Open in editor tab'
 } satisfies Record<string, Message>
 
 export const ru: Record<keyof typeof en, Message> = {
@@ -14,7 +24,17 @@ export const ru: Record<keyof typeof en, Message> = {
     few: 'Выбрано {count} коммита',
     many: 'Выбрано {count} коммитов',
     other: 'Выбрано {count} коммита'
-  }
+  },
+  sectionBranches: 'Ветки',
+  sectionCommits: 'Коммиты',
+  sectionFiles: 'Файлы',
+  sectionDetails: 'Описание',
+  selectedCount: { one: '{count} выбран', few: '{count} выбрано', many: '{count} выбрано', other: '{count} выбрано' },
+  filesPlaceholder: 'Выберите коммиты, чтобы увидеть их файлы',
+  detailsPlaceholder: 'Выберите коммит, чтобы увидеть его описание',
+  refresh: 'Обновить',
+  fetch: 'Получить',
+  openInTab: 'Открыть во вкладке'
 }
 
 export type MessageKey = keyof typeof en

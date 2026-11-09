@@ -252,10 +252,6 @@ textarea {
   display: flex;
 }
 
-#app.narrow .center {
-  flex-direction: column;
-}
-
 .pane {
   min-width: 0;
   min-height: 0;
@@ -277,22 +273,137 @@ textarea {
   inset: 0 -3px;
 }
 
-#app.narrow .splitter.details-split {
+.splitter.rows {
   width: auto;
   height: 1px;
   cursor: row-resize;
 }
 
-#app.narrow .splitter.details-split::after {
+.splitter.rows::after {
   inset: -3px 0;
 }
 
-/* ---------- Branches tree ---------- */
+.tool:disabled {
+  opacity: 0.45;
+}
 
-.branches {
-  width: var(--branches-w, 220px);
+/* ---------- Sections ---------- */
+
+.left {
+  width: var(--left-w, 40%);
   flex: none;
 }
+
+.right {
+  flex: 1;
+}
+
+.right > .pane {
+  flex: 1;
+}
+
+.right > .column {
+  flex: none;
+}
+
+.column {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.col-section {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.col-section.collapsed {
+  flex: none;
+}
+
+.col-section:not(:first-child) {
+  border-top: 1px solid var(--border);
+}
+
+.col-splitter {
+  flex: none;
+  height: 0;
+  position: relative;
+  z-index: 1;
+  cursor: row-resize;
+}
+
+.col-splitter::after {
+  content: '';
+  position: absolute;
+  inset: -3px 0;
+}
+
+.sec-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 6px 0 2px;
+  background: var(--muted);
+  color: var(--muted-fg);
+  white-space: nowrap;
+}
+
+.col-section:not(.collapsed) > .sec-head {
+  border-bottom: 1px solid var(--border);
+}
+
+.sec-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.sec-toggle:focus-visible {
+  outline: 1px solid var(--ring);
+}
+
+.sec-summary {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+}
+
+.sec-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.col-section.collapsed > .sec-body {
+  display: none;
+}
+
+.sec-note {
+  padding: 8px 10px;
+  color: var(--muted-fg);
+}
+
+/* ---------- Branches tree ---------- */
 
 .branches .tree-search {
   margin: 6px;
@@ -681,15 +792,8 @@ textarea {
 /* ---------- Details ---------- */
 
 .details {
-  width: var(--details-w, 340px);
-  flex: none;
   overflow: auto;
   user-select: text;
-}
-
-#app.narrow .details {
-  width: auto;
-  height: var(--details-h, 220px);
 }
 
 .details .section {
