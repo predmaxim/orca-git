@@ -484,6 +484,8 @@ function setRepo(next: RepoInfo): void {
   loadError = null
   if (!same) {
     selected.clear()
+    detailsKey = ''
+    detailsCache.clear()
     anchor = cursor = -1
     filter = { ...filter, branches: [] }
     viewport.scrollTop = 0
@@ -883,6 +885,7 @@ function updateDetails(): void {
   detailsStale = prefs.sections.collapsed.details
   if (detailsStale) return
   if (!repo || !hashes.length) {
+    detailsKey = ''
     renderPlaceholder(detailsPane, repo ? t('detailsPlaceholder') : '')
     return
   }
@@ -898,12 +901,13 @@ function updateDetails(): void {
     {
       expanded,
       load: (hash) => {
-        let details = detailsCache.get(hash)
+        const key = `${root}\0${hash}`
+        let details = detailsCache.get(key)
         if (!details) {
           details = api.details(root, hash)
-          detailsCache.set(hash, details)
+          detailsCache.set(key, details)
           // A failed load must not stay cached.
-          details.catch(() => detailsCache.delete(hash))
+          details.catch(() => detailsCache.delete(key))
         }
         return details
       },
