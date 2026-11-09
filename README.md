@@ -57,11 +57,15 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   - Edit Commit Message…, Fixup, Squash Commits…, Drop Commits, Interactively Rebase from Here…
   - New Branch…, New Tag…
 - **Undo** banner after each rewrite (resets back to the previous HEAD with `--keep`).
+- **Backup before risky operations**: the confirmation offers to save a backup branch or tag first (see
+  [Backups](#backups-before-risky-operations)).
 - Commits already pushed to a remote branch trigger a warning before they are rewritten: by Edit Commit
   Message, Fixup, Squash, Drop, the interactive rebase, Undo Commit or Rebase Current onto This.
 - An action runs in the repository its menu was opened on. If the workspace switches to another
   repository while a dialog is open (or, for an action on the current branch, HEAD moves), nothing
-  runs and a banner says so. New branch and rename refuse names git would expand, like `@{-1}`.
+  runs and a banner says so. The worker checks HEAD once more right before it runs such an action, and
+  Undo runs only while HEAD is still where the action left it. New branch and rename refuse names git
+  would expand, like `@{-1}`.
 - **Refresh** re-reads the log and branches; **Fetch** runs `git fetch --all` (without `--prune`) and
   reports the result in the banner. It never asks for a password: it works through the SSH agent and
   git's credential helpers.
@@ -110,6 +114,32 @@ Squash, fixup, drop, reword and the interactive rebase dialog all run `git rebas
 with a generated todo list (`GIT_SEQUENCE_EDITOR`) and messages written to a file, so no editor ever
 opens. The selection must be a run of non-merge commits on the current branch. If the rebase stops on
 a conflict it is aborted, and the branch is left exactly as it was.
+
+## Backups before risky operations
+
+Squash, fixup, drop, edit message, the interactive rebase, reset (any mode), rebase current onto a
+branch and deleting an unmerged branch (`git branch -D`) ask in their confirmation whether to back up
+first. The box is checked by default: pick a branch (the default) or a tag and keep or edit the
+suggested name, `backup/<branch>-<YYYYMMDD-HHMM>` (`backup/detached-<hash>-…` for a detached HEAD,
+with `-2`, `-3`… when the name is taken). Fixup, drop and rebase onto, which ran without a dialog when
+nothing was pushed, now show one to make the offer. One operation makes one backup, however many
+commits it touches: it points at the old tip of the branch (for a deleted branch, at that branch) and
+keeps them all.
+
+- The worker makes the backup in the same request, before the operation, with
+  `git branch --no-track <name> <commit>` or `git tag <name> <commit>`. An existing branch or tag is
+  never overwritten; if the backup fails, the operation does not run.
+- A hard reset can also save the uncommitted changes to the stash (`git stash create`, then
+  `git stash store`): the work tree is not touched, and the "changes will be lost" question is skipped.
+  Untracked files are not saved.
+- The banner names the backup and offers Undo and **Show Backup**, which opens its folder in the branch
+  tree.
+- Backup branches sit in the `backup/` folder of the branch tree, backup tags among the tags. Their menu
+  has **Restore <branch> to This Backup…** (`git reset --keep`, with its own confirmation and backup
+  offer; git refuses if it would overwrite local changes) and **Delete Backup** (only for `backup/`
+  names, and only while the ref still points where the tree showed it).
+- Settings: **Offer a backup before risky operations** (on) and **Backup kind** (branch). The last kind
+  picked in a dialog is remembered there.
 
 ## Limitations
 
