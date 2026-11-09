@@ -1,0 +1,155 @@
+<style>
+  .ow{background:#1e1e1e;border:1px solid #3a3a3a;border-radius:6px;overflow:hidden;font:11px/1.45 system-ui,sans-serif;color:#ccc;display:flex;flex-direction:column;text-align:left}
+  .tool{display:flex;gap:8px;padding:3px 6px;border-bottom:1px solid #2c2c2c;color:#9a9a9a;flex:none}
+  .srch{margin:4px 6px;padding:1px 6px;border:1px solid #3a3a3a;border-radius:3px;color:#6f6f6f;flex:none}
+  .r{padding:1px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .r.sel{background:rgba(59,130,246,.30);color:#fff}
+  .dim{color:#777}
+  .i1{padding-left:16px}.i2{padding-left:26px}
+  .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:middle;flex:none}
+  .y{background:#e5a50a}.p{background:#8b5cf6}.g{background:#22c55e}.b{background:#3b82f6}
+  .cm{display:flex;align-items:center;padding:1px 6px;white-space:nowrap}
+  .cm.sel{background:rgba(59,130,246,.30);color:#fff}
+  .cm .m{flex:1;overflow:hidden;text-overflow:ellipsis}
+  .cm .d{width:40px;color:#888;text-align:right;flex:none}
+  .cm2{display:flex;padding:2px 6px;gap:0}
+  .cm2.sel{background:rgba(59,130,246,.30);color:#fff}
+  .cm2 .t{flex:1;min-width:0}
+  .cm2 .t div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cm2 .t .s{color:#8a8a8a;font-size:10px}
+  .cm2.sel .t .s{color:#bcd}
+  .sec{font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;color:#9a9a9a;padding:3px 6px;background:#222;border-top:1px solid #2c2c2c;border-bottom:1px solid #2c2c2c;flex:none;display:flex;gap:6px}
+  .sec span:last-child{margin-left:auto;text-transform:none;letter-spacing:0;color:#777}
+  .code{font-family:ui-monospace,monospace;font-size:10px}
+  .code .l{padding:0 6px;white-space:nowrap;overflow:hidden}
+  .ln{color:#666;display:inline-block;width:20px}
+  .add{background:rgba(46,160,67,.22)}.del{background:rgba(248,81,73,.22)}
+  .dh{display:flex;gap:10px;padding:3px 8px;border-bottom:1px solid #2c2c2c;color:#9a9a9a;flex:none;font-size:10.5px}
+  .dh b{color:#ddd;font-weight:500}
+  .det{padding:6px 8px;border-bottom:1px solid #2a2a2a}
+  .det .subj{color:#eee;font-family:ui-monospace,monospace;font-size:10.5px}
+  .det .body{color:#bbb;font-family:ui-monospace,monospace;font-size:10px;margin-top:3px;white-space:normal}
+  .det .meta{color:#8a8a8a;font-size:10px;margin-top:4px}
+  .ref{display:inline-block;border:1px solid #3a5;color:#7c7;border-radius:3px;padding:0 4px;font-size:9.5px;margin-left:4px}
+  .ln2{display:flex;gap:8px;padding:2px 8px;white-space:nowrap;border-bottom:1px solid #262626}
+  .ln2 .h{color:#8a8a8a;font-family:ui-monospace,monospace;font-size:10px;width:52px;flex:none}
+  .ln2 .s{flex:1;overflow:hidden;text-overflow:ellipsis}
+  .ln2 .a{color:#8a8a8a;width:70px;flex:none;overflow:hidden}
+  .ln2.open{background:#252a33}
+  .card-image{padding:10px;background:#111}
+  h3.grp{margin:1.6rem 0 .3rem}
+</style>
+
+<h2>Сайдбар и описание нескольких коммитов</h2>
+<p class="subtitle">Две группы. Кликни вариант в каждой, детали — в терминале.</p>
+
+<h3 class="grp">1. Панель в сайдбаре</h3>
+<div class="cards">
+
+  <div class="card" data-choice="side-compact" onclick="toggleSelect(this)">
+    <div class="card-image" style="display:flex;justify-content:center">
+      <div class="ow" style="height:440px;width:270px">
+        <div class="tool"><span>Git</span><span style="margin-left:auto">↻ ⇣ ⤢</span></div>
+        <div class="sec"><span>▸ Ветки</span><span>HEAD · fix/ABC-102</span></div>
+        <div class="sec"><span>▾ Коммиты</span><span>2 выбрано</span></div>
+        <div class="srch">⌕ Text or hash</div>
+        <div style="flex:1.4;overflow:hidden">
+          <div class="cm sel"><span class="dot y"></span><span class="m">fix(ABC-102): Retry failed uploads</span><span class="d">19:54</span></div>
+          <div class="cm sel"><span class="dot y"></span><span class="m">ci: bump version and changelog</span><span class="d">15:49</span></div>
+          <div class="cm"><span class="dot p"></span><span class="m">Merge pull request #41 from bob/search</span><span class="d">15:49</span></div>
+          <div class="cm"><span class="dot g"></span><span class="m dim">Merge pull request #40: chore…</span><span class="d">15:23</span></div>
+          <div class="cm"><span class="dot b"></span><span class="m">feat(ABC-98): Add search…</span><span class="d">14:14</span></div>
+          <div class="cm"><span class="dot y"></span><span class="m dim">ci: sync release branch…</span><span class="d">13:24</span></div>
+          <div class="cm"><span class="dot y"></span><span class="m">ci: bump version and changelog</span><span class="d">13:24</span></div>
+          <div class="cm"><span class="dot g"></span><span class="m dim">Merge pull request #39 from carol/docs</span><span class="d">13:18</span></div>
+          <div class="cm"><span class="dot g"></span><span class="m">docs: Describe the setup</span><span class="d">02.11</span></div>
+        </div>
+        <div class="sec"><span>▾ Файлы</span><span>6 · ⊞ ⊟</span></div>
+        <div style="flex:1;overflow:hidden"><div class="r">▾ src/api</div><div class="r i2">upload.ts</div><div class="r i1">Dockerfile</div><div class="r i1">search.ts</div><div class="r">▾ config</div><div class="r i1">app.yml</div></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>А. Компактно: три секции</h3>
+      <p>Коммит — одна строка: сообщение и время (старше суток — дата). Автор во всплывающей подсказке. Описания нет. Влезает больше коммитов.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="side-rich" onclick="toggleSelect(this)">
+    <div class="card-image" style="display:flex;justify-content:center">
+      <div class="ow" style="height:440px;width:270px">
+        <div class="tool"><span>Git</span><span style="margin-left:auto">↻ ⇣ ⤢</span></div>
+        <div class="sec"><span>▸ Ветки</span><span>HEAD · fix/ABC-102</span></div>
+        <div class="sec"><span>▾ Коммиты</span><span>1 выбран</span></div>
+        <div class="srch">⌕ Text or hash</div>
+        <div style="flex:1.4;overflow:hidden">
+          <div class="cm2 sel"><span class="dot y" style="margin-top:4px"></span><div class="t"><div>fix(ABC-102): Retry failed uploads</div><div class="s">Alice Smith · 19:54</div></div></div>
+          <div class="cm2"><span class="dot y" style="margin-top:4px"></span><div class="t"><div>ci: bump version and changelog</div><div class="s">ci-bot · 15:49</div></div></div>
+          <div class="cm2"><span class="dot p" style="margin-top:4px"></span><div class="t"><div>Merge pull request #41 from bob/search</div><div class="s">Bob Lee · 15:49</div></div></div>
+          <div class="cm2"><span class="dot g" style="margin-top:4px"></span><div class="t"><div class="dim">Merge pull request #40: chore…</div><div class="s">Carol Diaz · 15:23</div></div></div>
+          <div class="cm2"><span class="dot b" style="margin-top:4px"></span><div class="t"><div>feat(ABC-98): Add search…</div><div class="s">Bob Lee · 14:14</div></div></div>
+        </div>
+        <div class="sec"><span>▾ Файлы</span><span>3 · ⊞ ⊟</span></div>
+        <div style="flex:.7;overflow:hidden"><div class="r">▾ src/api</div><div class="r i2">upload.ts</div><div class="r i1">Dockerfile</div></div>
+        <div class="sec"><span>▾ Описание</span><span></span></div>
+        <div style="flex:.8;overflow:hidden"><div class="det" style="border:none"><div class="subj">fix(ABC-102): Retry failed uploads</div><div class="body">Uploads failed on a slow network without a retry…</div></div></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Б. Подробно: четыре секции</h3>
+      <p>Коммит — две строки: сообщение, ниже автор и время. Внизу сворачиваемая секция «Описание». Коммитов влезает меньше.</p>
+    </div>
+  </div>
+</div>
+
+<h3 class="grp">2. Описание под диффом, когда выбрано несколько коммитов</h3>
+<div class="cards">
+
+  <div class="card" data-choice="det-stack" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="ow" style="height:400px">
+        <div class="dh"><span>← <b>1/6</b> →</span><span><b>upload.ts</b></span><span class="dim">3f9c21ab..8d47e0c5</span></div>
+        <div class="code" style="flex:1;overflow:hidden">
+          <div class="l"><span class="ln">18</span>import { send } from './http'</div>
+          <div class="l del"><span class="ln">19</span>const RETRY_LIMIT = 1</div>
+          <div class="l add"><span class="ln">19</span>const RETRY_LIMIT = 3</div>
+          <div class="l"><span class="ln">20</span></div><div class="l"><span class="ln">21</span>// Wait longer after each failure</div>
+        </div>
+        <div class="sec"><span>▾ Описание</span><span>3 коммита</span></div>
+        <div style="flex:1.2;overflow:hidden">
+          <div class="det"><div class="subj">fix(ABC-102): Retry failed uploads<span class="ref">fix/ABC-102</span></div><div class="body">Uploads failed on a slow network without a retry. Retry up to three times with backoff.</div><div class="meta">3f9c21ab · Alice Smith · 03.11.2026 19:54</div></div>
+          <div class="det"><div class="subj">ci: bump version and changelog [skip ci]</div><div class="meta">c02d4a81 · ci-bot · 03.11.2026 15:49</div></div>
+          <div class="det"><div class="subj">feat(ABC-98): Add search to the list</div><div class="body">The list now filters as you type…</div><div class="meta">8d47e0c5 · Bob Lee · 03.11.2026 15:36</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>А. Все подряд (как WebStorm)</h3>
+      <p>Полное описание каждого выбранного коммита, сверху новый. Секция прокручивается.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="det-list" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="ow" style="height:400px">
+        <div class="dh"><span>← <b>1/6</b> →</span><span><b>upload.ts</b></span><span class="dim">3f9c21ab..8d47e0c5</span></div>
+        <div class="code" style="flex:1;overflow:hidden">
+          <div class="l"><span class="ln">18</span>import { send } from './http'</div>
+          <div class="l del"><span class="ln">19</span>const RETRY_LIMIT = 1</div>
+          <div class="l add"><span class="ln">19</span>const RETRY_LIMIT = 3</div>
+          <div class="l"><span class="ln">20</span></div><div class="l"><span class="ln">21</span>// Wait longer after each failure</div>
+        </div>
+        <div class="sec"><span>▾ Описание</span><span>3 коммита</span></div>
+        <div style="flex:1.2;overflow:hidden">
+          <div class="ln2 open"><span>▾</span><span class="h">3f9c21ab</span><span class="s">fix(ABC-102): Retry failed uploads</span><span class="a">Alice S.</span></div>
+          <div class="det" style="padding-left:26px"><div class="body" style="margin:0">Uploads failed on a slow network without a retry. Retry up to three times with backoff.</div><div class="meta">03.11.2026 19:54 · <span class="ref">fix/ABC-102</span></div></div>
+          <div class="ln2"><span>▸</span><span class="h">c02d4a81</span><span class="s">ci: bump version and changelog</span><span class="a">ci-bot</span></div>
+          <div class="ln2"><span>▸</span><span class="h">8d47e0c5</span><span class="s">feat(ABC-98): Add search to the list</span><span class="a">Bob L.</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Б. Список с раскрытием</h3>
+      <p>Одна строка на коммит (хеш, заголовок, автор), клик раскрывает полное описание. Видно все выбранные сразу, даже если их много.</p>
+    </div>
+  </div>
+</div>

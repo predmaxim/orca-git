@@ -1,0 +1,113 @@
+<style>
+  .ow{background:#1e1e1e;border:1px solid #3a3a3a;border-radius:6px;overflow:hidden;font:11px/1.45 system-ui,sans-serif;color:#ccc;display:flex;flex-direction:column;text-align:left}
+  .tb{display:flex;background:#181818;border-bottom:1px solid #333;flex:none}
+  .tb span{padding:4px 10px;color:#888;border-right:1px solid #2a2a2a}
+  .tb span.on{color:#eee;background:#1e1e1e;box-shadow:inset 0 2px 0 #3b82f6}
+  .hz{display:flex;min-height:0}
+  .vt{display:flex;flex-direction:column;min-height:0}
+  .pane{border-right:1px solid #333;overflow:hidden;display:flex;flex-direction:column;min-width:0}
+  .pane:last-child{border-right:none}
+  .srch{margin:4px 6px;padding:1px 6px;border:1px solid #3a3a3a;border-radius:3px;color:#6f6f6f;flex:none}
+  .r{padding:1px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .r.sel{background:rgba(59,130,246,.30);color:#fff}
+  .dim{color:#777}
+  .i1{padding-left:16px}.i2{padding-left:26px}
+  .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  .y{background:#e5a50a}.p{background:#8b5cf6}.g{background:#22c55e}.b{background:#3b82f6}
+  .cm{display:flex;padding:1px 6px;white-space:nowrap}
+  .cm.sel{background:rgba(59,130,246,.30);color:#fff}
+  .cm .m{flex:1;overflow:hidden;text-overflow:ellipsis}
+  .cm .d{width:40px;color:#888;text-align:right}
+  .code{font-family:ui-monospace,monospace;font-size:10px}
+  .code .l{padding:0 6px;white-space:nowrap;overflow:hidden}
+  .ln{color:#666;display:inline-block;width:20px}
+  .add{background:rgba(46,160,67,.22)}.del{background:rgba(248,81,73,.22)}
+  .dh{display:flex;gap:10px;padding:3px 8px;border-bottom:1px solid #2c2c2c;color:#9a9a9a;flex:none;font-size:10.5px}
+  .dh b{color:#ddd;font-weight:500}
+  .tool{display:flex;gap:8px;padding:3px 6px;border-bottom:1px solid #2c2c2c;color:#9a9a9a;flex:none}
+  .sec{font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;color:#9a9a9a;padding:3px 6px;background:#222;border-top:1px solid #2c2c2c;border-bottom:1px solid #2c2c2c;flex:none;display:flex;gap:6px}
+  .sec span:last-child{margin-left:auto;text-transform:none;letter-spacing:0;color:#777}
+  .strip{width:20px;flex:none;border-right:1px solid #333;background:#222;color:#9a9a9a;font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;writing-mode:vertical-rl;padding:6px 0;text-align:left}
+  .card-image{padding:10px;background:#111}
+</style>
+
+<h2>Вкладка «Git»: вариант C с тремя сворачиваемыми секциями</h2>
+<p class="subtitle">Как я понял «все три видны и сворачиваются»: два прочтения. Свёрнутость каждой секции запоминается.</p>
+
+<div class="cards">
+  <div class="card" data-choice="c-stack" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="ow" style="height:400px">
+        <div class="tb"><span class="on">⎇ Git</span><span>README.md</span></div>
+        <div class="hz" style="flex:1">
+          <div class="pane vt" style="width:40%">
+            <div class="tool"><span>⌕</span><span style="margin-left:auto">↻</span></div>
+            <div class="sec"><span>▸ Ветки</span><span>HEAD</span></div>
+            <div class="sec"><span>▾ Коммиты</span><span>3 выбрано</span></div>
+            <div class="srch">⌕ Text or hash · Branch · User · Date</div>
+            <div style="flex:1.3;overflow:hidden">
+              <div class="cm sel"><span class="dot y"></span><span class="m">fix(ABC-102): Retry failed…</span><span class="d">19:54</span></div>
+              <div class="cm sel"><span class="dot y"></span><span class="m">ci: bump version and changelog</span><span class="d">15:49</span></div>
+              <div class="cm sel"><span class="dot p"></span><span class="m">Merge pull request #41 from bob/search</span><span class="d">15:49</span></div>
+              <div class="cm"><span class="dot g"></span><span class="m dim">Merge pull request #40…</span><span class="d">15:23</span></div>
+              <div class="cm"><span class="dot b"></span><span class="m">feat(ABC-98): Add search…</span><span class="d">14:14</span></div>
+              <div class="cm"><span class="dot y"></span><span class="m dim">ci: sync release…</span><span class="d">13:24</span></div>
+            </div>
+            <div class="sec"><span>▾ Файлы</span><span>6 · ⊞ ⊟</span></div>
+            <div style="flex:1;overflow:hidden"><div class="r">▾ src/api</div><div class="r i2 sel">upload.ts</div><div class="r i1">Dockerfile</div><div class="r i1">search.ts</div><div class="r">▾ config</div><div class="r i1">app.yml</div></div>
+          </div>
+          <div class="pane vt" style="flex:1">
+            <div class="dh"><span>← <b>1/6</b> →</span><span><b>upload.ts</b></span><span class="dim">3f9c21ab..8d47e0c5</span><span style="margin-left:auto">▥ ▭</span></div>
+            <div class="code" style="flex:1">
+              <div class="l"><span class="ln">15</span>  return null</div><div class="l"><span class="ln">16</span>fi</div><div class="l"><span class="ln">18</span>import { send } from './http'</div>
+              <div class="l del"><span class="ln">19</span>const RETRY_LIMIT = 1</div>
+              <div class="l add"><span class="ln">19</span>const RETRY_LIMIT = 3</div>
+              <div class="l"><span class="ln">20</span></div><div class="l"><span class="ln">21</span>// Wait longer after each failure</div><div class="l"><span class="ln">22</span>const BACKOFF_MS = 500</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C1. Секции стопкой слева</h3>
+      <p>Ветки, коммиты, файлы друг под другом; свёрнутая секция — одна строка-заголовок (здесь свёрнуты ветки, видна текущая HEAD). Левая колонка — та же, что панель в сайдбаре.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c-columns" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="ow" style="height:400px">
+        <div class="tb"><span class="on">⎇ Git</span><span>README.md</span></div>
+        <div class="hz" style="flex:1">
+          <div class="strip">▸ Ветки · HEAD</div>
+          <div class="pane vt" style="width:30%">
+            <div class="srch">⌕ Text or hash · Branch · User</div>
+            <div class="cm sel"><span class="dot y"></span><span class="m">fix(ABC-102): Retry failed…</span></div>
+            <div class="cm sel"><span class="dot y"></span><span class="m">ci: bump version…</span></div>
+            <div class="cm sel"><span class="dot p"></span><span class="m">Merge pull request #41…</span></div>
+            <div class="cm"><span class="dot g"></span><span class="m dim">Merge pull request #40…</span></div>
+            <div class="cm"><span class="dot b"></span><span class="m">feat(ABC-98): Add search…</span></div>
+            <div class="cm"><span class="dot y"></span><span class="m dim">ci: sync release…</span></div>
+          </div>
+          <div class="pane vt" style="width:20%">
+            <div class="srch" style="border:none;color:#9a9a9a">6 files · ⊞ ⊟</div>
+            <div class="r">▾ src/api</div><div class="r i2 sel">upload.ts</div><div class="r i1">Dockerfile</div><div class="r i1">search.ts</div><div class="r">▾ config</div><div class="r i1">app.yml</div>
+          </div>
+          <div class="pane vt" style="flex:1">
+            <div class="dh"><span>← <b>1/6</b> →</span><span><b>upload.ts</b></span><span style="margin-left:auto">▥ ▭</span></div>
+            <div class="code" style="flex:1">
+              <div class="l"><span class="ln">15</span>  return null</div><div class="l"><span class="ln">16</span>fi</div>
+              <div class="l del"><span class="ln">19</span>const RETRY_LIMIT = 1</div>
+              <div class="l add"><span class="ln">19</span>const RETRY_LIMIT = 3</div>
+              <div class="l"><span class="ln">21</span>// Wait longer…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C2. Колонки рядом, сворачиваются в полоску</h3>
+      <p>Ветки | коммиты | файлы | дифф слева направо; свёрнутая колонка — узкая вертикальная полоска (здесь ветки). Шире, чем C1, дифф уже.</p>
+    </div>
+  </div>
+</div>
