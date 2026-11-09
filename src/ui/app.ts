@@ -411,10 +411,12 @@ async function reloadLog(keepCount = false): Promise<void> {
   }
   loading = false
   recompute()
+  const before = selected.size
   for (const hash of [...selected]) if (!indexByHash.has(hash)) selected.delete(hash)
   cursor = selected.size ? Math.min(...[...selected].map((h) => indexByHash.get(h)!)) : -1
   if (anchor >= rows.length) anchor = cursor
   renderRows()
+  if (selected.size !== before) updateFiles()
   updateDetails()
 }
 
@@ -512,6 +514,7 @@ function setRepo(next: RepoInfo): void {
     detailsKey = ''
     detailsCache.clear()
     anchor = cursor = -1
+    updateFiles()
     filter = { ...filter, branches: [] }
     viewport.scrollTop = 0
     document.title = t('docTitle', { name: next.name })
@@ -554,6 +557,7 @@ async function start(): Promise<void> {
       recompute()
       renderTree()
       renderRows()
+      updateFiles()
       updateDetails()
     }
   } catch (error) {
