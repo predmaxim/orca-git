@@ -1,4 +1,3 @@
-import { resolve } from 'node:path'
 import type { OrcaWorkerApi } from 'orca/worker'
 import type { DiffTabState } from '../shared/protocol.ts'
 import { isLocal, toplevel, type ListedWorkspace } from './repo.ts'
@@ -17,7 +16,8 @@ export function validDiffState(state: any): state is DiffTabState {
     Array.isArray(files) &&
     files.length > 0 &&
     files.length <= 2000 &&
-    files.every(
+    // Array.from turns holes into undefined: every() would skip them.
+    Array.from(files).every(
       (file: any) =>
         typeof file?.status === 'string' &&
         /^[AMDRCT]$/.test(file.status) &&
@@ -36,7 +36,7 @@ export function validDiffState(state: any): state is DiffTabState {
 export async function workspaceFor(orca: OrcaWorkerApi, root: string, gitPath: string): Promise<ListedWorkspace | null> {
   const { workspaces } = (await orca.host.call('workspace.list', {})) as { workspaces: ListedWorkspace[] }
   // A workspace at the root itself is the usual case: checking it first saves a git process per other workspace.
-  const atRoot = (workspace: ListedWorkspace) => Number(resolve(workspace.path) === root)
+  const atRoot = (workspace: ListedWorkspace) => Number(workspace.path.replace(/[\\/]+$/, '') === root)
   for (const workspace of workspaces.filter(isLocal).sort((a, b) => atRoot(b) - atRoot(a))) {
     if ((await toplevel(workspace.path, gitPath)) === root) return workspace
   }

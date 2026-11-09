@@ -131,6 +131,7 @@ test('a Diff tab state with bad files, hashes or index opens nothing', async () 
       { files: [] },
       { files: Array(2001).fill(file) },
       { files: [null] },
+      { files: [, file] },
       { files: [{ ...file, path: '' }] },
       { files: [{ ...file, path: 'a\0b' }] },
       { files: [{ ...file, path: 1 }] },

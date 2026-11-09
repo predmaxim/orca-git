@@ -243,8 +243,9 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { dispo
     const target = event.target as HTMLElement | null
     // Leave typing and open dialogs or menus alone; the file tree and commit list still get the shortcuts.
     if (event.defaultPrevented || target?.closest?.('input, textarea, select, [contenteditable], .overlay, .menu') || target?.isContentEditable) return
-    if (event.altKey && event.key === 'ArrowUp') go(index - 1)
-    else if (event.altKey && event.key === 'ArrowDown') go(index + 1)
+    const plain = !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
+    if ((event.altKey && event.key === 'ArrowUp') || (plain && event.key === 'ArrowLeft')) go(index - 1)
+    else if ((event.altKey && event.key === 'ArrowDown') || (plain && event.key === 'ArrowRight')) go(index + 1)
     else if (event.key === 'F7') jump(event.shiftKey ? -1 : 1)
     else return
     event.preventDefault()

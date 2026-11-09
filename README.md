@@ -45,7 +45,7 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   side or unified, with changed words highlighted and syntax highlighting for 26 languages (light and
   dark palettes in the style of WebStorm, the plugin's own because Orca does not pass theme token colors
   to plugins). Toggle **Whole file** for full context, jump between changes with F7 / Shift+F7 and
-  between the files of the selection it was opened from with the arrows in the header or Alt+↑ /
+  between the files of the selection it was opened from with ← / → (keys or header buttons) or Alt+↑ /
   Alt+↓ (counter "3/5 files"). Merge commits are compared with their first parent.
 - **Multi-select**: click, Ctrl/⌘-click, Shift-click, arrows, Page Up/Down, Home/End, Ctrl+A.
 - **Right-click menu** with icons (or Shift+F10):

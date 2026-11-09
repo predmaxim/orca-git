@@ -42,7 +42,6 @@ export const ICONS = {
   close: stroke('M4 4l8 8M12 4l-8 8'),
   tree: stroke('M2.5 3h11M2.5 3v10M2.5 8h4M2.5 13h4M9 8h4.5M9 13h4.5'),
   details: `<rect x="2" y="2.5" width="12" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/>${stroke('M9.5 2.5v11')}`,
-  external: stroke('M9 2.5h4.5V7M13.5 2.5 7.5 8.5M12 9.5v3.5h-9.5v-9.5H6'),
   folder: stroke('M2 4.5h4l1.5 1.5H14v7H2z'),
   file: stroke('M4 2h5l3 3v9H4zM9 2v3h3'),
   up: stroke('M8 13V3M4 7l4-4 4 4'),
