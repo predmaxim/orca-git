@@ -7,6 +7,8 @@ export interface BranchesHost {
   refs: RefsResult | null
   /** Full ref names the log is filtered to. */
   filtered: string[]
+  /** Full ref name to highlight ("Show Backup"). */
+  revealed?: string | null
   collapsed: Set<string>
   onCollapse(): void
   /** Double click: select the commit in the log. */
@@ -54,7 +56,7 @@ export function renderBranches(container: HTMLElement, host: BranchesHost, query
       h(
         'div',
         {
-          class: `node-row${filtered ? ' filtered' : ''}`,
+          class: `node-row${filtered ? ' filtered' : ''}${ref.full === host.revealed ? ' active' : ''}`,
           style: `padding-left:${4 + depth * 14 + 16}px`,
           title: `${ref.full}${ref.upstream ? `\n${t('trackingTip', { upstream: ref.upstream })}` : ''}\n${t('branchRowTip', { kind: t(kind === 'tag' ? 'kindTag' : 'kindBranch') })}`,
           // The second click of a double click does nothing: filterTo toggles and would undo the first.

@@ -54,6 +54,22 @@
         "default": 300,
         "minimum": 50,
         "maximum": 2000
+      },
+      {
+        "key": "offerBackup",
+        "title": "Offer a backup before risky operations",
+        "description": "Squash, fixup, drop, reword, interactive rebase, rebase onto, reset and deleting an unmerged branch offer to save a backup branch or tag first, in their confirmation.",
+        "type": "boolean",
+        "default": true
+      },
+      {
+        "key": "backupKind",
+        "title": "Backup kind",
+        "description": "What the backup offer creates by default. The last choice made in a confirmation is kept here.",
+        "type": "string",
+        "enum": ["branch", "tag"],
+        "enumLabels": ["Branch", "Tag"],
+        "default": "branch"
       }
     ]
   },

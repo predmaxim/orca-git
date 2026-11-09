@@ -1,5 +1,6 @@
 // Thin typed wrapper over the frame's `window.orca` (no Node, no network in a frame).
 import type {
+  ActionGuard,
   ActionRequest,
   ActionResult,
   BranchAction,
@@ -29,6 +30,7 @@ interface FrameOrca {
   }
   on(event: string, handler: (payload: any) => void): Disposable
   locale: string
+  settings: { get(): Promise<Record<string, unknown>>; set(key: string, value: unknown): Promise<void> }
   host: { has(method: string): boolean; call(method: string, params?: unknown): Promise<any> }
   document?: { get(): Promise<{ content: { kind: string; text?: string } }> }
 }
@@ -59,9 +61,10 @@ export const api = {
   check: (root: string, kind: RewriteKind, hashes: string[]): Promise<CheckResult> =>
     call('action.check', { root, kind, hashes }, LONG),
   // Outlasts the worker's 120 s merge or rebase, so its message arrives instead of a frame timeout.
-  branch: (root: string, action: BranchAction): Promise<BranchActionResult> => call('branch.run', { root, action }, { timeoutMs: 150_000 }),
+  branch: (root: string, action: BranchAction, guard: ActionGuard = {}): Promise<BranchActionResult> =>
+    call('branch.run', { root, action, ...guard }, { timeoutMs: 150_000 }),
   branchCheck: (root: string, name: string): Promise<{ pushed: string[] }> => call('branch.check', { root, name }, LONG),
-  run: (root: string, action: ActionRequest): Promise<ActionResult> => call('action.run', { root, action }, LONG),
+  run: (root: string, action: ActionRequest, guard: ActionGuard = {}): Promise<ActionResult> => call('action.run', { root, action, ...guard }, LONG),
   // Outlasts the worker's 120 s git fetch timeout, so its message arrives instead of a frame timeout.
   fetch: (root: string): Promise<ActionResult> => call('repo.fetch', { root }, { timeoutMs: 150_000 }),
   openDiff: (state: DiffTabState): Promise<{ ok: boolean; reason?: string }> => call('diff.open', state),

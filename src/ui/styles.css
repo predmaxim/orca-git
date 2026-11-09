@@ -1162,6 +1162,42 @@ textarea.field {
   align-items: center;
 }
 
+/* Backup offer in a confirmation */
+.backup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.backup-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  margin: 0 0 0 22px;
+  padding: 0;
+  border: 0;
+}
+
+.backup-details:disabled {
+  opacity: 0.5;
+}
+
+.backup-details [hidden] {
+  display: none;
+}
+
+.backup-kind {
+  display: flex;
+  gap: 14px;
+}
+
+.backup-kind label {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
 .warning {
   display: flex;
   gap: 8px;

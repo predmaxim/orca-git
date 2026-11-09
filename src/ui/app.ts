@@ -1,5 +1,6 @@
-import type { ActionRequest, ActionResult, BranchAction, BranchActionResult, BranchRef, CommitDetails, CommitRow, LogFilter, RefsResult, RepoInfo, RepoResult, RewriteKind, SelectionFile, WorkspaceChoice } from '../shared/protocol.ts'
+import type { ActionRequest, ActionResult, BackupRequest, BranchAction, BranchActionResult, BranchRef, CommitDetails, CommitRow, LogFilter, RefsResult, RepoInfo, RepoResult, RewriteKind, SelectionFile, WorkspaceChoice } from '../shared/protocol.ts'
 import { api, copyText, errorMessage, orca } from './api.ts'
+import { backupBlock, suggestBackupName, type BackupBlock } from './backup.ts'
 import { buildFileTree, dirPaths, orderedFiles, renderFileTree, type FileNode } from './filetree.ts'
 import { renderBranches } from './branches.ts'
 import { renderCommitList, renderPlaceholder } from './details.ts'
@@ -562,6 +563,9 @@ if (prefs.matchCase) filter.matchCase = true
 
 // ---------- Branches tree ----------
 
+/** The ref "Show Backup" highlighted in the tree. */
+let revealed: string | null = null
+
 function renderTree(): void {
   const head = repo?.head
   column.section('branches').setSummary(head?.branch ?? (head?.hash ? shortHash(head.hash) : ''))
@@ -577,6 +581,7 @@ function renderTree(): void {
         renderTree()
       },
       select: (hash) => void jumpTo(hash),
+      revealed,
       filterTo: (full) => applyFilter({ branches: filter.branches?.length === 1 && filter.branches[0] === full ? [] : [full] }),
       menu: (event, ref) => branchMenu(event, ref)
     },
@@ -584,6 +589,23 @@ function renderTree(): void {
   )
 }
 treeSearch.addEventListener('input', renderTree)
+// Any click in the tree ends the "Show Backup" highlight.
+tree.addEventListener('mousedown', () => (revealed = null))
+
+/** Opens the branches section and the folders down to `full`, highlights it and scrolls to it. */
+function reveal(full: string): void {
+  // The header's own click handler opens the section and saves the layout.
+  if (prefs.sections.collapsed.branches) column.section('branches').header.click()
+  const parts = full.split('/').slice(2, -1)
+  const ids = full.startsWith('refs/tags/') ? ['tags'] : ['local', ...parts.map((_, i) => `local:${parts.slice(0, i + 1).join('/')}`)]
+  for (const id of ids) collapsed.delete(id)
+  prefs.collapsed = [...collapsed]
+  savePrefs()
+  treeSearch.value = ''
+  revealed = full
+  renderTree()
+  tree.querySelector('.node-row.active')?.scrollIntoView({ block: 'nearest' })
+}
 
 function branchMenu(event: MouseEvent, ref: BranchRef & { kind: 'local' | 'remote' | 'tag' | 'head' }): void {
   if (!repo) return
@@ -611,7 +633,7 @@ function branchMenu(event: MouseEvent, ref: BranchRef & { kind: 'local' | 'remot
     entries.push('separator')
     if (ref.kind === 'local') {
       entries.push({ label: t('branchRename'), icon: 'edit', run: () => void renameBranch(scope, ref.name) })
-      if (!current) entries.push({ label: t('branchDelete'), icon: 'drop', run: () => void deleteBranch(scope, ref.name) })
+      if (!current) entries.push({ label: t('branchDelete'), icon: 'drop', run: () => void deleteBranch(scope, ref.name, ref.hash) })
     }
     if (!current) {
       entries.push(
@@ -907,29 +929,42 @@ function unchanged(scope: Scope, onHead = false): boolean {
   return false
 }
 
-async function act(scope: Scope, action: ActionRequest | BranchAction, progress: string): Promise<BranchActionResult | null> {
-  if (!unchanged(scope, ON_HEAD.has(action.kind))) return null
+/**
+ * Runs `action` on the repository of `scope`. The worker refuses an action on the current branch when HEAD
+ * is no longer the one `scope` saw, and makes `backup` before anything else.
+ */
+async function act(scope: Scope, action: ActionRequest | BranchAction, progress: string, backup?: BackupRequest): Promise<BranchActionResult | null> {
+  const onHead = ON_HEAD.has(action.kind)
+  if (!unchanged(scope, onHead)) return null
   const root = scope.root
+  const guard = { ...(onHead && scope.head ? { expectHead: scope.head } : {}), ...(backup ? { backup } : {}) }
   const done = busy(progress)
   let result: BranchActionResult
   try {
-    result = BRANCH_KINDS.has(action.kind) ? await api.branch(root, action as BranchAction) : await api.run(root, action as ActionRequest)
+    result = BRANCH_KINDS.has(action.kind) ? await api.branch(root, action as BranchAction, guard) : await api.run(root, action as ActionRequest, guard)
   } catch (error) {
     result = { ok: false, message: errorMessage(error) }
   } finally {
     done()
   }
+  // The worker reports a backup it made even when the action then failed.
+  const made = backup && result.backup ? `refs/${backup.kind === 'tag' ? 'tags' : 'heads'}/${result.backup}` : null
+  const show = made ? [{ label: t('showBackup'), run: () => reveal(made) }] : []
+  const text = [result.message, result.backup && t('backupMade', { name: result.backup }), result.stash && t('backupStashed', { hash: shortHash(result.stash) })].filter(Boolean).join(' ')
+  /** HEAD once the log shows this action's result: Undo runs only while HEAD is still there. */
+  let after: string | null | undefined
   if (result.ok) {
     if (action.kind === 'rename') followBranch(action.name, action.newName)
     else if (action.kind === 'delete') followBranch(action.name)
     const previous = result.previousHead
-    // The Undo stays bound to this repository; its HEAD is wherever this action left it.
+    // The Undo stays bound to this repository and to the HEAD this action left.
     const undo = previous && UNDOABLE.has(action.kind)
-      ? [{ label: t('undo'), run: () => void act({ root }, { kind: 'reset', hash: previous, mode: 'keep' }, t('progUndoing')).then((r) => r?.ok && showBanner(t('restoredHead', { hash: shortHash(previous) }), 'success')) }]
+      ? [{ label: t('undo'), run: () => void act({ root, head: after }, { kind: 'reset', hash: previous, mode: 'keep' }, t('progUndoing')).then((r) => r?.ok && showBanner(t('restoredHead', { hash: shortHash(previous) }), 'success')) }]
       : []
-    showBanner(result.message, result.warning ? 'info' : 'success', undo, result.warning)
-  } else if (!result.needsForce) showBanner(result.message, 'error')
+    showBanner(text, result.warning ? 'info' : 'success', [...undo, ...show], result.warning)
+  } else if (!result.needsForce) showBanner(text, 'error', show)
   await refreshAll()
+  if (repo?.root === root) after = repo.head.hash
   return result
 }
 
@@ -938,6 +973,31 @@ function followBranch(name: string, newName?: string): void {
   const old = `refs/heads/${name}`
   if (!filter.branches?.includes(old)) return
   applyFilter({ branches: filter.branches.flatMap((ref) => (ref !== old ? [ref] : newName ? [`refs/heads/${newName}`] : [])) })
+}
+
+/** The backup offer for a confirmation; none when the `offerBackup` setting is off or there is no commit to keep. */
+async function offerBackup(branch: string | null, target: string | null | undefined): Promise<BackupBlock | undefined> {
+  if (!target) return undefined
+  const settings = await orca.settings.get().catch((): Record<string, unknown> => ({}))
+  if (settings.offerBackup === false) return undefined
+  const taken = new Set([...(refs?.locals ?? []), ...(refs?.tags ?? [])].map((ref) => ref.name))
+  return backupBlock({
+    label: branch ?? 'HEAD',
+    name: suggestBackupName(branch, target, taken, new Date()),
+    target,
+    kind: settings.backupKind === 'tag' ? 'tag' : 'branch',
+    taken,
+    onKind: (kind) => void orca.settings.set('backupKind', kind).catch(() => undefined)
+  })
+}
+
+/** A backup of the current branch at the HEAD `scope` saw. */
+const offerHeadBackup = (scope: Scope) => offerBackup(repo?.head.branch ?? null, scope.head)
+
+/** Confirms a rewrite of the current branch with the pushed warning and the backup offer; no dialog when there is neither. */
+function confirmRewrite(title: string, pushed: string[], ok: string, backup?: BackupBlock): Promise<boolean> {
+  if (!pushed.length && !backup) return Promise.resolve(true)
+  return confirm(title, [t('rewriteConfirm', { name: repo?.head.branch ?? 'HEAD' }), pushed.length ? pushedWarning(pushed) : null], ok, pushed.length > 0, backup)
 }
 
 async function checked(scope: Scope, kind: RewriteKind, hashes: string[]) {
@@ -965,33 +1025,44 @@ async function squash(scope: Scope, hashes: string[]): Promise<void> {
   if (!check) return
   const chosen = new Set(hashes)
   const combined = check.commits.filter((c) => chosen.has(c.hash)).map((c) => c.message).join('\n\n')
-  const message = await editMessage(t('squashTitle'), combined, t('btnSquash'), check.pushed.length ? pushedWarning(check.pushed) : null)
-  if (message) await act(scope, { kind: 'squash', hashes, message }, t('progSquashing', { count: hashes.length }))
+  const backup = await offerHeadBackup(scope)
+  const message = await editMessage(t('squashTitle'), combined, t('btnSquash'), check.pushed.length ? pushedWarning(check.pushed) : null, backup)
+  if (message) await act(scope, { kind: 'squash', hashes, message }, t('progSquashing', { count: hashes.length }), backup?.value())
 }
 
 async function fixup(scope: Scope, hashes: string[]): Promise<void> {
   const check = await checked(scope, 'fixup', hashes)
-  if (check && (await confirmPushed(check.pushed, t('btnFixup')))) await act(scope, { kind: 'fixup', hashes }, t('progFixingUp'))
+  if (!check) return
+  const backup = await offerHeadBackup(scope)
+  if (await confirmRewrite(hashes.length > 1 ? t('cmFixupMany') : t('cmFixupPrev'), check.pushed, t('btnFixup'), backup)) {
+    await act(scope, { kind: 'fixup', hashes }, t('progFixingUp'), backup?.value())
+  }
 }
 
 async function drop(scope: Scope, hashes: string[]): Promise<void> {
   const check = await checked(scope, 'drop', hashes)
-  if (check && (await confirmPushed(check.pushed, t('btnDrop')))) await act(scope, { kind: 'drop', hashes }, t('progDropping', { count: hashes.length }))
+  if (!check) return
+  const backup = await offerHeadBackup(scope)
+  if (await confirmRewrite(t('dropTitle', { count: hashes.length }), check.pushed, t('btnDrop'), backup)) {
+    await act(scope, { kind: 'drop', hashes }, t('progDropping', { count: hashes.length }), backup?.value())
+  }
 }
 
 async function reword(scope: Scope, hash: string): Promise<void> {
   const check = await checked(scope, 'reword', [hash])
   if (!check) return
   const current = check.commits.find((c) => c.hash === hash)?.message ?? ''
-  const message = await editMessage(t('rewordTitle'), current, t('ok'), check.pushed.length ? pushedWarning(check.pushed) : null)
-  if (message && message !== current) await act(scope, { kind: 'reword', hash, message }, t('progUpdatingMessage'))
+  const backup = await offerHeadBackup(scope)
+  const message = await editMessage(t('rewordTitle'), current, t('ok'), check.pushed.length ? pushedWarning(check.pushed) : null, backup)
+  if (message && message !== current) await act(scope, { kind: 'reword', hash, message }, t('progUpdatingMessage'), backup?.value())
 }
 
 async function rebaseFrom(scope: Scope, hash: string): Promise<void> {
   const check = await checked(scope, 'rebase', [hash])
   if (!check) return
-  const plan = await askRebasePlan(check.commits, check.pushed)
-  if (plan) await act(scope, { kind: 'rebase', plan }, t('progRebasing'))
+  const backup = await offerHeadBackup(scope)
+  const plan = await askRebasePlan(check.commits, check.pushed, backup)
+  if (plan) await act(scope, { kind: 'rebase', plan }, t('progRebasing'), backup?.value())
 }
 
 async function undoCommit(scope: Scope, hash: string): Promise<void> {
@@ -1009,11 +1080,14 @@ async function renameBranch(scope: Scope, name: string): Promise<void> {
   if (answer && answer.name !== name) await act(scope, { kind: 'rename', name, newName: answer.name }, t('branchRenaming', { name }))
 }
 
-async function deleteBranch(scope: Scope, name: string): Promise<void> {
+/** `hash`: the branch tip the menu showed; the backup of an unmerged branch keeps it. */
+async function deleteBranch(scope: Scope, name: string, hash: string): Promise<void> {
   if (!(await confirm(t('branchDeleteTitle'), t('branchDeleteConfirm', { name }), t('branchDelete'), true))) return
   const result = await act(scope, { kind: 'delete', name, force: false }, t('branchDeleting', { name }))
-  if (result?.needsForce && (await confirm(t('branchDeleteTitle'), t('branchDeleteForce', { name }), t('branchDelete'), true))) {
-    await act(scope, { kind: 'delete', name, force: true }, t('branchDeleting', { name }))
+  if (!result?.needsForce) return
+  const backup = await offerBackup(name, hash)
+  if (await confirm(t('branchDeleteTitle'), t('branchDeleteForce', { name }), t('branchDelete'), true, backup)) {
+    await act(scope, { kind: 'delete', name, force: true }, t('branchDeleting', { name }), backup?.value())
   }
 }
 
@@ -1028,7 +1102,10 @@ async function rebaseOnto(scope: Scope, name: string): Promise<void> {
   } finally {
     done()
   }
-  if (await confirmPushed(pushed, t('btnRebase'))) await act(scope, { kind: 'rebaseOnto', name }, t('branchRebasing', { name }))
+  const backup = await offerHeadBackup(scope)
+  if (await confirmRewrite(t('rebaseOntoTitle', { name: repo?.head.branch ?? 'HEAD', target: name }), pushed, t('btnRebase'), backup)) {
+    await act(scope, { kind: 'rebaseOnto', name }, t('branchRebasing', { name }), backup?.value())
+  }
 }
 
 async function newTag(scope: Scope, hash: string): Promise<void> {
@@ -1037,10 +1114,13 @@ async function newTag(scope: Scope, hash: string): Promise<void> {
 }
 
 async function reset(scope: Scope, hash: string): Promise<void> {
-  const mode = await askReset(repo?.head.branch ?? null, hash)
+  const backup = await offerHeadBackup(scope)
+  const mode = await askReset(repo?.head.branch ?? null, hash, backup)
   if (!mode) return
-  if (mode === 'hard' && !(await confirm(t('hardResetTitle'), t('hardResetConfirm'), t('reset'), true))) return
-  await act(scope, { kind: 'reset', hash, mode }, t('progResetting'))
+  const request = backup?.value()
+  // Changes saved to the stash are not lost, so the warning is only for a hard reset without it.
+  if (mode === 'hard' && !request?.stash && !(await confirm(t('hardResetTitle'), t('hardResetConfirm'), t('reset'), true))) return
+  await act(scope, { kind: 'reset', hash, mode }, t('progResetting'), request)
 }
 
 async function createPatch(scope: Scope, hashes: string[]): Promise<void> {

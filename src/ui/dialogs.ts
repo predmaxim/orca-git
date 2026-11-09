@@ -1,4 +1,5 @@
 import type { PlanItem, RangeCommit, RebaseAction, ResetMode } from '../shared/protocol.ts'
+import type { BackupBlock } from './backup.ts'
 import { h, icon } from './dom.ts'
 import { closePopups } from './menu.ts'
 import { shortHash } from './format.ts'
@@ -89,24 +90,25 @@ export function pushedWarning(pushed: string[]): HTMLElement {
   )
 }
 
-export async function confirm(title: string, message: string | HTMLElement, ok: string, danger = false): Promise<boolean> {
+export async function confirm(title: string, message: string | HTMLElement | (string | HTMLElement | null)[], ok: string, danger = false, backup?: BackupBlock): Promise<boolean> {
   const result = await dialog<boolean>({
     title,
-    body: [message],
-    buttons: [cancel(), { label: ok, value: true, kind: danger ? 'danger' : 'primary' }]
+    body: [...[message].flat(), backup?.element ?? null],
+    buttons: [cancel(), { label: ok, value: true, kind: danger ? 'danger' : 'primary' }],
+    validate: () => backup?.validate() ?? null
   })
   return result === true
 }
 
-export async function editMessage(title: string, initial: string, ok: string, extra: HTMLElement | null = null): Promise<string | null> {
+export async function editMessage(title: string, initial: string, ok: string, extra: HTMLElement | null = null, backup?: BackupBlock): Promise<string | null> {
   const area = h('textarea', { class: 'field mono', rows: 10, spellcheck: false }) as HTMLTextAreaElement
   area.value = initial
   const result = await dialog<string>({
     title,
-    body: [extra, area, h('div', { class: 'muted' }, t('ctrlEnterHint'))],
+    body: [extra, area, h('div', { class: 'muted' }, t('ctrlEnterHint')), backup?.element ?? null],
     buttons: [cancel(), { label: ok, value: 'ok', kind: 'primary' }],
     focus: area,
-    validate: () => (area.value.trim() ? null : t('commitMessageEmpty'))
+    validate: () => (area.value.trim() ? backup?.validate() ?? null : t('commitMessageEmpty'))
   })
   return result ? area.value.replace(/\s+$/, '') : null
 }
@@ -159,21 +161,26 @@ const resetModes = (): { mode: ResetMode; label: string; help: string }[] => [
   { mode: 'keep', label: 'Keep', help: t('resetKeepHelp') }
 ]
 
-export async function askReset(branch: string | null, hash: string): Promise<ResetMode | null> {
+export async function askReset(branch: string | null, hash: string, backup?: BackupBlock): Promise<ResetMode | null> {
   let chosen: ResetMode = 'mixed'
+  const choose = (mode: ResetMode) => {
+    chosen = mode
+    backup?.showStash(mode === 'hard')
+  }
   const radios = resetModes().map(({ mode, label, help }) =>
     h(
       'label',
       { class: 'radio' },
-      h('input', { type: 'radio', name: 'mode', checked: mode === chosen, onchange: () => (chosen = mode) }),
+      h('input', { type: 'radio', name: 'mode', checked: mode === chosen, onchange: () => choose(mode) }),
       h('strong', null, label),
       h('span', { class: 'help' }, help)
     )
   )
   const result = await dialog<string>({
     title: t('resetTitle'),
-    body: [branch ? t('resetBranchTo', { name: branch, hash: shortHash(hash) }) : t('resetHeadTo', { hash: shortHash(hash) }), ...radios],
-    buttons: [cancel(), { label: t('reset'), value: 'ok', kind: 'primary' }]
+    body: [branch ? t('resetBranchTo', { name: branch, hash: shortHash(hash) }) : t('resetHeadTo', { hash: shortHash(hash) }), ...radios, backup?.element ?? null],
+    buttons: [cancel(), { label: t('reset'), value: 'ok', kind: 'primary' }],
+    validate: () => backup?.validate() ?? null
   })
   return result ? chosen : null
 }
@@ -181,7 +188,7 @@ export async function askReset(branch: string | null, hash: string): Promise<Res
 const ACTIONS: RebaseAction[] = ['pick', 'reword', 'squash', 'fixup', 'drop']
 
 /** The "Interactively Rebase" dialog: oldest first; reorder, change actions, reword. */
-export async function askRebasePlan(commits: RangeCommit[], pushed: string[]): Promise<PlanItem[] | null> {
+export async function askRebasePlan(commits: RangeCommit[], pushed: string[], backup?: BackupBlock): Promise<PlanItem[] | null> {
   const items = commits.map((c) => ({ ...c, action: 'pick' as RebaseAction, newMessage: c.message }))
   let selected = 0
   const list = h('div', { class: 'rebase-list', tabindex: 0 })
@@ -256,7 +263,7 @@ export async function askRebasePlan(commits: RangeCommit[], pushed: string[]): P
   const result = await dialog<string>({
     title: t('rebaseTitle'),
     wide: true,
-    body: [pushed.length ? pushedWarning(pushed) : null, tools, list, messageLabel, message],
+    body: [pushed.length ? pushedWarning(pushed) : null, tools, list, messageLabel, message, backup?.element ?? null],
     buttons: [cancel(), { label: t('rebaseStart'), value: 'ok', kind: 'primary' }],
     focus: list,
     validate: () => {
@@ -264,7 +271,7 @@ export async function askRebasePlan(commits: RangeCommit[], pushed: string[]): P
       if (!kept.length) return t('rebaseKeepOne')
       if (kept[0].action === 'squash' || kept[0].action === 'fixup') return t('rebaseFirstKept', { action: kept[0].action })
       if (items.some((i) => i.action === 'reword' && !i.newMessage.trim())) return t('commitMessageEmpty')
-      return null
+      return backup?.validate() ?? null
     }
   })
   if (!result) return null
