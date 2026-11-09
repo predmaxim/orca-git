@@ -53,6 +53,23 @@ export async function checkBackup(git: Git, kind: unknown, name: unknown): Promi
 }
 
 /**
+ * What a hard reset to `target` would lose: whether tracked files have uncommitted changes, and the
+ * untracked files, ignored ones included, at paths `target` tracks and HEAD does not (overwritten).
+ */
+export async function checkReset(git: Git, target: unknown): Promise<{ dirty: boolean; overwritten: string[] }> {
+  if (typeof target !== 'string' || !HASH.test(target)) throw new Error(t('invalidCommit'))
+  const dirty = (await git.out(['status', '--porcelain', '-z', '--untracked-files=no'])) !== ''
+  const added = (await git.out(['diff', '-z', '--name-only', '--no-renames', '--diff-filter=A', 'HEAD', target, '--'])).split('\0').filter(Boolean)
+  const overwritten: string[] = []
+  // Batches keep the command line short however many files the target adds.
+  for (let i = 0; i < added.length; i += 500) {
+    const paths = added.slice(i, i + 500).map((path) => `:(literal)${path}`)
+    overwritten.push(...(await git.out(['ls-files', '-z', '-o', '--', ...paths])).split('\0').filter(Boolean))
+  }
+  return { dirty, overwritten }
+}
+
+/**
  * Creates the backup branch or tag `name` at `target`, never moving an existing ref; with `stash`, first
  * snapshots the uncommitted changes into the stash without touching the work tree. Never throws.
  */

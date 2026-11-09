@@ -188,6 +188,14 @@ export interface BackupDelete {
   hash: string
 }
 
+/** What a hard reset would lose. */
+export interface ResetCheck {
+  /** Tracked files have uncommitted changes. */
+  dirty: boolean
+  /** Untracked files, ignored ones included, that the target tracks: the reset overwrites them. */
+  overwritten: string[]
+}
+
 /** Sent with `action.run` and `branch.run`: the HEAD the confirmation showed, and the backup to make first. */
 export interface ActionGuard {
   expectHead?: string
@@ -235,6 +243,8 @@ declare module 'orca' {
     'backup.delete': { input: { root: string; action: BackupDelete }; output: ActionResult }
     /** Whether `name` can become a new backup branch or tag; read-only. */
     'backup.check': { input: { root: string; kind: 'branch' | 'tag'; name: string }; output: { ok: true } | { ok: false; reason: string } }
+    /** What a hard reset to `target` would lose: uncommitted tracked changes, untracked files it overwrites; read-only. */
+    'reset.check': { input: { root: string; target: string }; output: ResetCheck }
     /** Remote branches holding commits that rebasing the current branch onto `name` would rewrite. */
     'branch.check': { input: { root: string; name: string }; output: { pushed: string[] } }
     'repo.fetch': { input: { root: string }; output: ActionResult }

@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { after, test } from 'node:test'
 import type { ActionResult } from '../shared/protocol.ts'
 import { runAction } from './actions.ts'
-import { checkBackup, createBackup, deleteBackup, runGuarded } from './backup.ts'
+import { checkBackup, checkReset, createBackup, deleteBackup, runGuarded } from './backup.ts'
 import { runBranchAction } from './branchActions.ts'
 import { createGit } from './git.ts'
 
@@ -193,6 +193,23 @@ test('the backup name check refuses what git would refuse, taken names and folde
   assert.deepEqual(await checkBackup(git, 'branch', 'backup/t'), { ok: true })
   assert.deepEqual(await checkBackup(git, 'tag', 'backup/main'), { ok: true })
   assert.deepEqual(await checkBackup(git, 'branch', 'backup/main-2'), { ok: true })
+})
+
+test('the reset check reports a dirty tree and the untracked or ignored files the target would overwrite', async () => {
+  const root = repo()
+  const git = createGit(root)
+  sh(root, 'checkout', '-q', '-b', 'other')
+  commit(root, 'new.txt', 'theirs\n', 'add new.txt')
+  commit(root, 'build.out', 'theirs\n', 'add build.out')
+  const target = rev(root, 'HEAD')
+  sh(root, 'checkout', '-q', 'main')
+  writeFileSync(join(root, '.gitignore'), '*.out\n')
+  for (const file of ['new.txt', 'build.out', 'stray.txt']) writeFileSync(join(root, file), 'mine\n')
+  assert.deepEqual(await checkReset(git, target), { dirty: false, overwritten: ['build.out', 'new.txt'] })
+  writeFileSync(join(root, 'c1.txt'), 'edited\n')
+  assert.deepEqual(await checkReset(git, target), { dirty: true, overwritten: ['build.out', 'new.txt'] })
+  assert.deepEqual(await checkReset(git, rev(root, 'HEAD~1')), { dirty: true, overwritten: [] })
+  await assert.rejects(checkReset(git, 'HEAD'))
 })
 
 test('a clean tree stores no stash', async () => {

@@ -1,10 +1,10 @@
-import type { ActionRequest, ActionResult, BackupDelete, BackupRequest, BranchAction, BranchActionResult, BranchRef, CommitDetails, CommitRow, LogFilter, RefsResult, RepoInfo, RepoResult, RewriteKind, SelectionFile, WorkspaceChoice } from '../shared/protocol.ts'
+import type { ActionRequest, ActionResult, BackupDelete, BackupRequest, BranchAction, BranchActionResult, BranchRef, CommitDetails, CommitRow, LogFilter, RefsResult, RepoInfo, RepoResult, ResetCheck, RewriteKind, SelectionFile, WorkspaceChoice } from '../shared/protocol.ts'
 import { api, copyText, errorMessage, orca } from './api.ts'
 import { backupBlock, suggestBackupName, type BackupBlock } from './backup.ts'
 import { buildFileTree, dirPaths, orderedFiles, renderFileTree, type FileNode } from './filetree.ts'
 import { renderBranches } from './branches.ts'
 import { renderCommitList, renderPlaceholder } from './details.ts'
-import { askName, askPatch, askRebasePlan, askReset, busy, confirm, editMessage, pushedWarning } from './dialogs.ts'
+import { askName, askPatch, askRebasePlan, askReset, busy, confirm, editMessage, overwrittenWarning, pushedWarning } from './dialogs.ts'
 import { h, icon } from './dom.ts'
 import { createFilterBar } from './filters.ts'
 import { reachableFrom, refLabels, relativeDate, fullDate, shortHash } from './format.ts'
@@ -1136,12 +1136,26 @@ async function newTag(scope: Scope, hash: string): Promise<void> {
 }
 
 async function reset(scope: Scope, hash: string): Promise<void> {
+  const done = busy(t('checking'))
+  let state: ResetCheck
+  try {
+    state = await api.resetCheck(scope.root, hash)
+  } catch (error) {
+    showBanner(errorMessage(error), 'error')
+    return
+  } finally {
+    done()
+  }
   const backup = await offerHeadBackup(scope)
-  const mode = await askReset(repo?.head.branch ?? null, hash, backup)
+  const mode = await askReset(repo?.head.branch ?? null, hash, backup, state)
   if (!mode) return
   const request = backup?.value()
-  // Changes saved to the stash are not lost, so the warning is only for a hard reset without it.
-  if (mode === 'hard' && !request?.stash && !(await confirm(t('hardResetTitle'), t('hardResetConfirm'), t('reset'), true))) return
+  if (mode === 'hard') {
+    // Asked even with the stash: it keeps tracked changes only, and the listed untracked files are overwritten.
+    const text = t(request?.stash ? 'hardResetStashConfirm' : 'hardResetConfirm')
+    const files = state.overwritten.length ? overwrittenWarning(state.overwritten) : null
+    if (!(await confirm(t('hardResetTitle'), [text, files], t('reset'), true))) return
+  }
   await act(scope, { kind: 'reset', hash, mode }, t('progResetting'), request)
 }
 

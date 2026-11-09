@@ -4,7 +4,7 @@ import type { OrcaWorkerApi } from 'orca/worker'
 import { pickLocale, setLocale, t } from '../shared/i18n.ts'
 import type { DiffTabState, RepoResult } from '../shared/protocol.ts'
 import { checkRewrite, runAction } from './actions.ts'
-import { checkBackup, deleteBackup, runGuarded } from './backup.ts'
+import { checkBackup, checkReset, deleteBackup, runGuarded } from './backup.ts'
 import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
 import { DIFF_ANCHOR, validDiffState, workspaceFor } from './diffTab.ts'
 import { createGit, type Git } from './git.ts'
@@ -196,6 +196,8 @@ export default function activate(orca: OrcaWorkerApi): void {
   })
 
   handle('backup.check', async ({ root, kind, name }) => checkBackup(await gitFor(root), kind, name))
+
+  handle('reset.check', async ({ root, target }) => checkReset(await gitFor(root), target))
 
   handle('backup.delete', async ({ root, action }) => {
     const result = await deleteBackup(await gitFor(root), action)

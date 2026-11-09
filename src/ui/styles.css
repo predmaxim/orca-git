@@ -1211,6 +1211,21 @@ textarea.field {
   margin-top: 1px;
 }
 
+.warning.danger {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+}
+
+.warning.danger .icon {
+  color: var(--danger);
+}
+
+.warning .file-list {
+  margin: 4px 0;
+  padding-left: 16px;
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
 .error-text {
   color: var(--danger);
   min-height: 1em;

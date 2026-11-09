@@ -16,6 +16,7 @@ import type {
   PatchResult,
   RefsResult,
   RepoResult,
+  ResetCheck,
   RewriteKind,
   SelectionFile
 } from '../shared/protocol.ts'
@@ -69,6 +70,7 @@ export const api = {
   deleteBackup: (root: string, action: BackupDelete): Promise<ActionResult> => call('backup.delete', { root, action }),
   backupCheck: (root: string, kind: 'branch' | 'tag', name: string): Promise<{ ok: true } | { ok: false; reason: string }> =>
     call('backup.check', { root, kind, name }),
+  resetCheck: (root: string, target: string): Promise<ResetCheck> => call('reset.check', { root, target }, LONG),
   // Outlasts the worker's 120 s git fetch timeout, so its message arrives instead of a frame timeout.
   fetch: (root: string): Promise<ActionResult> => call('repo.fetch', { root }, { timeoutMs: 150_000 }),
   openDiff: (state: DiffTabState): Promise<{ ok: boolean; reason?: string }> => call('diff.open', state),

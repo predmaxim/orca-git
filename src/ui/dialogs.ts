@@ -1,4 +1,4 @@
-import type { PlanItem, RangeCommit, RebaseAction, ResetMode } from '../shared/protocol.ts'
+import type { PlanItem, RangeCommit, RebaseAction, ResetCheck, ResetMode } from '../shared/protocol.ts'
 import type { BackupBlock } from './backup.ts'
 import { h, icon } from './dom.ts'
 import { closePopups } from './menu.ts'
@@ -176,12 +176,32 @@ const resetModes = (): { mode: ResetMode; label: string; help: string }[] => [
   { mode: 'keep', label: 'Keep', help: t('resetKeepHelp') }
 ]
 
-export async function askReset(branch: string | null, hash: string, backup?: BackupBlock): Promise<ResetMode | null> {
+/** The untracked files a hard reset overwrites, at most 10 listed. */
+export function overwrittenWarning(files: string[]): HTMLElement {
+  return h(
+    'div',
+    { class: 'warning danger' },
+    icon('warning'),
+    h(
+      'div',
+      null,
+      t('hardResetOverwritten', { count: files.length }),
+      h('ul', { class: 'file-list mono' }, ...files.slice(0, 10).map((file) => h('li', null, file))),
+      files.length > 10 ? t('pushedMore', { count: files.length - 10 }).trim() : null
+    )
+  )
+}
+
+/** `state`: what a hard reset would lose; the stash offer and the overwritten files show with Hard. */
+export async function askReset(branch: string | null, hash: string, backup?: BackupBlock, state?: ResetCheck): Promise<ResetMode | null> {
   let chosen: ResetMode = 'mixed'
+  const overwritten = state?.overwritten.length ? overwrittenWarning(state.overwritten) : null
   const choose = (mode: ResetMode) => {
     chosen = mode
-    backup?.showStash(mode === 'hard')
+    backup?.showStash(mode === 'hard' && Boolean(state?.dirty))
+    if (overwritten) overwritten.style.display = mode === 'hard' ? '' : 'none'
   }
+  choose(chosen)
   const radios = resetModes().map(({ mode, label, help }) =>
     h(
       'label',
@@ -193,7 +213,7 @@ export async function askReset(branch: string | null, hash: string, backup?: Bac
   )
   const result = await dialog<string>({
     title: t('resetTitle'),
-    body: [branch ? t('resetBranchTo', { name: branch, hash: shortHash(hash) }) : t('resetHeadTo', { hash: shortHash(hash) }), ...radios, backup?.element ?? null],
+    body: [branch ? t('resetBranchTo', { name: branch, hash: shortHash(hash) }) : t('resetHeadTo', { hash: shortHash(hash) }), ...radios, overwritten, backup?.element ?? null],
     buttons: [cancel(), { label: t('reset'), value: 'ok', kind: 'primary' }],
     validate: () => backup?.validate() ?? null
   })
