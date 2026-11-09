@@ -781,6 +781,7 @@ viewport.addEventListener('contextmenu', (event) => {
 })
 
 viewport.addEventListener('keydown', (event) => {
+  if (event.altKey) return // Alt+↑/↓ belong to the diff: previous and next file
   const mod = event.ctrlKey || event.metaKey
   const page = Math.max(1, Math.floor(viewport.clientHeight / rowH) - 1)
   const move = (to: number) => {
