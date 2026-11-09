@@ -77,6 +77,9 @@ test('action.run and branch.run check the HEAD the dialog showed and make the ba
     assert.equal(stale.ok, false)
     const stuck = await worker.request('branch.run', { root, action: { kind: 'rebaseOnto', name: 'main' }, expectHead: parent })
     assert.equal(stuck.ok, false)
+    // A stash goes only with a hard reset.
+    const stashed = await worker.request('action.run', { root, action: { kind: 'drop', hashes: [head] }, expectHead: head, backup: { kind: 'branch', name, target: head, stash: true } })
+    assert.equal(stashed.ok, false)
     assert.deepEqual(await worker.request('backup.check', { root, kind: 'branch', name }), { ok: true })
     assert.equal(sh(root, 'rev-parse', 'HEAD'), head)
     assert.equal(sh(root, 'for-each-ref', 'refs/heads/backup'), '')

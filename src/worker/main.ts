@@ -180,7 +180,8 @@ export default function activate(orca: OrcaWorkerApi): void {
 
   handle('action.run', async ({ root, action, expectHead, backup }) => {
     const git = await gitFor(root)
-    const result = await runGuarded(git, { expectHead, backup }, 'HEAD', () => runAction(git, action))
+    const hardReset = action?.kind === 'reset' && action?.mode === 'hard'
+    const result = await runGuarded(git, { expectHead, backup }, 'HEAD', () => runAction(git, action), hardReset)
     orca.panels.post('repo.changed', { root })
     return result
   })

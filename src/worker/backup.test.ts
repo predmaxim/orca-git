@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
+import type { ActionResult } from '../shared/protocol.ts'
 import { runAction } from './actions.ts'
 import { checkBackup, createBackup, deleteBackup, runGuarded } from './backup.ts'
 import { runBranchAction } from './branchActions.ts'
@@ -110,8 +111,12 @@ test('reset --hard with stash keeps the uncommitted changes in the stash', async
   const git = createGit(root)
   const head = rev(root, 'HEAD')
   writeFileSync(join(root, 'c4.txt'), 'local edit\n')
-  const result = await runGuarded(git, { expectHead: head, backup: { kind: 'branch', name: NAME, target: head, stash: true } }, 'HEAD', () =>
-    runAction(git, { kind: 'reset', hash: rev(root, 'HEAD~2'), mode: 'hard' })
+  const result = await runGuarded(
+    git,
+    { expectHead: head, backup: { kind: 'branch', name: NAME, target: head, stash: true } },
+    'HEAD',
+    () => runAction(git, { kind: 'reset', hash: rev(root, 'HEAD~2'), mode: 'hard' }),
+    true
   )
   assert.equal(result.ok, true, result.message)
   assert.match(result.stash ?? '', /^[0-9a-f]{40}$/)
@@ -120,6 +125,43 @@ test('reset --hard with stash keeps the uncommitted changes in the stash', async
   assert.match(sh(root, 'stash', 'list'), /Git plugin backup before reset --hard \(main\)/)
   assert.equal(sh(root, 'status', '--porcelain'), '')
   assert.equal(rev(root, `refs/heads/${NAME}`), head)
+})
+
+test('a stash is refused unless the action is a hard reset', async () => {
+  const root = repo()
+  const git = createGit(root)
+  const head = rev(root, 'HEAD')
+  writeFileSync(join(root, 'c4.txt'), 'local edit\n')
+  const before = refs(root)
+  let ran = false
+  const result = await runGuarded(git, { backup: { kind: 'branch', name: NAME, target: head, stash: true } }, 'HEAD', async () => {
+    ran = true
+    return { ok: true, message: 'ran' }
+  })
+  assert.equal(result.ok, false)
+  assert.equal(ran, false)
+  assert.equal(refs(root), before)
+})
+
+test('a stash that cannot be stored names the backup already made, and the action does not run', async () => {
+  const root = repo()
+  const git = createGit(root)
+  const head = rev(root, 'HEAD')
+  writeFileSync(join(root, 'c4.txt'), 'local edit\n')
+  // A stale lock makes git stash store fail after the backup branch exists.
+  writeFileSync(join(root, '.git', 'refs', 'stash.lock'), '')
+  let ran = false
+  const run = async (): Promise<ActionResult> => {
+    ran = true
+    return { ok: true, message: 'ran' }
+  }
+  const result = await runGuarded(git, { expectHead: head, backup: { kind: 'branch', name: NAME, target: head, stash: true } }, 'HEAD', run, true)
+  assert.equal(result.ok, false)
+  assert.ok(result.message.includes(NAME), result.message)
+  assert.equal(result.backup, NAME)
+  assert.equal(ran, false)
+  assert.equal(rev(root, `refs/heads/${NAME}`), head)
+  assert.equal(readFileSync(join(root, 'c4.txt'), 'utf8'), 'local edit\n')
 })
 
 test('the backup name check refuses what git would refuse, taken names and folder clashes', async () => {

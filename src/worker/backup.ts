@@ -1,13 +1,14 @@
 import type { ActionResult, BackupDelete } from '../shared/protocol.ts'
 import { assertName } from './actions.ts'
-import type { Git } from './git.ts'
+import { lastLines, type Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
 import { readHead } from './log.ts'
 
 const HASH = /^[0-9a-f]{40}$/
 
 type Made = { ok: true; name: string; stash?: string }
-type Refused = { ok: false; message: string }
+/** `name`: the backup ref that was made before the step that failed. */
+type Refused = { ok: false; message: string; name?: string }
 
 const refused = (error: unknown): Refused => ({ ok: false, message: error instanceof Error ? error.message : String(error) })
 
@@ -65,7 +66,8 @@ export async function createBackup(git: Git, request: unknown): Promise<Made | R
     await git.out(kind === 'branch' ? ['branch', '--no-track', checked, target] : ['tag', checked, target])
     if (!snapshot) return { ok: true, name: checked }
     const branch = (await readHead(git)).branch ?? 'HEAD'
-    await git.out(['stash', 'store', '-m', `Git plugin backup before reset --hard (${branch})`, snapshot])
+    const stored = await git.run(['stash', 'store', '-m', `Git plugin backup before reset --hard (${branch})`, snapshot])
+    if (!stored.ok) return { ok: false, name: checked, message: `${t('backupStashFailed', { name: checked })}\n${lastLines(stored.stderr || stored.stdout, 3)}` }
     return { ok: true, name: checked, stash: snapshot }
   } catch (error) {
     return refused(error)
@@ -82,9 +84,16 @@ export interface Guard {
 /**
  * Runs `run` only while HEAD is still `expectHead` and after the backup, when one is asked for, is made.
  * The backup must point at `tip`: HEAD, or the branch an action deletes. A failed action still reports
- * the backup it left; one that ran reports the HEAD it left, for Undo to expect.
+ * the backup it left; one that ran reports the HEAD it left, for Undo to expect. A stash is taken only
+ * for a hard reset (`hardReset`), the one action that throws uncommitted changes away.
  */
-export async function runGuarded<R extends ActionResult>(git: Git, guard: Guard, tip: 'HEAD' | { branch: string }, run: () => Promise<R>): Promise<R | ActionResult> {
+export async function runGuarded<R extends ActionResult>(
+  git: Git,
+  guard: Guard,
+  tip: 'HEAD' | { branch: string },
+  run: () => Promise<R>,
+  hardReset = false
+): Promise<R | ActionResult> {
   const { expectHead, backup } = guard
   if (expectHead === undefined && backup === undefined) return run()
   let made: Made | undefined
@@ -94,8 +103,9 @@ export async function runGuarded<R extends ActionResult>(git: Git, guard: Guard,
     if (backup !== undefined) {
       const target = tip === 'HEAD' ? head : await tipOf(git, `refs/heads/${await assertName(git, tip.branch, 'branch')}`)
       if (!target || (backup as { target?: unknown })?.target !== target) throw new Error(t('repoChanged'))
+      if ((backup as { stash?: unknown }).stash === true && !hardReset) throw new Error(t('backupInvalid'))
       const result = await createBackup(git, backup)
-      if (!result.ok) return result
+      if (!result.ok) return { ok: false, message: result.message, ...(result.name ? { backup: result.name } : {}) }
       made = result
     }
   } catch (error) {
