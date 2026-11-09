@@ -1017,6 +1017,8 @@ async function act(action: ActionRequest | BranchAction, progress: string): Prom
     done()
   }
   if (result.ok) {
+    if (action.kind === 'rename') followBranch(action.name, action.newName)
+    else if (action.kind === 'delete') followBranch(action.name)
     const previous = result.previousHead
     const undo = previous && UNDOABLE.has(action.kind)
       ? [{ label: t('undo'), run: () => void act({ kind: 'reset', hash: previous, mode: 'keep' }, t('progUndoing')).then((r) => r?.ok && showBanner(t('restoredHead', { hash: shortHash(previous) }), 'success')) }]
@@ -1025,6 +1027,13 @@ async function act(action: ActionRequest | BranchAction, progress: string): Prom
   } else if (!result.needsForce) showBanner(result.message, 'error')
   await refreshAll()
   return result
+}
+
+/** Moves the log's branch filter to a renamed branch, or drops a deleted one: git fails on a missing ref. */
+function followBranch(name: string, newName?: string): void {
+  const old = `refs/heads/${name}`
+  if (!filter.branches?.includes(old)) return
+  applyFilter({ branches: filter.branches.flatMap((ref) => (ref !== old ? [ref] : newName ? [`refs/heads/${newName}`] : [])) })
 }
 
 async function checked(kind: RewriteKind, hashes: string[]) {
