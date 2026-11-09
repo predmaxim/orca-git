@@ -547,3 +547,23 @@ test('restoring to a backup refuses when it would overwrite local changes', …)
 - [ ] **Step 4:** полный прогон, типы, `validate`/`check`.
 - [ ] **Step 5: Commit** — `git commit -m "Test every git operation against harmful cases"` и коммиты исправлений.
 - [ ] **Step 6:** независимый аудит всех вызовов git свежим агентом без общего контекста (самая сильная модель); найденное — исправить, повторный аудит исправлений.
+
+### Task 14c: Сайдбар и одна вкладка «Diff» вместо вкладки «Git»
+
+Добавлена 2026-11-10 по решению пользователя; дизайн — раздел «Раскладка» спецификации. Выполняется до Task 15.
+
+**Files:**
+- Create: `src/ui/diff.html`, `src/ui/diff-app.ts` (страница вкладки «Diff»: читает якорь, берёт состояние у воркера, монтирует `mountDiff` на всю страницу), `src/worker/diffTab.ts` (+ тесты в `src/worker/main.test.ts` или `src/worker/diffTab.test.ts`)
+- Modify: `orca-plugin.json` (`customEditors`: вместо `log-tab`/`.gitlog` — `diff-tab`, `title: "Diff"`, `extensions: [".gitdiff"]`, `entry: "src/ui/diff.html"`; убрать команду `open-tab`), `src/shared/protocol.ts`, `src/worker/main.ts`, `src/ui/app.ts`, `src/ui/api.ts`, `src/ui/styles.css`, `src/shared/i18n.ts`, `README.md`, `images/`
+- Delete: режим `editor` в `src/ui/app.ts` (раскладка C1, `#diff`, `leftWidth` и его разделитель, кнопка «Open in editor tab»), `src/ui/editor.html`, механизм reveal (`TabReveal`, `tab.open` с `reveal`, `tab.take`, событие `tab.reveal`, `applyReveal`, их тесты), `tab.open` и `ANCHOR = '.orca-git-log.gitlog'` в воркере, если больше не нужны.
+
+**Interfaces:**
+- Протокол: `interface DiffTabState { root: string; files: SelectionFile[]; index: number }`; запросы `'diff.open': { input: DiffTabState; output: { ok: boolean; reason?: string } }` и `'diff.state': { input: { root: string }; output: DiffTabState | null }`; событие `'diff.show': { root: string }`.
+- Воркер `diff.open`: `root` — только тот, что воркер уже разрешил (`gitFor`); `files` — до 2000 элементов, у каждого `path`/`oldPath` — непустые строки без `\0`, `status` — одна буква из `AMDRCT`, `from` — `null` или 40-hex, `to` — 40-hex; `index` в пределах. Находит воркспейс, чей top level равен `root` (`workspace.list` + `toplevel`), пишет якорь `.orca-git-log.gitdiff` (`{ root, workspaceId }`) в его корень, дописывает его в `info/exclude` (существующий `exclude()`), хранит состояние по `root`, вызывает `editor.open({ workspaceId, path: '.orca-git-log.gitdiff' })` и шлёт `diff.show`. Если воркспейс для `root` не найден — `{ ok: false, reason }` (en + ru), ничего не пишет.
+- Вкладка: при старте читает `root` из якоря (`orca.document.get()`), берёт `diff.state(root)`, монтирует дифф с `files`/`index`; на `diff.show` со своим `root` — перечитывает состояние. Пусто — заглушка «Select a file in the Git panel to see its changes» (en + ru).
+- Сайдбар: клик или Enter по файлу — `api.openDiff({ root, files: selectionFiles, index })`; ошибка — баннер.
+
+- [ ] **Step 1: Падающие тесты воркера**: `diff.open` с корректным состоянием → якорь записан и в `info/exclude`, `editor.open` вызван с найденным `workspaceId`, `diff.state` отдаёт состояние, `diff.show` отправлен; неверные `files`/`index`/хеши → `ok:false`, ничего не записано; корень без воркспейса → `ok:false`.
+- [ ] **Step 2: Убедиться, что падают**; затем **Step 3: Реализовать** воркер, вкладку, проводку в сайдбаре; удалить режим `editor` и reveal.
+- [ ] **Step 4:** полный прогон, типы, `orca plugin validate`/`check`; снимки сайдбара и вкладки «Diff» на демо-репозитории `/tmp/git-demo` (вкладку — `orca plugin shot local.git-log --editor /tmp/git-demo/.orca-git-log.gitdiff …`, предварительно положив якорь и состояние через `orca plugin dev request … diff.open` только для `/tmp/git-demo`). Ни одного вызова против других репозиториев.
+- [ ] **Step 5:** README (раскладка, скриншоты с демо), дизайн-документ — отклонения; **Commit** — `git commit -m "Open diffs in one Diff tab and drop the Git tab"` (можно несколькими коммитами: воркер, вкладка, удаление).
