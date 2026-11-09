@@ -105,6 +105,8 @@ test('opening the tab with a reveal posts it and hands it over once', async () =
     const bad = await worker.request('tab.open', { reveal: { hashes: ['nothex'] } })
     assert.equal(bad.ok, false)
     assert.equal(await worker.request('tab.take', { root }), null)
+    const many = await worker.request('tab.open', { reveal: { hashes: Array(501).fill(hash) } })
+    assert.deepEqual(many, { ok: false, reason: 'Select at most 500 commits.' })
     await worker.deactivate()
   } finally {
     rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })

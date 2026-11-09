@@ -144,6 +144,7 @@ test("selection spanning a merge lists the merge's first-parent changes and the 
 test('invalid hashes are refused', async () => {
   const { root, hashes: h } = repoWith([write('a.txt', '1\n')])
   const git = createGit(root)
-  await assert.rejects(readSelectionFiles(git, ['HEAD']))
+  await assert.rejects(readSelectionFiles(git, ['HEAD']), /Invalid commit selection/)
+  await assert.rejects(readSelectionFiles(git, Array(501).fill(h[0])), /Select at most 500 commits/)
   await assert.rejects(readRangeDiff(git, '--x', h[0], 'a'))
 })

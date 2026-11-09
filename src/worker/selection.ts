@@ -24,7 +24,8 @@ interface Entry {
 
 /** The files a set of commits changes together: each file from where the selection first touches it to where it last does. */
 export async function readSelectionFiles(git: Git, hashes: string[]): Promise<SelectionFile[]> {
-  if (!Array.isArray(hashes) || hashes.length < 1 || hashes.length > 500 || !hashes.every((h) => typeof h === 'string' && HASH.test(h))) {
+  if (Array.isArray(hashes) && hashes.length > 500) throw new Error(t('selectionTooLarge'))
+  if (!Array.isArray(hashes) || hashes.length < 1 || !hashes.every((h) => typeof h === 'string' && HASH.test(h))) {
     throw new Error(t('invalidSelection'))
   }
   const order = await oldestFirst(git, hashes)

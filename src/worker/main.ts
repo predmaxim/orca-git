@@ -65,6 +65,7 @@ function validReveal(r: any): r is TabReveal {
 }
 
 async function openTab(prefer?: string, reveal?: TabReveal): Promise<{ ok: boolean; reason?: string }> {
+  if (Array.isArray(reveal?.hashes) && reveal.hashes.length > 500) return { ok: false, reason: t('selectionTooLarge') }
   if (reveal !== undefined && !validReveal(reveal)) return { ok: false, reason: t('invalidSelection') }
   const workspace = await focusedWorkspace(orcaApi, prefer)
   if ('reason' in workspace) return { ok: false, reason: workspace.reason }
