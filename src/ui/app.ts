@@ -1,8 +1,8 @@
-import type { ActionRequest, ActionResult, BranchRef, CommitRow, LogFilter, RefsResult, RepoInfo, RepoResult, RewriteKind, SelectionFile, WorkspaceChoice } from '../shared/protocol.ts'
+import type { ActionRequest, ActionResult, BranchRef, CommitDetails, CommitRow, LogFilter, RefsResult, RepoInfo, RepoResult, RewriteKind, SelectionFile, WorkspaceChoice } from '../shared/protocol.ts'
 import { api, copyText, errorMessage, orca } from './api.ts'
 import { buildFileTree, dirPaths, orderedFiles, renderFileTree, type FileNode } from './filetree.ts'
 import { renderBranches } from './branches.ts'
-import { renderDetails, renderMany, renderPlaceholder } from './details.ts'
+import { renderCommitList, renderPlaceholder } from './details.ts'
 import { mountDiff, showDiffPlaceholder, type DiffMode } from './diff.ts'
 import { askName, askPatch, askRebasePlan, askReset, busy, confirm, editMessage, pushedWarning } from './dialogs.ts'
 import { h, icon } from './dom.ts'
@@ -23,8 +23,6 @@ interface Prefs {
   matchCase: boolean
   /** Width of the sections column in the editor tab, in percent. */
   leftWidth: number
-  /** Height of the details section under the diff in the editor tab. */
-  detailsHeight: number
   sections: SectionPrefs
   collapsed: string[]
   /** Workspace picked by the user, keyed by the ids of the same-named workspaces it was picked among. */
@@ -44,7 +42,6 @@ const prefs: Prefs = {
   regex: false,
   matchCase: false,
   leftWidth: 40,
-  detailsHeight: 220,
   collapsed: ['tags'],
   picked: {},
   ...stored,
@@ -126,9 +123,7 @@ const viewport = h('div', { class: 'viewport', tabindex: 0, role: 'grid', 'aria-
 const empty = h('div', { class: 'empty' })
 const logPane = h('section', { class: 'pane log' }, header, viewport, empty)
 
-// The editor tab keeps the details under the diff; the sidebar stacks them as a fourth section.
-const column = createColumn(MODE === 'editor' ? ['branches', 'commits', 'files'] : ['branches', 'commits', 'files', 'details'], prefs.sections, onSections)
-const detailsColumn = MODE === 'editor' ? createColumn(['details'], prefs.sections, onSections) : column
+const column = createColumn(['branches', 'commits', 'files', 'details'], prefs.sections, onSections)
 column.section('branches').body.append(treeSearch, tree)
 column.section('commits').body.append(filterRow, logPane)
 const filesSection = column.section('files')
@@ -138,13 +133,12 @@ filesSection.header.append(
   h('button', { class: 'tool', title: t('collapseAll'), 'aria-label': t('collapseAll'), onclick: () => setAllFolders(false) }, icon('chevronRight'))
 )
 renderFilesNote(t('filesPlaceholder'))
-const detailsPane = detailsColumn.section('details').body
+const detailsPane = column.section('details').body
 
 const leftSplit = h('div', { class: 'splitter' })
-const detailsSplit = h('div', { class: 'splitter rows' })
 const right = h('div', { class: 'pane right' })
 if (MODE === 'editor') {
-  right.append(h('div', { id: 'diff', class: 'pane' }), detailsSplit, detailsColumn.element)
+  right.append(h('div', { id: 'diff', class: 'pane' }))
   app.append(banner, h('div', { class: 'main' }, h('div', { class: 'pane left' }, toolbar, column.element), leftSplit, right))
 } else {
   app.append(toolbar, banner, column.element)
@@ -152,11 +146,6 @@ if (MODE === 'editor') {
 
 function applyLayout(): void {
   app.style.setProperty('--left-w', `${prefs.leftWidth}%`)
-  if (MODE === 'editor') {
-    const closed = prefs.sections.collapsed.details
-    detailsSplit.hidden = closed
-    detailsColumn.element.style.height = closed ? '' : `${prefs.detailsHeight}px`
-  }
 }
 
 function onSections(): void {
@@ -208,7 +197,6 @@ function dragSplitter(splitter: HTMLElement, onMove: (dx: number, dy: number, st
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v))
 dragSplitter(leftSplit, (dx, _dy, start) => (prefs.leftWidth = clamp(start.leftWidth + (dx / app.clientWidth) * 100, 15, 85)))
-dragSplitter(detailsSplit, (_dx, dy, start) => (prefs.detailsHeight = clamp(start.detailsHeight - dy, 60, right.clientHeight - 60)))
 
 // ---------- Banner ----------
 
@@ -881,38 +869,48 @@ function updateFiles(): void {
 
 // ---------- Details ----------
 
-let detailsTimer: ReturnType<typeof setTimeout> | undefined
-let detailsToken = 0
+/** Open rows of the details list; reset when the selection changes: one commit opens, several stay closed. */
+const expanded = new Set<string>()
+let detailsKey = ''
+/** Details by hash, until the repository changes. */
+const detailsCache = new Map<string, Promise<CommitDetails>>()
 /** The selection changed while the details section was collapsed: render it when it opens. */
 let detailsStale = false
 function updateDetails(): void {
-  clearTimeout(detailsTimer)
+  const hashes = selectedHashes()
   column.section('commits').setSummary(selected.size ? t('selectedCount', { count: selected.size }) : '')
+  column.section('details').setSummary(hashes.length ? t('commitsCount', { count: hashes.length }) : '')
   detailsStale = prefs.sections.collapsed.details
   if (detailsStale) return
-  const hashes = selectedHashes()
   if (!repo || !hashes.length) {
     renderPlaceholder(detailsPane, repo ? t('detailsPlaceholder') : '')
     return
   }
-  if (hashes.length > 1) {
-    renderMany(detailsPane, hashes.map((hash) => rows[indexByHash.get(hash)!]).filter(Boolean))
-    return
+  if (hashes.join() !== detailsKey) {
+    detailsKey = hashes.join()
+    expanded.clear()
+    if (hashes.length === 1) expanded.add(hashes[0])
   }
-  const token = ++detailsToken
   const root = repo.root
-  detailsTimer = setTimeout(async () => {
-    try {
-      const details = await api.details(root, hashes[0])
-      if (token === detailsToken)
-        renderDetails(detailsPane, details, {
-          select: (hash) => void jumpTo(hash),
-          openDiff: (index) => openFile(selectionFiles.findIndex((file) => file.path === details.files[index]?.path))
-        })
-    } catch (error) {
-      if (token === detailsToken) renderPlaceholder(detailsPane, errorMessage(error))
+  renderCommitList(
+    detailsPane,
+    hashes.map((hash) => rows[indexByHash.get(hash)!]).filter(Boolean),
+    {
+      expanded,
+      load: (hash) => {
+        let details = detailsCache.get(hash)
+        if (!details) {
+          details = api.details(root, hash)
+          detailsCache.set(hash, details)
+          // A failed load must not stay cached.
+          details.catch(() => detailsCache.delete(hash))
+        }
+        return details
+      },
+      select: (hash) => void jumpTo(hash),
+      onToggle: () => {}
     }
-  }, 80)
+  )
 }
 
 // ---------- Actions ----------
@@ -1165,7 +1163,10 @@ tabButton.addEventListener('click', async () => {
 })
 
 orca.plugin.on('repo.changed', ({ root }: { root: string }) => {
-  if (root === repo?.root) scheduleRefresh()
+  if (root === repo?.root) {
+    detailsCache.clear()
+    scheduleRefresh()
+  }
 })
 
 if (MODE === 'panel') {

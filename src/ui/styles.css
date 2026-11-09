@@ -273,16 +273,6 @@ textarea {
   inset: 0 -3px;
 }
 
-.splitter.rows {
-  width: auto;
-  height: 1px;
-  cursor: row-resize;
-}
-
-.splitter.rows::after {
-  inset: -3px 0;
-}
-
 .tool:disabled {
   opacity: 0.45;
 }
@@ -300,10 +290,6 @@ textarea {
 
 .right > .pane {
   flex: 1;
-}
-
-.right > .column {
-  flex: none;
 }
 
 .column {
@@ -829,54 +815,75 @@ textarea {
   user-select: text;
 }
 
-.details .section {
-  padding: 8px 10px;
-}
-
-.details .section + .section {
-  border-top: 1px solid var(--border);
-}
-
-.details .muted,
 .muted {
   color: var(--muted-fg);
 }
 
-.details .subject {
-  font-weight: 600;
-  white-space: pre-wrap;
-  word-break: break-word;
-  margin-bottom: 6px;
+.cl-note {
+  padding: 8px 10px;
+  color: var(--muted-fg);
 }
 
-.details .body {
-  white-space: pre-wrap;
-  word-break: break-word;
-  margin-bottom: 8px;
+.cl-list {
+  flex: none;
 }
 
-.details .meta {
-  display: grid;
-  gap: 2px;
-}
-
-.details .meta a,
-.details .hash-link {
-  color: var(--primary);
-  cursor: pointer;
-  text-decoration: none;
-}
-
-.details .branches-line {
-  margin-top: 6px;
-}
-
-.files-title {
+.cl-head {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-weight: 600;
-  margin-bottom: 4px;
+  height: 24px;
+  padding: 0 10px 0 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.cl-head:hover {
+  background: var(--muted);
+}
+
+.cl-head:focus-visible {
+  outline: 1px solid var(--primary);
+  outline-offset: -1px;
+}
+
+.cl-chevron {
+  flex: none;
+  display: flex;
+}
+
+.cl-subject {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-author {
+  flex: none;
+  max-width: 35%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-body {
+  display: grid;
+  gap: 2px;
+  padding: 4px 10px 8px 28px;
+  overflow-wrap: anywhere;
+}
+
+.cl-message {
+  white-space: pre-wrap;
+  margin-bottom: 6px;
+}
+
+.hash-link {
+  color: var(--primary);
+  cursor: pointer;
+  text-decoration: none;
 }
 
 .file {

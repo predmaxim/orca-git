@@ -1,92 +1,88 @@
 import type { CommitDetails, CommitRow } from '../shared/protocol.ts'
+import { t } from '../shared/i18n.ts'
 import { h, icon } from './dom.ts'
-import { fullDate, shortHash, STATUS_NAMES } from './format.ts'
+import { fullDate, shortHash } from './format.ts'
 
-export interface DetailsHost {
+export interface CommitListHost {
+  /** Hashes of the open rows; the list reads and changes it. */
+  expanded: Set<string>
+  load(hash: string): Promise<CommitDetails>
   select(hash: string): void
-  /** Shows the changes of `d.files[index]`. */
-  openDiff(index: number): void
+  /** Runs after a row opened or closed. */
+  onToggle(): void
 }
 
 export function renderPlaceholder(container: HTMLElement, text: string): void {
-  container.replaceChildren(h('div', { class: 'section muted' }, text))
+  container.replaceChildren(h('div', { class: 'cl-note' }, text))
 }
 
-export function renderMany(container: HTMLElement, commits: CommitRow[]): void {
-  container.replaceChildren(
+function renderBody(d: CommitDetails, host: CommitListHost): HTMLElement {
+  const parents = d.parents.map((p, i) => h('span', null, i ? ', ' : '', h('a', { class: 'hash-link mono', title: p, onclick: () => host.select(p) }, shortHash(p))))
+  const more = d.branches.length >= 50 ? '+' : ''
+  return h(
+    'div',
+    { class: 'cl-body' },
+    h('div', { class: 'cl-message mono' }, d.message),
+    h('div', null, h('strong', null, d.author), ' ', h('span', { class: 'muted' }, `<${d.email}>`)),
+    h('div', { class: 'muted' }, fullDate(d.authorTime)),
+    d.committer !== d.author || d.commitTime !== d.authorTime
+      ? h('div', { class: 'muted' }, t('detailsCommittedBy', { name: d.committer, date: fullDate(d.commitTime) }))
+      : null,
+    parents.length ? h('div', null, h('span', { class: 'muted' }, `${t('detailsParents', { count: parents.length })}: `), ...parents) : null,
     h(
       'div',
-      { class: 'section' },
-      h('div', { class: 'subject' }, `${commits.length} commits selected`),
-      ...commits.slice(0, 50).map((c) => h('div', { class: 'file' }, h('span', { class: 'mono muted' }, shortHash(c.hash)), h('span', { class: 'name' }, c.subject))),
-      commits.length > 50 ? h('div', { class: 'muted' }, `… and ${commits.length - 50} more`) : null
-    )
-  )
-}
-
-export function renderDetails(container: HTMLElement, d: CommitDetails, host: DetailsHost): void {
-  const [subject, ...rest] = d.message.split('\n')
-  const body = rest.join('\n').replace(/^\s*\n/, '')
-  const files = d.files.map((f, index) => {
-    const slash = f.path.lastIndexOf('/')
-    const name = f.path.slice(slash + 1)
-    const dir = slash >= 0 ? f.path.slice(0, slash) : ''
-    const letter = f.status[0] ?? 'M'
-    return h(
-      'div',
-      {
-        class: `file openable st-${letter}`,
-        tabindex: '0',
-        title: `${STATUS_NAMES[letter] ?? f.status}: ${f.oldPath ? `${f.oldPath} → ` : ''}${f.path}\nDouble-click to show the changes`,
-        ondblclick: () => host.openDiff(index),
-        onkeydown: (event: KeyboardEvent) => {
-          if (event.key !== 'Enter') return
-          event.preventDefault()
-          host.openDiff(index)
-        }
-      },
-      h('span', { class: 'status-letter' }, letter),
-      icon('file'),
-      h('span', { class: 'name' }, name),
-      dir ? h('span', { class: 'dir' }, dir) : null
-    )
-  })
-  const parents = d.parents.map((p, i) =>
-    h('span', null, i ? ', ' : '', h('a', { class: 'hash-link mono', title: p, onclick: () => host.select(p) }, shortHash(p)))
-  )
-  container.replaceChildren(
-    h(
-      'div',
-      { class: 'section' },
-      h('div', { class: 'files-title' }, `${d.files.length} file${d.files.length === 1 ? '' : 's'} changed`, d.parents.length > 1 ? h('span', { class: 'muted' }, '(vs. first parent)') : null),
-      ...(files.length ? files : [h('div', { class: 'muted' }, 'No changes')])
+      null,
+      d.branches.length
+        ? h('span', null, h('span', { class: 'muted' }, `${t('detailsBranches', { count: d.branches.length, n: `${d.branches.length}${more}` })}: `), d.branches.join(', '))
+        : h('span', { class: 'muted' }, t('detailsNoBranches'))
     ),
-    h(
-      'div',
-      { class: 'section' },
-      h('div', { class: 'subject' }, subject),
-      body ? h('div', { class: 'body' }, body) : null,
-      h(
-        'div',
-        { class: 'meta' },
-        h('div', null, h('span', { class: 'mono' }, shortHash(d.hash)), ' ', h('span', { class: 'muted' }, 'by'), ' ', h('strong', null, d.author), ' ', h('span', { class: 'muted' }, `<${d.email}>`)),
-        h('div', { class: 'muted' }, `on ${fullDate(d.authorTime)}`),
-        d.committer !== d.author || d.commitTime !== d.authorTime
-          ? h('div', { class: 'muted' }, `committed by ${d.committer} on ${fullDate(d.commitTime)}`)
-          : null,
-        parents.length ? h('div', null, h('span', { class: 'muted' }, parents.length > 1 ? 'Parents: ' : 'Parent: '), ...parents) : null,
-        h('div', { class: 'mono muted', style: 'user-select:text' }, d.hash)
-      ),
-      h(
-        'div',
-        { class: 'branches-line' },
-        d.branches.length
-          ? [h('span', { class: 'muted' }, `In ${d.branches.length}${d.branches.length >= 50 ? '+' : ''} branch${d.branches.length === 1 ? '' : 'es'}: `), d.branches.join(', ')].reduce<HTMLElement>(
-              (el, part) => (el.append(part), el),
-              h('span', null)
-            )
-          : h('span', { class: 'muted' }, 'Not in any branch')
-      )
-    )
+    h('div', { class: 'mono muted' }, d.hash)
   )
+}
+
+/** One row per commit, in the order given; a click opens the full description under the row. */
+export function renderCommitList(container: HTMLElement, commits: CommitRow[], host: CommitListHost): void {
+  const rows = commits.map((commit) => {
+    const chevron = h('span', { class: 'cl-chevron' })
+    const body = h('div', { class: 'cl-slot' })
+    const head = h(
+      'div',
+      { class: 'cl-head', tabindex: '0', role: 'button' },
+      chevron,
+      h('span', { class: 'mono muted' }, shortHash(commit.hash)),
+      h('span', { class: 'cl-subject', title: commit.subject }, commit.subject),
+      h('span', { class: 'cl-author muted' }, commit.author)
+    )
+    let loaded = false
+    const show = () => {
+      const open = host.expanded.has(commit.hash)
+      head.setAttribute('aria-expanded', String(open))
+      chevron.replaceChildren(icon(open ? 'chevronDown' : 'chevronRight'))
+      body.hidden = !open
+      if (!open || loaded) return
+      loaded = true
+      body.replaceChildren(h('div', { class: 'muted' }, t('diffLoading')))
+      host.load(commit.hash).then(
+        (details) => body.replaceChildren(renderBody(details, host)),
+        (error) => {
+          loaded = false
+          body.replaceChildren(h('div', { class: 'muted' }, error instanceof Error ? error.message : String(error)))
+        }
+      )
+    }
+    const toggle = () => {
+      if (!host.expanded.delete(commit.hash)) host.expanded.add(commit.hash)
+      show()
+      host.onToggle()
+    }
+    head.addEventListener('click', toggle)
+    head.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return
+      event.preventDefault()
+      toggle()
+    })
+    show()
+    return h('div', { class: 'cl-item' }, head, body)
+  })
+  container.replaceChildren(h('div', { class: 'cl-list' }, ...rows))
 }
