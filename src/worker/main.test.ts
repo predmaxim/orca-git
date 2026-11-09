@@ -67,6 +67,28 @@ test('resolves the focused workspace, pages the log and runs an action', async (
   }
 })
 
+test('action.run and branch.run check the HEAD the dialog showed and make the backup first', async () => {
+  const root = fixture()
+  try {
+    const worker = await mountWorker(main, { host: host(root) })
+    const [head, parent] = sh(root, 'rev-list', '-2', 'HEAD').split('\n')
+    const name = 'backup/main-20261110-1432'
+    const stale = await worker.request('action.run', { root, action: { kind: 'drop', hashes: [head] }, expectHead: parent, backup: { kind: 'branch', name, target: parent } })
+    assert.equal(stale.ok, false)
+    const stuck = await worker.request('branch.run', { root, action: { kind: 'rebaseOnto', name: 'main' }, expectHead: parent })
+    assert.equal(stuck.ok, false)
+    assert.equal(sh(root, 'rev-parse', 'HEAD'), head)
+    assert.equal(sh(root, 'for-each-ref', 'refs/heads/backup'), '')
+    const run = await worker.request('action.run', { root, action: { kind: 'drop', hashes: [head] }, expectHead: head, backup: { kind: 'branch', name, target: head } })
+    assert.equal(run.ok, true, run.message)
+    assert.equal(run.backup, name)
+    assert.equal(sh(root, 'rev-parse', name), head)
+    await worker.deactivate()
+  } finally {
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
+})
+
 test('a workspace that only exists on a remote host is reported as unsupported', async () => {
   const worker = await mountWorker(main, {
     host: mockHost({

@@ -4,6 +4,7 @@ import type { OrcaWorkerApi } from 'orca/worker'
 import { pickLocale, setLocale, t } from '../shared/i18n.ts'
 import type { DiffTabState, RepoResult } from '../shared/protocol.ts'
 import { checkRewrite, runAction } from './actions.ts'
+import { runGuarded } from './backup.ts'
 import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
 import { DIFF_ANCHOR, validDiffState, workspaceFor } from './diffTab.ts'
 import { createGit, type Git } from './git.ts'
@@ -177,14 +178,18 @@ export default function activate(orca: OrcaWorkerApi): void {
 
   handle('action.check', async ({ root, kind, hashes }) => checkRewrite(await gitFor(root), kind, hashes))
 
-  handle('action.run', async ({ root, action }) => {
-    const result = await runAction(await gitFor(root), action)
+  handle('action.run', async ({ root, action, expectHead, backup }) => {
+    const git = await gitFor(root)
+    const result = await runGuarded(git, { expectHead, backup }, 'HEAD', () => runAction(git, action))
     orca.panels.post('repo.changed', { root })
     return result
   })
 
-  handle('branch.run', async ({ root, action }) => {
-    const result = await runBranchAction(await gitFor(root), action)
+  handle('branch.run', async ({ root, action, expectHead, backup }) => {
+    const git = await gitFor(root)
+    // A deleted branch's backup keeps that branch; every other branch action moves HEAD.
+    const tip = action?.kind === 'delete' ? { branch: action.name } : 'HEAD'
+    const result = await runGuarded(git, { expectHead, backup }, tip, () => runBranchAction(git, action))
     orca.panels.post('repo.changed', { root })
     return result
   })

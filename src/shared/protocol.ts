@@ -163,6 +163,25 @@ export interface ActionResult {
   message: string
   /** HEAD before the action, so the UI can offer Undo. */
   previousHead?: string
+  /** The backup branch or tag made before the action, even when the action then failed. */
+  backup?: string
+  /** The stash commit holding the uncommitted changes saved with the backup. */
+  stash?: string
+}
+
+/** A branch or tag the worker creates at `target` (40 hex) before a risky action; never overwrites a ref. */
+export interface BackupRequest {
+  kind: 'branch' | 'tag'
+  name: string
+  target: string
+  /** Also snapshot the uncommitted changes into the stash (reset --hard). */
+  stash?: boolean
+}
+
+/** Sent with `action.run` and `branch.run`: the HEAD the confirmation showed, and the backup to make first. */
+export interface ActionGuard {
+  expectHead?: string
+  backup?: BackupRequest
 }
 
 export type BranchAction =
@@ -201,8 +220,8 @@ declare module 'orca' {
     'range.diff': { input: { root: string; from: string | null; to: string; path: string; oldPath?: string; wholeFile?: boolean }; output: FileDiff }
     'patch.create': { input: { root: string; hashes: string[]; path?: string; overwrite?: boolean }; output: PatchResult }
     'action.check': { input: { root: string; kind: RewriteKind; hashes: string[] }; output: CheckResult }
-    'action.run': { input: { root: string; action: ActionRequest }; output: ActionResult }
-    'branch.run': { input: { root: string; action: BranchAction }; output: BranchActionResult }
+    'action.run': { input: { root: string; action: ActionRequest } & ActionGuard; output: ActionResult }
+    'branch.run': { input: { root: string; action: BranchAction } & ActionGuard; output: BranchActionResult }
     /** Remote branches holding commits that rebasing the current branch onto `name` would rewrite. */
     'branch.check': { input: { root: string; name: string }; output: { pushed: string[] } }
     'repo.fetch': { input: { root: string }; output: ActionResult }
