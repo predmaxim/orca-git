@@ -87,6 +87,18 @@ test('a rename followed by a delete reports the original file as deleted', async
   assert.deepEqual(files, [{ path: 'a.txt', status: 'D', from: h[0], to: h[2] }])
 })
 
+test('a path renamed away and added again is listed once', async () => {
+  const { root, hashes: h } = repoWith([
+    write('a.txt', 'one\ntwo\nthree\nfour\n'),
+    (r) => sh(r, 'mv', 'a.txt', 'b.txt'),
+    write('a.txt', 'new\n'),
+    write('b.txt', 'one\ntwo\nthree\nfour\nfive\n')
+  ])
+  const files = await readSelectionFiles(createGit(root), [h[1], h[2], h[3]])
+  assert.deepEqual(files.map((f) => f.path), ['a.txt', 'b.txt'])
+  assert.deepEqual(files[0], { path: 'a.txt', status: 'A', from: h[1], to: h[2] })
+})
+
 test('the root commit diffs against the empty tree, even with log.showRoot off', async () => {
   const { root, hashes: h } = repoWith([write('f1.txt', '1\n')])
   sh(root, 'config', 'log.showRoot', 'false')

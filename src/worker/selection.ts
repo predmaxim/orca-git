@@ -57,7 +57,7 @@ export async function readSelectionFiles(git: Git, hashes: string[]): Promise<Se
     const diff = await git.out(['diff', '--name-status', '-z', '-M', from ?? tree, to, '--', ...paths])
     for (const change of parseNameStatus(diff)) {
       // A change shows under the current path, or under the original one when the file was renamed and then deleted.
-      if (items.some(([path, e]) => path === change.path || e.orig === change.path || e.orig === change.oldPath)) result.push({ ...change, from, to })
+      if (items.some(([path, e]) => path === change.path || (change.status === 'D' && e.orig === change.path) || e.orig === change.oldPath)) result.push({ ...change, from, to })
     }
   }
   return result.sort((a, b) => a.path.localeCompare(b.path))
