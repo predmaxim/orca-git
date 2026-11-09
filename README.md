@@ -2,6 +2,18 @@
 
 ![Git Log for Orca: commit graph and right-click menu to squash, fixup or drop commits](images/cover.png)
 
+## About this fork
+
+This is a fork of [emamalet/Orca-git-log-panel](https://github.com/emamalet/Orca-git-log-panel) that reshapes the interface after the WebStorm Git tool window: a branches tree, the commit list and the files of a multi-commit selection with a side-by-side diff. The Git engine (`src/worker`) is kept as close to upstream as possible. The design is in [docs/superpowers](docs/superpowers) and the engine review in [docs/engine-review.md](docs/engine-review.md).
+
+To pull in upstream changes:
+
+```sh
+git fetch upstream && git log --oneline main..upstream/main
+```
+
+Then bring over what you need with `git cherry-pick` or `git merge upstream/main`. Pull requests are not sent to upstream.
+
 An [Orca](https://www.onorca.dev) plugin that adds a full **Git Log** view to Orca:
 a colored commit graph with branch and tag labels, author/date/hash columns, filters, a branch tree,
 a details pane with file diffs, and a right-click menu to rewrite history on a multi-selection.
