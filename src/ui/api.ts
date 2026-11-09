@@ -3,6 +3,7 @@ import type {
   ActionGuard,
   ActionRequest,
   ActionResult,
+  BackupDelete,
   BranchAction,
   BranchActionResult,
   CheckResult,
@@ -65,6 +66,7 @@ export const api = {
     call('branch.run', { root, action, ...guard }, { timeoutMs: 150_000 }),
   branchCheck: (root: string, name: string): Promise<{ pushed: string[] }> => call('branch.check', { root, name }, LONG),
   run: (root: string, action: ActionRequest, guard: ActionGuard = {}): Promise<ActionResult> => call('action.run', { root, action, ...guard }, LONG),
+  deleteBackup: (root: string, action: BackupDelete): Promise<ActionResult> => call('backup.delete', { root, action }),
   // Outlasts the worker's 120 s git fetch timeout, so its message arrives instead of a frame timeout.
   fetch: (root: string): Promise<ActionResult> => call('repo.fetch', { root }, { timeoutMs: 150_000 }),
   openDiff: (state: DiffTabState): Promise<{ ok: boolean; reason?: string }> => call('diff.open', state),

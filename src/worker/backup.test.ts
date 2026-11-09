@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
 import { runAction } from './actions.ts'
-import { createBackup, runGuarded } from './backup.ts'
+import { createBackup, deleteBackup, runGuarded } from './backup.ts'
 import { runBranchAction } from './branchActions.ts'
 import { createGit } from './git.ts'
 
@@ -197,3 +197,26 @@ test('a moved HEAD refuses the action and makes no backup', async () => {
   assert.deepEqual(await runGuarded(git, { expectHead: head }, 'HEAD', run), { ok: true, message: 'ran' })
 })
 
+test('delete backup removes only backup/ refs that still point where the user saw them', async () => {
+  const root = repo()
+  const git = createGit(root)
+  const head = rev(root, 'HEAD')
+  sh(root, 'branch', 'backup/main-1', head)
+  sh(root, 'tag', 'backup/main-2', head)
+  sh(root, 'branch', 'keep', head)
+  const before = refs(root)
+  for (const action of [
+    { kind: 'deleteBackup', ref: 'branch', name: 'keep', hash: head },
+    { kind: 'deleteBackup', ref: 'branch', name: 'backup/main-1', hash: rev(root, 'HEAD~1') },
+    { kind: 'deleteBackup', ref: 'branch', name: 'backup/main-1', hash: 'HEAD' },
+    { kind: 'deleteBackup', ref: 'tag', name: 'backup/main-1', hash: head },
+    { kind: 'deleteBackup', ref: 'branch', name: 'backup/../keep', hash: head }
+  ]) {
+    const result = await deleteBackup(git, action)
+    assert.equal(result.ok, false, JSON.stringify(action))
+  }
+  assert.equal(refs(root), before)
+  assert.equal((await deleteBackup(git, { kind: 'deleteBackup', ref: 'branch', name: 'backup/main-1', hash: head })).ok, true)
+  assert.equal((await deleteBackup(git, { kind: 'deleteBackup', ref: 'tag', name: 'backup/main-2', hash: head })).ok, true)
+  assert.equal(refs(root).includes('backup/'), false)
+})

@@ -178,6 +178,14 @@ export interface BackupRequest {
   stash?: boolean
 }
 
+/** Deletes a `backup/` branch or tag, only while it still points at `hash`. */
+export interface BackupDelete {
+  kind: 'deleteBackup'
+  ref: 'branch' | 'tag'
+  name: string
+  hash: string
+}
+
 /** Sent with `action.run` and `branch.run`: the HEAD the confirmation showed, and the backup to make first. */
 export interface ActionGuard {
   expectHead?: string
@@ -222,6 +230,7 @@ declare module 'orca' {
     'action.check': { input: { root: string; kind: RewriteKind; hashes: string[] }; output: CheckResult }
     'action.run': { input: { root: string; action: ActionRequest } & ActionGuard; output: ActionResult }
     'branch.run': { input: { root: string; action: BranchAction } & ActionGuard; output: BranchActionResult }
+    'backup.delete': { input: { root: string; action: BackupDelete }; output: ActionResult }
     /** Remote branches holding commits that rebasing the current branch onto `name` would rewrite. */
     'branch.check': { input: { root: string; name: string }; output: { pushed: string[] } }
     'repo.fetch': { input: { root: string }; output: ActionResult }

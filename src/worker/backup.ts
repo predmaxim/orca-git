@@ -1,4 +1,4 @@
-import type { ActionResult } from '../shared/protocol.ts'
+import type { ActionResult, BackupDelete } from '../shared/protocol.ts'
 import { assertName } from './actions.ts'
 import type { Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
@@ -76,3 +76,18 @@ export async function runGuarded<R extends ActionResult>(git: Git, guard: Guard,
   return made ? { ...result, backup: made.name, ...(made.stash ? { stash: made.stash } : {}) } : result
 }
 
+/** Deletes a `backup/` branch or tag, only while it still points at `hash`, the commit the user saw. Never throws. */
+export async function deleteBackup(git: Git, action: unknown): Promise<ActionResult> {
+  try {
+    const { ref, name, hash } = (action ?? {}) as Partial<BackupDelete>
+    if ((ref !== 'branch' && ref !== 'tag') || typeof name !== 'string' || !name.startsWith('backup/') || typeof hash !== 'string' || !HASH.test(hash)) {
+      throw new Error(t('backupInvalid'))
+    }
+    const checked = await assertName(git, name, ref)
+    if (checked !== name || (await tipOf(git, refName(ref, name))) !== hash) throw new Error(t('repoChanged'))
+    await git.out(ref === 'branch' ? ['branch', '-D', name] : ['tag', '-d', name])
+    return { ok: true, message: t('backupDeleted', { name }) }
+  } catch (error) {
+    return refused(error)
+  }
+}

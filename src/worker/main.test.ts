@@ -83,6 +83,9 @@ test('action.run and branch.run check the HEAD the dialog showed and make the ba
     assert.equal(run.ok, true, run.message)
     assert.equal(run.backup, name)
     assert.equal(sh(root, 'rev-parse', name), head)
+    const deleted = await worker.request('backup.delete', { root, action: { kind: 'deleteBackup', ref: 'branch', name, hash: head } })
+    assert.equal(deleted.ok, true, deleted.message)
+    assert.equal(sh(root, 'for-each-ref', 'refs/heads/backup'), '')
     await worker.deactivate()
   } finally {
     rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })

@@ -1,4 +1,4 @@
-import type { ActionRequest, ActionResult, BackupRequest, BranchAction, BranchActionResult, BranchRef, CommitDetails, CommitRow, LogFilter, RefsResult, RepoInfo, RepoResult, RewriteKind, SelectionFile, WorkspaceChoice } from '../shared/protocol.ts'
+import type { ActionRequest, ActionResult, BackupDelete, BackupRequest, BranchAction, BranchActionResult, BranchRef, CommitDetails, CommitRow, LogFilter, RefsResult, RepoInfo, RepoResult, RewriteKind, SelectionFile, WorkspaceChoice } from '../shared/protocol.ts'
 import { api, copyText, errorMessage, orca } from './api.ts'
 import { backupBlock, suggestBackupName, type BackupBlock } from './backup.ts'
 import { buildFileTree, dirPaths, orderedFiles, renderFileTree, type FileNode } from './filetree.ts'
@@ -629,11 +629,27 @@ function branchMenu(event: MouseEvent, ref: BranchRef & { kind: 'local' | 'remot
     { icon: 'search', label: filter.branches?.includes(ref.full) ? t('showAllBranches') : t('showOnly', { name: ref.name }), run: () => applyFilter({ branches: filter.branches?.includes(ref.full) ? [] : [ref.full] }) },
     { label: t('copyName'), icon: 'copy', run: () => copyText(ref.name) }
   ]
+  const backup = (ref.kind === 'local' || ref.kind === 'tag') && ref.name.startsWith('backup/')
+  const deleteBackupEntry: MenuEntry = { label: t('backupDelete'), icon: 'drop', run: () => void removeBackup(scope, ref) }
+  if (backup) {
+    const operation = repo.operation
+    entries.unshift(
+      {
+        label: t('backupRestore', { name: repo.head.branch ?? 'HEAD' }),
+        icon: 'reset',
+        disabled: current || Boolean(operation),
+        hint: operation ? t('hintOperation', { operation }) : t('checkoutAlready'),
+        run: () => void restoreBackup(scope, ref)
+      },
+      'separator'
+    )
+    if (ref.kind === 'tag') entries.push('separator', deleteBackupEntry)
+  }
   if (ref.kind === 'local' || ref.kind === 'remote') {
     entries.push('separator')
     if (ref.kind === 'local') {
       entries.push({ label: t('branchRename'), icon: 'edit', run: () => void renameBranch(scope, ref.name) })
-      if (!current) entries.push({ label: t('branchDelete'), icon: 'drop', run: () => void deleteBranch(scope, ref.name, ref.hash) })
+      if (!current) entries.push(backup ? deleteBackupEntry : { label: t('branchDelete'), icon: 'drop', run: () => void deleteBranch(scope, ref.name, ref.hash) })
     }
     if (!current) {
       entries.push(
@@ -933,7 +949,7 @@ function unchanged(scope: Scope, onHead = false): boolean {
  * Runs `action` on the repository of `scope`. The worker refuses an action on the current branch when HEAD
  * is no longer the one `scope` saw, and makes `backup` before anything else.
  */
-async function act(scope: Scope, action: ActionRequest | BranchAction, progress: string, backup?: BackupRequest): Promise<BranchActionResult | null> {
+async function act(scope: Scope, action: ActionRequest | BranchAction | BackupDelete, progress: string, backup?: BackupRequest): Promise<BranchActionResult | null> {
   const onHead = ON_HEAD.has(action.kind)
   if (!unchanged(scope, onHead)) return null
   const root = scope.root
@@ -941,7 +957,8 @@ async function act(scope: Scope, action: ActionRequest | BranchAction, progress:
   const done = busy(progress)
   let result: BranchActionResult
   try {
-    result = BRANCH_KINDS.has(action.kind) ? await api.branch(root, action as BranchAction, guard) : await api.run(root, action as ActionRequest, guard)
+    if (action.kind === 'deleteBackup') result = await api.deleteBackup(root, action)
+    else result = BRANCH_KINDS.has(action.kind) ? await api.branch(root, action as BranchAction, guard) : await api.run(root, action as ActionRequest, guard)
   } catch (error) {
     result = { ok: false, message: errorMessage(error) }
   } finally {
@@ -956,6 +973,7 @@ async function act(scope: Scope, action: ActionRequest | BranchAction, progress:
   if (result.ok) {
     if (action.kind === 'rename') followBranch(action.name, action.newName)
     else if (action.kind === 'delete') followBranch(action.name)
+    else if (action.kind === 'deleteBackup') dropFilter(`refs/${action.ref === 'tag' ? 'tags' : 'heads'}/${action.name}`)
     const previous = result.previousHead
     // The Undo stays bound to this repository and to the HEAD this action left.
     const undo = previous && UNDOABLE.has(action.kind)
@@ -974,6 +992,8 @@ function followBranch(name: string, newName?: string): void {
   if (!filter.branches?.includes(old)) return
   applyFilter({ branches: filter.branches.flatMap((ref) => (ref !== old ? [ref] : newName ? [`refs/heads/${newName}`] : [])) })
 }
+
+const dropFilter = (full: string) => filter.branches?.includes(full) && applyFilter({ branches: filter.branches.filter((ref) => ref !== full) })
 
 /** The backup offer for a confirmation; none when the `offerBackup` setting is off or there is no commit to keep. */
 async function offerBackup(branch: string | null, target: string | null | undefined): Promise<BackupBlock | undefined> {
@@ -1121,6 +1141,21 @@ async function reset(scope: Scope, hash: string): Promise<void> {
   // Changes saved to the stash are not lost, so the warning is only for a hard reset without it.
   if (mode === 'hard' && !request?.stash && !(await confirm(t('hardResetTitle'), t('hardResetConfirm'), t('reset'), true))) return
   await act(scope, { kind: 'reset', hash, mode }, t('progResetting'), request)
+}
+
+/** Resets the current branch to a backup with --keep: git refuses rather than overwrite local changes. */
+async function restoreBackup(scope: Scope, ref: BranchRef): Promise<void> {
+  const backup = await offerHeadBackup(scope)
+  const text = t('backupRestoreConfirm', { name: repo?.head.branch ?? 'HEAD', backup: ref.name, hash: shortHash(ref.hash) })
+  if (await confirm(t('backupRestoreTitle'), text, t('btnRestore'), false, backup)) {
+    await act(scope, { kind: 'reset', hash: ref.hash, mode: 'keep' }, t('progResetting'), backup?.value())
+  }
+}
+
+async function removeBackup(scope: Scope, ref: BranchRef & { kind: string }): Promise<void> {
+  if (await confirm(t('backupDelete'), t('backupDeleteConfirm', { name: ref.name }), t('branchDelete'), true)) {
+    await act(scope, { kind: 'deleteBackup', ref: ref.kind === 'tag' ? 'tag' : 'branch', name: ref.name, hash: ref.hash }, t('branchDeleting', { name: ref.name }))
+  }
 }
 
 async function createPatch(scope: Scope, hashes: string[]): Promise<void> {
