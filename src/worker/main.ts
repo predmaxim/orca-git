@@ -72,9 +72,11 @@ async function openTab(prefer?: string, reveal?: TabReveal): Promise<{ ok: boole
   const path = await gitPath()
   const root = await toplevel(workspace.path, path)
   if (!root) return { ok: false, reason: t('workspaceNotRepo') }
+  // Focus may have moved since the sidebar read its repository: its commits must not land in another one.
+  if (reveal && reveal.root !== root) return { ok: false, reason: t('revealOtherRepo') }
   writeFileSync(join(workspace.path, ANCHOR), `${JSON.stringify({ root, workspaceId: workspace.id }, null, 2)}\n`)
   await exclude(createGit(root, path), root, ANCHOR)
-  if (reveal) pending.set(root, { hashes: reveal.hashes, ...(reveal.path ? { path: reveal.path } : {}) })
+  if (reveal) pending.set(root, { root, hashes: reveal.hashes, ...(reveal.path ? { path: reveal.path } : {}) })
   await orcaApi.host.call('editor.open', { workspaceId: workspace.id, path: ANCHOR })
   // An already open tab takes it from this event; a new one asks for it with tab.take.
   if (reveal) orcaApi.panels.post('tab.reveal', { root, ...pending.get(root)! })

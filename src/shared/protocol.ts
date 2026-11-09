@@ -184,6 +184,8 @@ export type PatchResult =
 
 /** Commits (and optionally a file) a freshly opened Git tab should select. */
 export interface TabReveal {
+  /** The repository the commits come from; the worker opens nothing for a workspace in another one. */
+  root: string
   hashes: string[]
   path?: string
 }

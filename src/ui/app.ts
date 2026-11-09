@@ -713,7 +713,7 @@ function selectRange(to: number, additive: boolean): void {
 
 /** Selects the commits (and opens the file) the sidebar asked for, dropping filters that could hide them. */
 async function applyReveal(reveal: TabReveal): Promise<void> {
-  if (!repo) return
+  if (!repo || reveal.root !== repo.root) return
   const { regex, matchCase } = filter
   filter = { ...(regex ? { regex } : {}), ...(matchCase ? { matchCase } : {}) }
   searchInput.value = ''
@@ -912,7 +912,7 @@ function openFile(index: number): void {
   currentFile = selectionFiles[index].path
   drawFiles()
   if (diffPane) showDiff()
-  else void openTab({ hashes: selectedHashes(), path: selectionFiles[index].path })
+  else if (repo) void openTab({ root: repo.root, hashes: selectedHashes(), path: selectionFiles[index].path })
 }
 
 function updateFiles(): void {
