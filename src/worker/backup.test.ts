@@ -17,11 +17,11 @@ function sh(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
 }
 
-/** main with c1..c4, one file each. */
-function repo(): string {
+/** main with c1..c4, one file each; `init` adds options to git init. */
+function repo(...init: string[]): string {
   const root = mkdtempSync(join(tmpdir(), 'git-log-backup-'))
   dirs.push(root)
-  sh(root, 'init', '-q', '-b', 'main')
+  sh(root, 'init', '-q', '-b', 'main', ...init)
   sh(root, 'config', 'user.name', 'Tester')
   sh(root, 'config', 'user.email', 'tester@example.com')
   sh(root, 'config', 'commit.gpgsign', 'false')
@@ -144,7 +144,8 @@ test('a stash is refused unless the action is a hard reset', async () => {
 })
 
 test('a stash that cannot be stored names the backup already made, and the action does not run', async () => {
-  const root = repo()
+  // The lock below blocks only the files ref backend, whatever git's default is.
+  const root = repo('--ref-format=files')
   const git = createGit(root)
   const head = rev(root, 'HEAD')
   writeFileSync(join(root, 'c4.txt'), 'local edit\n')
