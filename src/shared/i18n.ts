@@ -332,7 +332,7 @@ export const ru: Record<keyof typeof en, Message> = {
   diffNextChangeTip: 'Следующее изменение (F7)',
   diffPrevFile: 'Предыдущий файл (Alt+↑)',
   diffNextFile: 'Следующий файл (Alt+↓)',
-  diffFileCounter: '{index}/{count} файлов',
+  diffFileCounter: '{index}/{count}',
   diffSplit: 'Рядом',
   diffUnified: 'Вместе',
   diffSplitTip: 'Показать две версии рядом',
