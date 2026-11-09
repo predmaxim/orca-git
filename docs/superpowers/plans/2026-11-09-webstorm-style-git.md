@@ -567,3 +567,20 @@ test('restoring to a backup refuses when it would overwrite local changes', …)
 - [ ] **Step 2: Убедиться, что падают**; затем **Step 3: Реализовать** воркер, вкладку, проводку в сайдбаре; удалить режим `editor` и reveal.
 - [ ] **Step 4:** полный прогон, типы, `orca plugin validate`/`check`; снимки сайдбара и вкладки «Diff» на демо-репозитории `/tmp/git-demo` (вкладку — `orca plugin shot local.git-log --editor /tmp/git-demo/.orca-git-log.gitdiff …`, предварительно положив якорь и состояние через `orca plugin dev request … diff.open` только для `/tmp/git-demo`). Ни одного вызова против других репозиториев.
 - [ ] **Step 5:** README (раскладка, скриншоты с демо), дизайн-документ — отклонения; **Commit** — `git commit -m "Open diffs in one Diff tab and drop the Git tab"` (можно несколькими коммитами: воркер, вкладка, удаление).
+
+### Task 17: Стиль интерфейса «как Орка»
+
+Добавлена 2026-11-10 по решению пользователя: вариант «А. Как Орка» из `docs/superpowers/specs/styling-mockup.html`. Касается сайдбара и вкладки «Diff»; подсветка синтаксиса не меняется.
+
+Проверено по исходникам Орки (main 3667cc1 от 2026-11-09, тот же файл, что в установленной 1.4.253): фрейм плагина получает ровно 20 переменных — `--orca-background`, `--orca-foreground`, `--orca-card(-foreground)`, `--orca-popover(-foreground)`, `--orca-primary(-foreground)`, `--orca-secondary(-foreground)`, `--orca-muted(-foreground)`, `--orca-accent(-foreground)`, `--orca-destructive(-foreground)`, `--orca-border`, `--orca-input`, `--orca-ring`, `--orca-radius` (`src/shared/plugins/frames/plugin-panel-design-tokens.ts:5-26`) — и класс `light`/`dark` на `<html>`. Цветов статусов git, фона диффа, сайдбара, вкладок и шрифтов фрейм не получает; CSP панели — `font-src data:`.
+
+**Files:** `src/ui/styles.css` (основная работа), разметка в `src/ui/app.ts`, `src/ui/dialogs.ts`, `src/ui/menu.ts`, `src/ui/diff.ts`, `src/ui/diff-app.ts`, `src/ui/sections.ts`, `src/ui/filetree.ts`, `src/ui/branches.ts` — только классы и структура, нужные для стиля; README (снимки).
+
+Правила:
+- Всё, что покрывают 20 токенов, — только через них: фоны (`--orca-background`, `--orca-card`), текст и вторичный текст, рамки, поля ввода (`--orca-input`, фокус `--orca-ring` кольцом), выделение и наведение (`--orca-accent` / `--orca-accent-foreground`), меню и диалоги (`--orca-popover`), основная и вторичная кнопки (`--orca-primary`, `--orca-secondary`), опасные действия (`--orca-destructive`), скругления от `--orca-radius`.
+- Формы — как в Орке (shadcn): скругления 6–10 px, строки списков с отступом от краёв и скруглённой заливкой выделения, кнопки-«таблетки», переключатели сегментами, заголовки секций обычным текстом, системный шрифт интерфейса (`system-ui`, затем распространённые sans).
+- Чего нет в токенах — как в WebStorm New UI, отдельно для `light` и `dark`: цвета статусов файлов (A/M/D/R/C), фон добавленных и удалённых строк и изменённых слов в диффе, цвета веток графа. Шрифт кода — `"JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace, monospace`.
+- Никаких зашитых цветов там, где есть токен; полосы прокрутки, выделение текста (`::selection`), плейсхолдеры, неактивные элементы — тоже из токенов.
+- Обе темы: проверить снимками в светлой и тёмной (если окно Орки на экране и `--theme` не применяется — сказать об этом), только на демо-репозитории `/tmp/git-demo`; сайдбар показывает фокусный воркспейс пользователя — его не снимать, если там не демо.
+- Без новых тестов на CSS; полный прогон тестов после правок (ничего не сломано), `orca plugin check`.
+- Commit: `git commit -m "Style the panel and the Diff tab like Orca"` (можно несколькими коммитами по областям).

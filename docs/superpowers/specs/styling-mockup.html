@@ -1,0 +1,172 @@
+<style>
+  /* Палитра — токены активной темы Орки «JetBrains Islands Dark» (cd3vane.jetbrains-themes). */
+  .p{--bg:#191a1c;--fg:#d1d3d9;--card:#1e1f22;--pop:#26282b;--pri:#366ace;--pri-fg:#fff;--sec:#323438;--muted:#2b2d30;--mfg:#9da0a8;--acc:#2b2d30;--sacc:#2e436e;--bd:#2b2d30;--inp:#43454a;--ring:#3574f0;--add:#294436;--del:#484a4a;--gA:#73bd79;--gM:#70aeff;--gD:#868a91}
+  .frame{background:var(--bg);color:var(--fg);border:1px solid #333;border-radius:8px;overflow:hidden;text-align:left;display:flex;flex-direction:column;gap:0}
+  .row2{display:flex;gap:10px;padding:10px;background:#111}
+  .sb{width:250px;flex:none}
+  .col{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
+  .mono{font-family:"JetBrainsMono Nerd Font","JetBrains Mono",ui-monospace,monospace}
+  .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#e0a03a;margin-right:6px;vertical-align:middle}
+  .cap{font-size:11px;color:#8a8a8a;margin:6px 0 2px}
+
+  /* A — Орка (shadcn) */
+  .A{font:13px/1.5 system-ui,"Noto Sans",sans-serif}
+  .A .tool{display:flex;gap:4px;padding:6px 8px;border-bottom:1px solid var(--bd)}
+  .A .ib{width:26px;height:26px;border-radius:6px;display:grid;place-items:center;color:var(--mfg)}
+  .A .ib.h{background:var(--acc);color:var(--fg)}
+  .A .sec{padding:6px 10px;font-size:12px;font-weight:600;color:var(--fg);display:flex;justify-content:space-between}
+  .A .sec span:last-child{font-weight:400;color:var(--mfg)}
+  .A .in{margin:2px 10px 6px;border:1px solid var(--inp);border-radius:6px;padding:4px 8px;color:var(--mfg);box-shadow:0 0 0 2px color-mix(in srgb,var(--ring) 45%,transparent)}
+  .A .r{margin:1px 6px;padding:4px 8px;border-radius:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .A .r.s{background:var(--acc);color:var(--fg)}
+  .A .r.hv{background:color-mix(in srgb,var(--acc) 55%,transparent)}
+  .A .dlg{background:var(--pop);border:1px solid var(--bd);border-radius:10px;padding:14px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+  .A .dlg h4{margin:0 0 4px;font-size:14px}
+  .A .chk{display:flex;gap:8px;align-items:center;margin:10px 0 6px}
+  .A .cb{width:15px;height:15px;border-radius:4px;background:var(--pri);color:#fff;font-size:10px;display:grid;place-items:center}
+  .A .fld{border:1px solid var(--inp);border-radius:6px;padding:4px 8px}
+  .A .btns{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+  .A .btn{border-radius:6px;padding:5px 12px;font-weight:500;background:var(--sec)}
+  .A .btn.d{background:#c94f4f;color:#fff}
+  .A .seg{display:inline-flex;background:var(--muted);border-radius:6px;padding:2px}
+  .A .seg span{padding:2px 10px;border-radius:4px;color:var(--mfg)}.A .seg .on{background:var(--bg);color:var(--fg)}
+
+  /* B — WebStorm (Islands) */
+  .B{font:13px/1.35 Inter,"Noto Sans",system-ui,sans-serif;--bg:#1e1f22;--fg:#dfe1e5}
+  .B .tool{display:flex;gap:2px;padding:3px 6px;border-bottom:1px solid #393b40}
+  .B .ib{width:24px;height:24px;border-radius:4px;display:grid;place-items:center;color:#ced0d6}
+  .B .ib.h{background:#393b40}
+  .B .sec{padding:4px 8px;font-size:12px;color:#ced0d6;display:flex;justify-content:space-between;background:#2b2d30}
+  .B .sec span:last-child{color:#868a91}
+  .B .in{margin:4px 8px;border:1px solid #3574f0;border-radius:4px;padding:2px 6px;color:#868a91;background:#2b2d30}
+  .B .r{padding:2px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:22px}
+  .B .r.s{background:#2e436e;color:#fff}
+  .B .r.hv{background:#2b2d30}
+  .B .dlg{background:#2b2d30;border:1px solid #43454a;border-radius:8px;padding:14px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+  .B .dlg h4{margin:0 0 4px;font-size:13px;font-weight:600}
+  .B .chk{display:flex;gap:8px;align-items:center;margin:10px 0 6px}
+  .B .cb{width:14px;height:14px;border-radius:3px;background:#3574f0;color:#fff;font-size:10px;display:grid;place-items:center}
+  .B .fld{border:1px solid #3574f0;border-radius:4px;padding:2px 6px;background:#1e1f22}
+  .B .btns{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+  .B .btn{border:1px solid #4e5157;border-radius:4px;padding:3px 14px}
+  .B .btn.d{background:#3574f0;border-color:#3574f0;color:#fff}
+  .B .seg{display:inline-flex;border:1px solid #43454a;border-radius:4px}
+  .B .seg span{padding:1px 8px;color:#ced0d6}.B .seg .on{background:#3d3f43;color:#fff}
+
+  /* C — Гибрид: цвета Орки, плотность и формы WebStorm */
+  .C{font:13px/1.35 system-ui,"Noto Sans",sans-serif}
+  .C .tool{display:flex;gap:2px;padding:3px 6px;border-bottom:1px solid var(--bd)}
+  .C .ib{width:24px;height:24px;border-radius:4px;display:grid;place-items:center;color:var(--mfg)}
+  .C .ib.h{background:var(--acc);color:var(--fg)}
+  .C .sec{padding:4px 8px;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--mfg);display:flex;justify-content:space-between;background:var(--card)}
+  .C .in{margin:4px 8px;border:1px solid var(--ring);border-radius:4px;padding:2px 6px;color:var(--mfg);background:var(--muted)}
+  .C .r{padding:2px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:22px}
+  .C .r.s{background:color-mix(in srgb,var(--pri) 38%,var(--bg));color:#fff}
+  .C .r.hv{background:var(--acc)}
+  .C .dlg{background:var(--pop);border:1px solid var(--inp);border-radius:6px;padding:14px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+  .C .dlg h4{margin:0 0 4px;font-size:13px;font-weight:600}
+  .C .chk{display:flex;gap:8px;align-items:center;margin:10px 0 6px}
+  .C .cb{width:14px;height:14px;border-radius:3px;background:var(--pri);color:#fff;font-size:10px;display:grid;place-items:center}
+  .C .fld{border:1px solid var(--ring);border-radius:4px;padding:2px 6px;background:var(--bg)}
+  .C .btns{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+  .C .btn{border:1px solid var(--inp);border-radius:4px;padding:3px 14px}
+  .C .btn.d{background:#c94f4f;border-color:#c94f4f;color:#fff}
+  .C .seg{display:inline-flex;border:1px solid var(--inp);border-radius:4px}
+  .C .seg span{padding:1px 8px;color:var(--mfg)}.C .seg .on{background:var(--sec);color:var(--fg)}
+
+  .st{display:inline-block;width:12px;font-weight:600}
+  .C .gA{color:#6aab73}.C .gM{color:#6f9fe6}
+  .C .add{background:#294436}.C .del{background:#4a2b2e}
+  .gA{color:var(--gA)}.gM{color:var(--gM)}.gD{color:var(--gD)}
+  .B .gA{color:#6aab73}.B .gM{color:#6f9fe6}
+  .code{font-size:11.5px}
+  .code div{padding:0 8px;white-space:nowrap}
+  .add{background:var(--add)}.del{background:var(--del)}
+  .B .add{background:#294436}.B .del{background:#4a2b2e}
+  .hdr{display:flex;gap:10px;align-items:center;padding:5px 8px;border-bottom:1px solid #333;font-size:12px}
+  .card-image{padding:0}
+</style>
+
+<h2>Стиль интерфейса плагина: выбери направление</h2>
+<p class="subtitle">Проверено по исходникам Орки (main 3667cc1, 2026-11-09 = твоя 1.4.253): плагину доступны только 20 токенов (фон, текст, карточка, меню, primary/secondary, muted, accent, destructive, border, input, ring, radius) и класс light/dark. Цвета статусов, диффа, сайдбара и шрифты Орка плагину не отдаёт. Цвета ниже — из твоей темы (JetBrains Islands Dark). Шрифт кода — JetBrainsMono Nerd Font (он у тебя установлен). Подсветка синтаксиса не меняется.</p>
+
+<div class="cards">
+  <div class="card" data-choice="A-orca" onclick="toggleSelect(this)">
+    <div class="card-image"><div class="row2 p A">
+      <div class="frame sb">
+        <div class="tool"><span class="ib h">↻</span><span class="ib">⇣</span></div>
+        <div class="sec"><span>▾ Commits</span><span>2 selected</span></div>
+        <div class="in">Text or hash</div>
+        <div class="r s"><span class="dot"></span>fix(ABC-102): Retry failed uploads</div>
+        <div class="r s"><span class="dot"></span>fix(ABC-102): Make retries configurable</div>
+        <div class="r hv"><span class="dot" style="background:#4c8cf5"></span>Merge pull request #41 from bob/search</div>
+        <div class="sec"><span>▾ Files</span><span>3</span></div>
+        <div class="r"><span class="st gM">M</span>app.yml</div>
+        <div class="r s"><span class="st gM">M</span>upload.ts</div>
+        <div class="r"><span class="st gA">A</span>search.ts</div>
+      </div>
+      <div class="col">
+        <div class="frame"><div class="hdr"><span>‹ 2/3 ›</span><b>src/api/upload.ts</b><span style="margin-left:auto" class="seg"><span class="on">Split</span><span>Unified</span></span></div>
+          <div class="code mono"><div class="del">const RETRY_LIMIT = 1</div><div class="add">const RETRY_LIMIT = 3</div><div class="add">const BACKOFF_MS = 500</div></div></div>
+        <div class="dlg"><h4>Drop 2 commits?</h4><div style="color:var(--mfg)">This rewrites the history of fix/ABC-102.</div>
+          <div class="chk"><span class="cb">✓</span>Back up fix/ABC-102 first</div>
+          <div class="fld mono">backup/fix/ABC-102-20261110-1432</div>
+          <div class="btns"><span class="btn">Cancel</span><span class="btn d">Drop</span></div></div>
+      </div>
+    </div></div>
+    <div class="card-body"><h3>А. Как Орка</h3><p>Скругления 6–10 px, строки с отступами и мягкой заливкой выделения (`--accent`), кольцо фокуса `--ring`, кнопки-«таблетки» как в настройках Орки, системный шрифт, заголовки секций обычным текстом.</p></div>
+  </div>
+
+  <div class="card" data-choice="B-webstorm" onclick="toggleSelect(this)">
+    <div class="card-image"><div class="row2 p B">
+      <div class="frame sb" style="background:#1e1f22">
+        <div class="tool"><span class="ib h">↻</span><span class="ib">⇣</span></div>
+        <div class="sec"><span>▾ Commits</span><span>2 selected</span></div>
+        <div class="in">Text or hash</div>
+        <div class="r s"><span class="dot"></span>fix(ABC-102): Retry failed uploads</div>
+        <div class="r s"><span class="dot"></span>fix(ABC-102): Make retries configurable</div>
+        <div class="r hv"><span class="dot" style="background:#4c8cf5"></span>Merge pull request #41 from bob/search</div>
+        <div class="sec"><span>▾ Files</span><span>3</span></div>
+        <div class="r"><span class="st gM">M</span>app.yml</div>
+        <div class="r s"><span class="st gM">M</span>upload.ts</div>
+        <div class="r"><span class="st gA">A</span>search.ts</div>
+      </div>
+      <div class="col">
+        <div class="frame" style="background:#1e1f22"><div class="hdr" style="border-color:#393b40"><span>← 2/3 →</span><b>upload.ts</b><span style="margin-left:auto" class="seg"><span class="on">Split</span><span>Unified</span></span></div>
+          <div class="code mono"><div class="del">const RETRY_LIMIT = 1</div><div class="add">const RETRY_LIMIT = 3</div><div class="add">const BACKOFF_MS = 500</div></div></div>
+        <div class="dlg"><h4>Drop 2 commits?</h4><div style="color:#868a91">This rewrites the history of fix/ABC-102.</div>
+          <div class="chk"><span class="cb">✓</span>Back up fix/ABC-102 first</div>
+          <div class="fld mono">backup/fix/ABC-102-20261110-1432</div>
+          <div class="btns"><span class="btn">Cancel</span><span class="btn d">Drop</span></div></div>
+      </div>
+    </div></div>
+    <div class="card-body"><h3>Б. Как WebStorm</h3><p>Свои цвета New UI (Islands), строки 22 px во всю ширину, синее выделение `#2E436E`, скругления 4 px, кнопки с рамкой, синяя основная кнопка, шрифт Inter. От темы Орки не зависит.</p></div>
+  </div>
+
+  <div class="card" data-choice="C-hybrid" onclick="toggleSelect(this)">
+    <div class="card-image"><div class="row2 p C">
+      <div class="frame sb">
+        <div class="tool"><span class="ib h">↻</span><span class="ib">⇣</span></div>
+        <div class="sec"><span>▾ Commits</span><span>2 selected</span></div>
+        <div class="in">Text or hash</div>
+        <div class="r s"><span class="dot"></span>fix(ABC-102): Retry failed uploads</div>
+        <div class="r s"><span class="dot"></span>fix(ABC-102): Make retries configurable</div>
+        <div class="r hv"><span class="dot" style="background:#4c8cf5"></span>Merge pull request #41 from bob/search</div>
+        <div class="sec"><span>▾ Files</span><span>3</span></div>
+        <div class="r"><span class="st gM">M</span>app.yml</div>
+        <div class="r s"><span class="st gM">M</span>upload.ts</div>
+        <div class="r"><span class="st gA">A</span>search.ts</div>
+      </div>
+      <div class="col">
+        <div class="frame"><div class="hdr" style="border-color:var(--bd)"><span>← 2/3 →</span><b>upload.ts</b><span style="margin-left:auto" class="seg"><span class="on">Split</span><span>Unified</span></span></div>
+          <div class="code mono"><div class="del">const RETRY_LIMIT = 1</div><div class="add">const RETRY_LIMIT = 3</div><div class="add">const BACKOFF_MS = 500</div></div></div>
+        <div class="dlg"><h4>Drop 2 commits?</h4><div style="color:var(--mfg)">This rewrites the history of fix/ABC-102.</div>
+          <div class="chk"><span class="cb">✓</span>Back up fix/ABC-102 first</div>
+          <div class="fld mono">backup/fix/ABC-102-20261110-1432</div>
+          <div class="btns"><span class="btn">Cancel</span><span class="btn d">Drop</span></div></div>
+      </div>
+    </div></div>
+    <div class="card-body"><h3>В. Гибрид (рекомендую)</h3><p>Фон, текст, рамки, поля, кнопки, меню и фокус — из 20 токенов, которые Орка отдаёт плагину; выделение — `--orca-primary`, подмешанный в фон (следует за темой). Цвета статусов файлов и фон диффа Орка плагину не отдаёт — они как в WebStorm. Плотность и формы — WebStorm: строки 22 px во всю ширину, скругления 4 px.</p></div>
+  </div>
+</div>
+<p class="note" style="font-size:12px;color:#999">Шрифт: Орка его плагину не отдаёт и загружать внешние шрифты фрейму не даёт (CSP font-src data:) — интерфейс системным шрифтом, код — JetBrainsMono Nerd Font, если он установлен.</p>
