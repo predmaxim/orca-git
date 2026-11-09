@@ -1,5 +1,6 @@
 import type { ActionRequest, ActionResult, CheckResult, RewriteKind } from '../shared/protocol.ts'
 import { lastLines, type Git } from './git.ts'
+import { t } from '../shared/i18n.ts'
 import { readHead } from './log.ts'
 import {
   operationInProgress,
@@ -16,7 +17,7 @@ const HASH = /^[0-9a-f]{40}$/
 
 function assertHashes(hashes: unknown): string[] {
   if (!Array.isArray(hashes) || !hashes.length || !hashes.every((h) => typeof h === 'string' && HASH.test(h))) {
-    throw new Error('Invalid commit selection.')
+    throw new Error(t('invalidSelection'))
   }
   return hashes as string[]
 }
@@ -24,7 +25,7 @@ function assertHashes(hashes: unknown): string[] {
 export async function assertName(git: Git, name: string, kind: 'branch' | 'tag'): Promise<string> {
   const trimmed = name.trim()
   const args = kind === 'branch' ? ['check-ref-format', '--branch', trimmed] : ['check-ref-format', `refs/tags/${trimmed}`]
-  if (!trimmed || trimmed.startsWith('-') || !(await git.run(args)).ok) throw new Error(`"${trimmed}" is not a valid ${kind} name.`)
+  if (!trimmed || trimmed.startsWith('-') || !(await git.run(args)).ok) throw new Error(t(kind === 'branch' ? 'invalidBranchName' : 'invalidTagName', { name: trimmed }))
   return trimmed
 }
 
@@ -41,7 +42,7 @@ async function sequencer(git: Git, verb: 'cherry-pick' | 'revert', args: string[
   if (!result.ok) {
     const reason = lastLines(result.stderr || result.stdout, 4)
     if ((await operationInProgress(git)) === verb) await git.run([verb, '--abort'])
-    throw new Error(`${verb === 'revert' ? 'Revert' : 'Cherry-pick'} failed and was aborted.${reason ? `\n${reason}` : ''}`)
+    throw new Error(`${t(verb === 'revert' ? 'revertFailed' : 'cherryPickFailed')}${reason ? `\n${reason}` : ''}`)
   }
 }
 
@@ -54,17 +55,17 @@ export async function checkRewrite(git: Git, kind: RewriteKind, hashes: string[]
   try {
     assertHashes(hashes)
     const operation = await operationInProgress(git)
-    if (operation) return { ok: false, reason: `A ${operation} is in progress. Finish or abort it first.` }
+    if (operation) return { ok: false, reason: t('opInProgress', { operation }) }
     const head = await readHead(git)
-    if (!head.hash) return { ok: false, reason: 'The repository has no commits.' }
+    if (!head.hash) return { ok: false, reason: t('repoNoCommits') }
     const history = await readFirstParentHistory(git)
     if (kind === 'undo') {
-      if (hashes.length !== 1 || hashes[0] !== head.hash) return { ok: false, reason: 'Only the latest commit (HEAD) can be undone.' }
-      if (!history[0]?.parents.length) return { ok: false, reason: 'The first commit of a repository cannot be undone.' }
+      if (hashes.length !== 1 || hashes[0] !== head.hash) return { ok: false, reason: t('undoOnlyHead') }
+      if (!history[0]?.parents.length) return { ok: false, reason: t('undoFirstCommit') }
       return { ok: true, pushed: await pushedTo(git, head.hash), commits: [history[0]] }
     }
-    if (kind === 'squash' && hashes.length < 2) return { ok: false, reason: 'Select at least two commits to squash.' }
-    if (kind === 'reword' && hashes.length !== 1) return { ok: false, reason: 'Select one commit to edit its message.' }
+    if (kind === 'squash' && hashes.length < 2) return { ok: false, reason: t('squashNeedTwo') }
+    if (kind === 'reword' && hashes.length !== 1) return { ok: false, reason: t('rewordNeedOne') }
     const range = selectRange(history, rangeHashes(kind, hashes, history))
     return {
       ok: true,
@@ -78,7 +79,7 @@ export async function checkRewrite(git: Git, kind: RewriteKind, hashes: string[]
 
 async function rewrite(git: Git, action: Extract<ActionRequest, { kind: 'squash' | 'fixup' | 'drop' | 'reword' | 'rebase' }>): Promise<string> {
   const operation = await operationInProgress(git)
-  if (operation) throw new Error(`A ${operation} is in progress. Finish or abort it first.`)
+  if (operation) throw new Error(t('opInProgress', { operation }))
   const history = await readFirstParentHistory(git)
   const messages = messagesOf(history)
   if (action.kind === 'rebase') {
@@ -86,26 +87,26 @@ async function rewrite(git: Git, action: Extract<ActionRequest, { kind: 'squash'
     const range = selectRange(history, hashes)
     const expected = new Set(range.commits.map((c) => c.hash))
     if (hashes.length !== expected.size || !hashes.every((h) => expected.has(h))) {
-      throw new Error('The branch changed since the rebase was planned. Refresh and try again.')
+      throw new Error(t('rebaseBranchChanged'))
     }
     await runRebase(git, range.base, action.plan, messages)
-    return 'Rebase finished.'
+    return t('rebaseFinished')
   }
   const hashes = assertHashes(action.kind === 'reword' ? [action.hash] : action.hashes)
   const range = selectRange(history, rangeHashes(action.kind, hashes, history))
   const message = action.kind === 'squash' || action.kind === 'reword' ? action.message : undefined
-  if ((action.kind === 'squash' || action.kind === 'reword') && !message?.trim()) throw new Error('A commit message cannot be empty.')
+  if ((action.kind === 'squash' || action.kind === 'reword') && !message?.trim()) throw new Error(t('commitMessageEmpty'))
   await runRebase(git, range.base, planFor(action.kind, range, hashes, message), messages)
   const n = hashes.length
   switch (action.kind) {
     case 'squash':
-      return `Squashed ${n} commits.`
+      return t('squashed', { count: n })
     case 'fixup':
-      return n === 1 ? 'Fixed up into the previous commit.' : `Fixed up ${n - 1} commit${n > 2 ? 's' : ''}.`
+      return n === 1 ? t('fixedUpPrev') : t('fixedUp', { count: n - 1 })
     case 'drop':
-      return `Dropped ${n} commit${n > 1 ? 's' : ''}.`
+      return t('dropped', { count: n })
     default:
-      return 'Commit message updated.'
+      return t('messageUpdated')
   }
 }
 
@@ -123,44 +124,44 @@ async function perform(git: Git, action: ActionRequest): Promise<string> {
   switch (action.kind) {
     case 'checkout': {
       const target = action.target?.trim()
-      if (!target || target.startsWith('-')) throw new Error('Invalid checkout target.')
+      if (!target || target.startsWith('-')) throw new Error(t('invalidCheckoutTarget'))
       if (HASH.test(target)) await git.out(['checkout', '--detach', target, '--'])
       else await git.out(['checkout', target, '--'])
-      return `Checked out ${HASH.test(target) ? target.slice(0, 8) : target}.`
+      return t('checkedOut', { target: HASH.test(target) ? target.slice(0, 8) : target })
     }
     case 'branch': {
       const [hash] = assertHashes([action.hash])
       const name = await assertName(git, action.name, 'branch')
       await git.out(action.checkout ? ['checkout', '-b', name, hash, '--'] : ['branch', name, hash])
-      return action.checkout ? `Created and checked out ${name}.` : `Created branch ${name}.`
+      return t(action.checkout ? 'createdCheckedOut' : 'createdBranch', { name })
     }
     case 'tag': {
       const [hash] = assertHashes([action.hash])
       const name = await assertName(git, action.name, 'tag')
       await git.out(['tag', name, hash])
-      return `Created tag ${name}.`
+      return t('createdTag', { name })
     }
     case 'cherryPick': {
       const hashes = await oldestFirst(git, assertHashes(action.hashes))
       await sequencer(git, 'cherry-pick', hashes)
-      return `Cherry-picked ${hashes.length} commit${hashes.length > 1 ? 's' : ''}.`
+      return t('cherryPicked', { count: hashes.length })
     }
     case 'revert': {
       const hashes = (await oldestFirst(git, assertHashes(action.hashes))).reverse()
       await sequencer(git, 'revert', ['--no-edit', ...hashes])
-      return `Reverted ${hashes.length} commit${hashes.length > 1 ? 's' : ''}.`
+      return t('reverted', { count: hashes.length })
     }
     case 'reset': {
       const [hash] = assertHashes([action.hash])
-      if (!['soft', 'mixed', 'hard', 'keep'].includes(action.mode)) throw new Error('Invalid reset mode.')
+      if (!['soft', 'mixed', 'hard', 'keep'].includes(action.mode)) throw new Error(t('invalidResetMode'))
       await git.out(['reset', `--${action.mode}`, hash, '--'])
-      return `Reset to ${hash.slice(0, 8)} (${action.mode}).`
+      return t('resetDone', { hash: hash.slice(0, 8), mode: action.mode })
     }
     case 'undo': {
       const check = await checkRewrite(git, 'undo', [action.hash])
       if (!check.ok) throw new Error(check.reason)
       await git.out(['reset', '--soft', 'HEAD~1', '--'])
-      return 'Commit undone; its changes are staged.'
+      return t('commitUndone')
     }
     case 'squash':
     case 'fixup':
@@ -169,6 +170,6 @@ async function perform(git: Git, action: ActionRequest): Promise<string> {
     case 'rebase':
       return rewrite(git, action)
     default:
-      throw new Error(`Unknown action ${(action as { kind: string }).kind}.`)
+      throw new Error(t('unknownAction', { kind: (action as { kind: string }).kind }))
   }
 }

@@ -2,6 +2,7 @@ import type { PlanItem, RangeCommit, RebaseAction, ResetMode } from '../shared/p
 import { h, icon } from './dom.ts'
 import { closePopups } from './menu.ts'
 import { shortHash } from './format.ts'
+import { t } from '../shared/i18n.ts'
 
 interface Button<T> {
   label: string
@@ -76,15 +77,15 @@ export function dialog<T>(options: DialogOptions<T>): Promise<T | null> {
   })
 }
 
-const cancel = <T>(): Button<T> => ({ label: 'Cancel', value: null as T })
+const cancel = <T>(): Button<T> => ({ label: t('cancel'), value: null as T })
 
 export function pushedWarning(pushed: string[]): HTMLElement {
-  const list = pushed.slice(0, 4).join(', ') + (pushed.length > 4 ? ` and ${pushed.length - 4} more` : '')
+  const list = pushed.slice(0, 4).join(', ') + (pushed.length > 4 ? t('pushedMore', { count: pushed.length - 4 }) : '')
   return h(
     'div',
     { class: 'warning' },
     icon('warning'),
-    h('div', null, `These commits were already pushed to ${list}. Rewriting them will require a force push and may disturb others.`)
+    h('div', null, t('pushedWarning', { list }))
   )
 }
 
@@ -102,10 +103,10 @@ export async function editMessage(title: string, initial: string, ok: string, ex
   area.value = initial
   const result = await dialog<string>({
     title,
-    body: [extra, area, h('div', { class: 'muted' }, 'Ctrl+Enter to confirm.')],
+    body: [extra, area, h('div', { class: 'muted' }, t('ctrlEnterHint'))],
     buttons: [cancel(), { label: ok, value: 'ok', kind: 'primary' }],
     focus: area,
-    validate: () => (area.value.trim() ? null : 'The commit message cannot be empty.')
+    validate: () => (area.value.trim() ? null : t('commitMessageEmpty'))
   })
   return result ? area.value.replace(/\s+$/, '') : null
 }
@@ -124,7 +125,7 @@ export async function askName(
     body: [input, box && checkbox ? h('label', { class: 'checkbox' }, box, checkbox.label) : null],
     buttons: [cancel(), { label: ok, value: 'ok', kind: 'primary' }],
     focus: input,
-    validate: () => (input.value.trim() ? null : `Enter a ${label.toLowerCase()}.`)
+    validate: () => (input.value.trim() ? null : t('enterField', { label: label.toLowerCase() }))
   })
   return result ? { name: input.value.trim(), checked: box?.checked ?? false } : null
 }
@@ -133,34 +134,34 @@ export type PatchChoice = { action: 'copy' } | { action: 'save'; path: string }
 
 /** "Create Patch": a file path to save to, or copy to the clipboard when the patch is small enough. */
 export async function askPatch(count: number, size: number, defaultPath: string, canCopy: boolean): Promise<PatchChoice | null> {
-  const input = h('input', { class: 'field mono', spellcheck: false, placeholder: 'File path' }) as HTMLInputElement
+  const input = h('input', { class: 'field mono', spellcheck: false, placeholder: t('filePathPlaceholder') }) as HTMLInputElement
   input.value = defaultPath
-  const kb = size < 1024 ? `${size} B` : `${Math.round(size / 1024)} KB`
+  const kb = size < 1024 ? t('sizeBytes', { n: size }) : t('sizeKilobytes', { n: Math.round(size / 1024) })
   const result = await dialog<'copy' | 'save'>({
-    title: 'Create Patch',
+    title: t('createPatchTitle'),
     body: [
-      `${count === 1 ? 'One commit' : `${count} commits`}, ${kb}. Save to a file (relative to the repository root) or copy to the clipboard.`,
+      t('patchIntro', { count, size: kb }),
       input,
-      canCopy ? null : h('div', { class: 'muted' }, 'The patch is too large for the clipboard; save it to a file.')
+      canCopy ? null : h('div', { class: 'muted' }, t('patchTooLarge'))
     ],
-    buttons: [cancel(), ...(canCopy ? [{ label: 'Copy to Clipboard', value: 'copy' as const }] : []), { label: 'Save', value: 'save', kind: 'primary' }],
+    buttons: [cancel(), ...(canCopy ? [{ label: t('copyToClipboard'), value: 'copy' as const }] : []), { label: t('save'), value: 'save', kind: 'primary' }],
     focus: input,
-    validate: () => (input.value.trim() ? null : 'Enter a file path.')
+    validate: () => (input.value.trim() ? null : t('enterFilePath'))
   })
   if (!result) return null
   return result === 'copy' ? { action: 'copy' } : { action: 'save', path: input.value.trim() }
 }
 
-const RESET_MODES: { mode: ResetMode; label: string; help: string }[] = [
-  { mode: 'soft', label: 'Soft', help: 'Files and the index stay as they are; the reset changes become staged.' },
-  { mode: 'mixed', label: 'Mixed', help: 'Files stay as they are; the index is reset, so the changes become unstaged.' },
-  { mode: 'hard', label: 'Hard', help: 'Files and the index are reset. All uncommitted changes are lost!' },
-  { mode: 'keep', label: 'Keep', help: 'Files that differ are reset; local changes are kept, or the reset is refused.' }
+const resetModes = (): { mode: ResetMode; label: string; help: string }[] => [
+  { mode: 'soft', label: 'Soft', help: t('resetSoftHelp') },
+  { mode: 'mixed', label: 'Mixed', help: t('resetMixedHelp') },
+  { mode: 'hard', label: 'Hard', help: t('resetHardHelp') },
+  { mode: 'keep', label: 'Keep', help: t('resetKeepHelp') }
 ]
 
 export async function askReset(branch: string | null, hash: string): Promise<ResetMode | null> {
   let chosen: ResetMode = 'mixed'
-  const radios = RESET_MODES.map(({ mode, label, help }) =>
+  const radios = resetModes().map(({ mode, label, help }) =>
     h(
       'label',
       { class: 'radio' },
@@ -170,9 +171,9 @@ export async function askReset(branch: string | null, hash: string): Promise<Res
     )
   )
   const result = await dialog<string>({
-    title: 'Git Reset',
-    body: [`Reset ${branch ? `branch ${branch}` : 'HEAD'} to ${shortHash(hash)}.`, ...radios],
-    buttons: [cancel(), { label: 'Reset', value: 'ok', kind: 'primary' }]
+    title: t('resetTitle'),
+    body: [branch ? t('resetBranchTo', { name: branch, hash: shortHash(hash) }) : t('resetHeadTo', { hash: shortHash(hash) }), ...radios],
+    buttons: [cancel(), { label: t('reset'), value: 'ok', kind: 'primary' }]
   })
   return result ? chosen : null
 }
@@ -222,7 +223,7 @@ export async function askRebasePlan(commits: RangeCommit[], pushed: string[]): P
     const editable = item.action === 'reword'
     message.disabled = !editable
     message.value = editable ? item.newMessage : item.message
-    messageLabel.textContent = editable ? 'New message:' : 'Message (choose "reword" to edit):'
+    messageLabel.textContent = editable ? t('rebaseNewMessage') : t('rebaseMessageHint')
   }
   const move = (delta: number) => {
     const to = selected + delta
@@ -248,21 +249,21 @@ export async function askRebasePlan(commits: RangeCommit[], pushed: string[]): P
   const tools = h(
     'div',
     { class: 'rebase-tools' },
-    h('button', { class: 'tool', title: 'Move up (Alt+↑)', onclick: () => move(-1) }, icon('up')),
-    h('button', { class: 'tool', title: 'Move down (Alt+↓)', onclick: () => move(1) }, icon('down')),
-    h('span', { class: 'muted' }, 'Oldest commit first. Keys: P pick, R reword, S squash, F fixup, D drop.')
+    h('button', { class: 'tool', title: t('moveUpTip'), onclick: () => move(-1) }, icon('up')),
+    h('button', { class: 'tool', title: t('moveDownTip'), onclick: () => move(1) }, icon('down')),
+    h('span', { class: 'muted' }, t('rebaseHint'))
   )
   const result = await dialog<string>({
-    title: 'Interactively Rebase',
+    title: t('rebaseTitle'),
     wide: true,
     body: [pushed.length ? pushedWarning(pushed) : null, tools, list, messageLabel, message],
-    buttons: [cancel(), { label: 'Start Rebasing', value: 'ok', kind: 'primary' }],
+    buttons: [cancel(), { label: t('rebaseStart'), value: 'ok', kind: 'primary' }],
     focus: list,
     validate: () => {
       const kept = items.filter((i) => i.action !== 'drop')
-      if (!kept.length) return 'Keep at least one commit, or use Drop instead.'
-      if (kept[0].action === 'squash' || kept[0].action === 'fixup') return `The first kept commit cannot be a ${kept[0].action}.`
-      if (items.some((i) => i.action === 'reword' && !i.newMessage.trim())) return 'A commit message cannot be empty.'
+      if (!kept.length) return t('rebaseKeepOne')
+      if (kept[0].action === 'squash' || kept[0].action === 'fixup') return t('rebaseFirstKept', { action: kept[0].action })
+      if (items.some((i) => i.action === 'reword' && !i.newMessage.trim())) return t('commitMessageEmpty')
       return null
     }
   })

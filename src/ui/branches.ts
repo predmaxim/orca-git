@@ -56,7 +56,7 @@ export function renderBranches(container: HTMLElement, host: BranchesHost, query
         {
           class: `node-row${filtered ? ' filtered' : ''}`,
           style: `padding-left:${4 + depth * 14 + 16}px`,
-          title: `${ref.full}${ref.upstream ? `\nTracking ${ref.upstream}` : ''}\n${t('branchRowTip', { kind: t(kind === 'tag' ? 'kindTag' : 'kindBranch') })}`,
+          title: `${ref.full}${ref.upstream ? `\n${t('trackingTip', { upstream: ref.upstream })}` : ''}\n${t('branchRowTip', { kind: t(kind === 'tag' ? 'kindTag' : 'kindBranch') })}`,
           // The second click of a double click does nothing: filterTo toggles and would undo the first.
           onclick: (event: MouseEvent) => event.detail <= 1 && host.filterTo(ref.full),
           ondblclick: () => ref.hash && host.select(ref.hash),
@@ -73,7 +73,7 @@ export function renderBranches(container: HTMLElement, host: BranchesHost, query
   }
 
   if (refs.head.hash && matches('HEAD')) {
-    leaf({ name: 'HEAD', full: 'HEAD', hash: refs.head.hash }, 'head', 'HEAD (Current Branch)', 0, true)
+    leaf({ name: 'HEAD', full: 'HEAD', hash: refs.head.hash }, 'head', t('headCurrent'), 0, true)
   }
 
   // Folders keep their open state in `collapsed` under `<scope>:<path>`.
@@ -89,12 +89,12 @@ export function renderBranches(container: HTMLElement, host: BranchesHost, query
   }
 
   const locals = refs.locals.filter((r) => matches(r.name))
-  if (locals.length && group('local', 'Local', 0, locals.length)) {
+  if (locals.length && group('local', t('groupLocal'), 0, locals.length)) {
     tree(groupByPrefix(locals), 'local', 'local', 1)
   }
 
   const remotes = refs.remotes.filter((r) => matches(r.name))
-  if (remotes.length && group('remote', 'Remote', 0, remotes.length)) {
+  if (remotes.length && group('remote', t('groupRemote'), 0, remotes.length)) {
     for (const [remote, list] of groupRemotes(remotes)) {
       if (group(`remote/${remote}`, remote, 1, list.length)) {
         tree(groupByPrefix(list, remote), `remote/${remote}`, 'remote', 2)
@@ -103,7 +103,7 @@ export function renderBranches(container: HTMLElement, host: BranchesHost, query
   }
 
   const tags = refs.tags.filter((r) => matches(r.name))
-  if (tags.length && group('tags', 'Tags', 0, tags.length)) {
+  if (tags.length && group('tags', t('groupTags'), 0, tags.length)) {
     for (const ref of tags) leaf(ref, 'tag', ref.name, 1)
   }
 

@@ -1,5 +1,6 @@
 import type { DiffHunk, FileDiff } from '../shared/protocol.ts'
 import type { Git } from './git.ts'
+import { t } from '../shared/i18n.ts'
 
 /** Lines kept per file; beyond this the diff is marked truncated. */
 export const MAX_DIFF_LINES = 20_000
@@ -47,8 +48,8 @@ const literal = (path: string) => `:(literal)${path}`
 
 /** The changes `hash` made to `path` (renamed from `oldPath`), against its first parent. */
 export async function readFileDiff(git: Git, hash: string, path: string, oldPath?: string, wholeFile = false): Promise<FileDiff> {
-  if (!/^[0-9a-f]{40}$/.test(hash)) throw new Error(`Invalid commit: ${hash}`)
-  if (!path || typeof path !== 'string') throw new Error('Missing file path.')
+  if (!/^[0-9a-f]{40}$/.test(hash)) throw new Error(t('invalidCommitDetail', { hash }))
+  if (!path || typeof path !== 'string') throw new Error(t('missingFilePath'))
   const parents = (await git.out(['rev-list', '--parents', '-n1', hash, '--'])).trim().split(' ').slice(1)
   const paths = [...(oldPath && oldPath !== path ? [literal(oldPath)] : []), literal(path)]
   const options = ['--no-ext-diff', '--no-textconv', '-M', `-U${wholeFile ? 1_000_000 : 3}`]

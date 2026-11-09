@@ -1,3 +1,4 @@
+import { getLocale, t, type MessageKey } from '../shared/i18n.ts'
 import type { BranchRef, CommitRow } from '../shared/protocol.ts'
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -8,20 +9,21 @@ export function relativeDate(seconds: number, now = Date.now()): string {
   const date = new Date(seconds * 1000)
   const diff = Math.max(0, now - date.getTime())
   const minutes = Math.floor(diff / 60_000)
-  if (minutes < 1) return 'Moments ago'
-  if (minutes < 60) return minutes === 1 ? '1 minute ago' : `${minutes} minutes ago`
-  if (minutes < 120) return '1 hour ago'
+  if (minutes < 1) return t('dateMomentsAgo')
+  const ago = new Intl.RelativeTimeFormat(getLocale(), { numeric: 'always' })
+  if (minutes < 60) return ago.format(-minutes, 'minute')
+  if (minutes < 120) return ago.format(-1, 'hour')
   const today = new Date(now)
   today.setHours(0, 0, 0, 0)
-  if (date >= today) return `Today ${hhmm(date)}`
+  if (date >= today) return t('dateToday', { time: hhmm(date) })
   const yesterday = new Date(today)
   yesterday.setDate(today.getDate() - 1)
-  if (date >= yesterday) return `Yesterday ${hhmm(date)}`
-  return `${date.toLocaleDateString(undefined, { year: 'numeric', month: 'numeric', day: 'numeric' })}, ${hhmm(date)}`
+  if (date >= yesterday) return t('dateYesterday', { time: hhmm(date) })
+  return `${date.toLocaleDateString(getLocale(), { year: 'numeric', month: 'numeric', day: 'numeric' })}, ${hhmm(date)}`
 }
 
 export function fullDate(seconds: number): string {
-  return new Date(seconds * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+  return new Date(seconds * 1000).toLocaleString(getLocale(), { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 export interface RefLabel {
@@ -128,12 +130,5 @@ export function groupByPrefix(refs: BranchRef[], strip = ''): BranchNode[] {
 
 const nodeName = (n: BranchNode) => (n.kind === 'folder' ? n.name : n.label)
 
-export const STATUS_NAMES: Record<string, string> = {
-  A: 'Added',
-  M: 'Modified',
-  D: 'Deleted',
-  R: 'Renamed',
-  C: 'Copied',
-  T: 'Type changed',
-  U: 'Unmerged'
-}
+/** The name of a `git diff --name-status` letter, if it is one Git Log knows. */
+export const statusName = (letter: string): string | undefined => (/^[AMDRCTU]$/.test(letter) ? t(`status${letter}` as MessageKey) : undefined)

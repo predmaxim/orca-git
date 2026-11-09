@@ -1,5 +1,6 @@
 import type { LogFilter, RefsResult } from '../shared/protocol.ts'
 import { h, icon } from './dom.ts'
+import { t } from '../shared/i18n.ts'
 import { showPopover } from './menu.ts'
 
 export interface FilterHost {
@@ -24,7 +25,7 @@ function filterButton(name: string, onOpen: (button: HTMLElement) => void, onCle
   const label = h('span', null, name)
   const clear = h('span', {
     class: 'clear',
-    title: `Clear ${name.toLowerCase()} filter`,
+    title: t('filterClearTip', { name: name.toLowerCase() }),
     onclick: (event: MouseEvent) => {
       event.stopPropagation()
       onClear()
@@ -55,7 +56,7 @@ function checklist(
   onChange: (values: string[]) => void
 ) {
   const chosen = new Set(selected)
-  const search = h('input', { class: 'field pop-search', placeholder: 'Filter…', spellcheck: false }) as HTMLInputElement
+  const search = h('input', { class: 'field pop-search', placeholder: t('filterPlaceholder'), spellcheck: false }) as HTMLInputElement
   const list = h('div', null)
   const render = () => {
     const q = search.value.trim().toLowerCase()
@@ -70,7 +71,7 @@ function checklist(
         }
       },
       h('span', { class: 'check' }, icon('check')),
-      h('span', { class: 'label' }, 'All')
+      h('span', { class: 'label' }, t('filterAll'))
     )
     const parts: HTMLElement[] = q ? [] : [all]
     for (const group of groups) {
@@ -107,7 +108,7 @@ function checklist(
 
 export function createFilterBar(host: FilterHost) {
   const branch = filterButton(
-    'Branch',
+    t('filterBranch'),
     (anchor) => {
       const refs = host.refs
       if (!refs) return
@@ -119,10 +120,10 @@ export function createFilterBar(host: FilterHost) {
       checklist(
         anchor,
         [
-          { values: refs.head.hash ? [{ value: 'HEAD', label: 'HEAD (Current Branch)' }] : [] },
-          { title: 'Local', values: refs.locals.map((r) => item(r.full, r.name, 'local')) },
-          { title: 'Remote', values: refs.remotes.map((r) => item(r.full, r.name, 'remote')) },
-          { title: 'Tags', values: refs.tags.map((r) => item(r.full, r.name, 'tag')) }
+          { values: refs.head.hash ? [{ value: 'HEAD', label: t('headCurrent') }] : [] },
+          { title: t('groupLocal'), values: refs.locals.map((r) => item(r.full, r.name, 'local')) },
+          { title: t('groupRemote'), values: refs.remotes.map((r) => item(r.full, r.name, 'remote')) },
+          { title: t('groupTags'), values: refs.tags.map((r) => item(r.full, r.name, 'tag')) }
         ],
         host.filter.branches ?? [],
         (values) => host.apply({ branches: values })
@@ -132,7 +133,7 @@ export function createFilterBar(host: FilterHost) {
   )
 
   const user = filterButton(
-    'User',
+    t('filterUser'),
     (anchor) => {
       const refs = host.refs
       if (!refs) return
@@ -140,8 +141,8 @@ export function createFilterBar(host: FilterHost) {
       checklist(
         anchor,
         [
-          { values: me ? [{ value: me, label: `me (${me})` }] : [] },
-          { title: 'Users', values: refs.users.filter((u) => u !== me).map((u) => ({ value: u, label: u })) }
+          { values: me ? [{ value: me, label: t('filterMe', { name: me }) }] : [] },
+          { title: t('groupUsers'), values: refs.users.filter((u) => u !== me).map((u) => ({ value: u, label: u })) }
         ],
         host.filter.users ?? [],
         (values) => host.apply({ users: values })
@@ -152,7 +153,7 @@ export function createFilterBar(host: FilterHost) {
 
   let dateLabel = ''
   const date = filterButton(
-    'Date',
+    t('filterDate'),
     (anchor) => {
       const now = Math.floor(Date.now() / 1000)
       const preset = (label: string, days: number) =>
@@ -179,23 +180,23 @@ export function createFilterBar(host: FilterHost) {
           onclick: () => {
             const from = since.value ? Math.floor(new Date(`${since.value}T00:00:00`).getTime() / 1000) : undefined
             const to = until.value ? Math.floor(new Date(`${until.value}T23:59:59`).getTime() / 1000) : undefined
-            dateLabel = from && to ? `${since.value} – ${until.value}` : from ? `since ${since.value}` : to ? `until ${until.value}` : ''
+            dateLabel = from && to ? `${since.value} – ${until.value}` : from ? t('dateSince', { date: since.value }) : to ? t('dateUntil', { date: until.value }) : ''
             close()
             host.apply({ since: from, until: to })
           }
         },
-        'Apply'
+        t('apply')
       )
       const close = showPopover(
         anchor,
         h(
           'div',
           { style: 'min-width:240px' },
-          preset('Last 24 hours', 1),
-          preset('Last 7 days', 7),
-          preset('Last 30 days', 30),
-          h('div', { class: 'option-group' }, 'Select…'),
-          h('div', { style: 'display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;padding:4px 8px' }, 'From', since, 'To', until),
+          preset(t('dateLast24h'), 1),
+          preset(t('dateLast7d'), 7),
+          preset(t('dateLast30d'), 30),
+          h('div', { class: 'option-group' }, t('dateSelect')),
+          h('div', { style: 'display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;padding:4px 8px' }, t('dateFrom'), since, t('dateTo'), until),
           h('div', { style: 'display:flex;justify-content:flex-end;padding:4px 8px' }, apply)
         )
       )
@@ -207,9 +208,9 @@ export function createFilterBar(host: FilterHost) {
   )
 
   const paths = filterButton(
-    'Paths',
+    t('filterPaths'),
     (anchor) => {
-      const area = h('textarea', { class: 'field mono', rows: 5, spellcheck: false, placeholder: 'One path per line, relative to the repository root' }) as HTMLTextAreaElement
+      const area = h('textarea', { class: 'field mono', rows: 5, spellcheck: false, placeholder: t('pathsPlaceholder') }) as HTMLTextAreaElement
       area.value = (host.filter.paths ?? []).join('\n')
       const submit = () => {
         close()
@@ -224,7 +225,7 @@ export function createFilterBar(host: FilterHost) {
           'div',
           { style: 'display:flex;flex-direction:column;gap:6px;padding:4px;width:320px' },
           area,
-          h('div', { style: 'display:flex;justify-content:flex-end' }, h('button', { class: 'btn primary', onclick: submit }, 'Apply'))
+          h('div', { style: 'display:flex;justify-content:flex-end' }, h('button', { class: 'btn primary', onclick: submit }, t('apply')))
         )
       )
     },
@@ -237,11 +238,11 @@ export function createFilterBar(host: FilterHost) {
     update() {
       const f = host.filter
       const branches = (f.branches ?? []).map(shortRef)
-      branch.set(summary('Branch', branches), branches.length > 0)
-      user.set(summary('User', f.users ?? []), (f.users ?? []).length > 0)
+      branch.set(summary(t('filterBranch'), branches), branches.length > 0)
+      user.set(summary(t('filterUser'), f.users ?? []), (f.users ?? []).length > 0)
       if (!f.since && !f.until) dateLabel = ''
-      date.set(dateLabel ? `Date: ${dateLabel}` : 'Date', Boolean(f.since || f.until))
-      paths.set(summary('Paths', f.paths ?? []), (f.paths ?? []).length > 0)
+      date.set(dateLabel ? `${t('filterDate')}: ${dateLabel}` : t('filterDate'), Boolean(f.since || f.until))
+      paths.set(summary(t('filterPaths'), f.paths ?? []), (f.paths ?? []).length > 0)
     }
   }
 }

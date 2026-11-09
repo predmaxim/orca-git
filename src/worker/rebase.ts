@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { PlanItem, RangeCommit, RewriteKind } from '../shared/protocol.ts'
 import { lastLines, type Git } from './git.ts'
+import { t } from '../shared/i18n.ts'
 
 export interface HistoryEntry extends RangeCommit {
   parents: string[]
@@ -32,16 +33,16 @@ export interface Range {
 
 /** The commits from the oldest of `hashes` up to HEAD, checked to be a linear first-parent run. */
 export function selectRange(history: HistoryEntry[], hashes: string[]): Range {
-  if (!hashes.length) throw new Error('Select at least one commit.')
+  if (!hashes.length) throw new Error(t('selectAtLeastOne'))
   let oldest = -1
   for (const hash of hashes) {
     const index = history.findIndex((entry) => entry.hash === hash)
-    if (index < 0) throw new Error(`Commit ${hash.slice(0, 8)} is not part of the current branch.`)
+    if (index < 0) throw new Error(t('commitNotOnBranch', { hash: hash.slice(0, 8) }))
     oldest = Math.max(oldest, index)
   }
   const commits = history.slice(0, oldest + 1).reverse()
   const merge = commits.find((entry) => entry.parents.length > 1)
-  if (merge) throw new Error(`Can't rewrite history across the merge commit ${merge.hash.slice(0, 8)}.`)
+  if (merge) throw new Error(t('rewriteAcrossMergeError', { hash: merge.hash.slice(0, 8) }))
   return { base: commits[0].parents[0] ?? null, commits }
 }
 
@@ -50,7 +51,7 @@ export function rangeHashes(kind: RewriteKind, hashes: string[], history: Histor
   if (kind === 'fixup' && hashes.length === 1) {
     const entry = history.find((e) => e.hash === hashes[0])
     const parent = entry?.parents[0]
-    if (!parent) throw new Error('The first commit has no previous commit to fix up into.')
+    if (!parent) throw new Error(t('noPreviousCommit'))
     return [hashes[0], parent]
   }
   return hashes
@@ -75,7 +76,7 @@ export function planFor(
   // squash / fixup: range[0] is the target (oldest selected, or the parent for a single fixup).
   const [target, ...rest] = commits
   const folded = rest.filter((c) => selected.has(c.hash))
-  if (kind === 'squash' && folded.length === 0) throw new Error('Select at least two commits to squash.')
+  if (kind === 'squash' && folded.length === 0) throw new Error(t('squashNeedTwo'))
   const head: PlanItem = kind === 'squash' && message !== undefined
     ? { hash: target.hash, action: 'pick', message }
     : { hash: target.hash, action: 'pick' }
@@ -109,15 +110,15 @@ export function buildTodo(
     if (final === undefined && group.squashes.length) final = [group.reword ?? group.message, ...group.squashes].join('\n\n')
     if (final === undefined) final = group.reword
     if (final !== undefined) {
-      if (!final.trim()) throw new Error('A commit message cannot be empty.')
+      if (!final.trim()) throw new Error(t('commitMessageEmpty'))
       lines.push(`exec ${shQuote(gitBin)} commit --amend --allow-empty --no-verify --cleanup=strip -F ${shQuote(writeMessage(final))}`)
     }
     group = null
   }
   const seen = new Set<string>()
   for (const item of plan) {
-    if (!/^[0-9a-f]{40}$/.test(item.hash)) throw new Error(`Invalid commit ${item.hash}.`)
-    if (seen.has(item.hash)) throw new Error(`Commit ${item.hash.slice(0, 8)} appears twice.`)
+    if (!/^[0-9a-f]{40}$/.test(item.hash)) throw new Error(t('invalidCommitHash', { hash: item.hash }))
+    if (seen.has(item.hash)) throw new Error(t('commitTwice', { hash: item.hash.slice(0, 8) }))
     seen.add(item.hash)
     const original = messages.get(item.hash) ?? ''
     switch (item.action) {
@@ -137,12 +138,12 @@ export function buildTodo(
         break
       case 'fixup':
       case 'squash':
-        if (!group) throw new Error(`Commit ${item.hash.slice(0, 8)} has no earlier commit to ${item.action} into.`)
+        if (!group) throw new Error(t('noEarlierCommit', { hash: item.hash.slice(0, 8), action: item.action }))
         lines.push(`fixup ${item.hash}`)
         if (item.action === 'squash') group.squashes.push(item.message ?? original)
         break
       default:
-        throw new Error(`Unknown rebase action ${(item as PlanItem).action}.`)
+        throw new Error(t('unknownRebaseAction', { action: (item as PlanItem).action }))
     }
   }
   close()
@@ -200,7 +201,7 @@ export async function runRebase(git: Git, base: string | null, plan: PlanItem[],
     if (!result.ok || (await operationInProgress(git)) === 'rebase') {
       const reason = lastLines(result.stderr || result.stdout, 4)
       if ((await operationInProgress(git)) === 'rebase') await git.run(['rebase', '--abort'])
-      throw new Error(`Rebase failed and was aborted.${reason ? `\n${reason}` : ''}`)
+      throw new Error(`${t('rebaseFailed')}${reason ? `\n${reason}` : ''}`)
     }
   } finally {
     rmSync(dir, { recursive: true, force: true })

@@ -35,11 +35,11 @@ const gitPath = () => setting('gitPath', 'git').then((path) => (typeof path === 
 
 /** A git runner for a root a panel sends back; only roots this worker resolved are accepted. */
 async function gitFor(root: unknown): Promise<Git> {
-  if (typeof root !== 'string' || !root) throw new Error('Missing repository.')
+  if (typeof root !== 'string' || !root) throw new Error(t('missingRepo'))
   const known = repos.get(root)
   if (known) return known
   const path = await gitPath()
-  if (resolve(root) !== root || (await toplevel(root, path)) !== root) throw new Error(`${root} is not a Git repository.`)
+  if (resolve(root) !== root || (await toplevel(root, path)) !== root) throw new Error(t('notGitRepo', { name: root }))
   const git = createGit(root, path)
   repos.set(root, git)
   return git
@@ -65,12 +65,12 @@ function validReveal(r: any): r is TabReveal {
 }
 
 async function openTab(prefer?: string, reveal?: TabReveal): Promise<{ ok: boolean; reason?: string }> {
-  if (reveal !== undefined && !validReveal(reveal)) return { ok: false, reason: t('revealInvalid') }
+  if (reveal !== undefined && !validReveal(reveal)) return { ok: false, reason: t('invalidSelection') }
   const workspace = await focusedWorkspace(orcaApi, prefer)
   if ('reason' in workspace) return { ok: false, reason: workspace.reason }
   const path = await gitPath()
   const root = await toplevel(workspace.path, path)
-  if (!root) return { ok: false, reason: 'This workspace is not a Git repository.' }
+  if (!root) return { ok: false, reason: t('workspaceNotRepo') }
   writeFileSync(join(workspace.path, ANCHOR), `${JSON.stringify({ root, workspaceId: workspace.id }, null, 2)}\n`)
   await exclude(createGit(root, path), root, ANCHOR)
   if (reveal) pending.set(root, { hashes: reveal.hashes, ...(reveal.path ? { path: reveal.path } : {}) })

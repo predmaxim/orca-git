@@ -2,6 +2,7 @@ import type { FileDiff, SelectionFile } from '../shared/protocol.ts'
 import { oldestFirst } from './actions.ts'
 import { parseUnifiedDiff } from './diff.ts'
 import type { Git } from './git.ts'
+import { t } from '../shared/i18n.ts'
 import { parseNameStatus } from './log.ts'
 
 const HASH = /^[0-9a-f]{40}$/
@@ -22,7 +23,7 @@ interface Entry {
 /** The files a set of commits changes together: each file from where the selection first touches it to where it last does. */
 export async function readSelectionFiles(git: Git, hashes: string[]): Promise<SelectionFile[]> {
   if (!Array.isArray(hashes) || hashes.length < 1 || hashes.length > 500 || !hashes.every((h) => typeof h === 'string' && HASH.test(h))) {
-    throw new Error('Invalid commit selection.')
+    throw new Error(t('invalidSelection'))
   }
   const order = await oldestFirst(git, hashes)
   const log = await git.out(['log', '--no-walk=unsorted', '--format=%x1e%H%x1f%P', '-z', '--name-status', '-M', '--diff-merges=first-parent', ...order, '--'])
@@ -64,8 +65,8 @@ export async function readSelectionFiles(git: Git, hashes: string[]): Promise<Se
 
 /** The diff of one file between two revisions; `from` null means the empty tree. */
 export async function readRangeDiff(git: Git, from: string | null, to: string, path: string, oldPath?: string, wholeFile = false): Promise<FileDiff> {
-  if ((from !== null && !HASH.test(String(from))) || !HASH.test(String(to))) throw new Error('Invalid commit.')
-  if (!path || typeof path !== 'string') throw new Error('Missing file path.')
+  if ((from !== null && !HASH.test(String(from))) || !HASH.test(String(to))) throw new Error(t('invalidCommit'))
+  if (!path || typeof path !== 'string') throw new Error(t('missingFilePath'))
   const paths = [...(oldPath && oldPath !== path ? [literal(oldPath)] : []), literal(path)]
   const stdout = await git.out(['diff', '--no-ext-diff', '--no-textconv', '-M', `-U${wholeFile ? 1_000_000 : 3}`, from ?? (await emptyTree(git)), to, '--', ...paths])
   return { path, ...(oldPath ? { oldPath } : {}), ...parseUnifiedDiff(stdout) }

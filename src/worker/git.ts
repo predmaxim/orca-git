@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { t } from '../shared/i18n.ts'
 
 export interface GitResult {
   ok: boolean
@@ -54,7 +55,7 @@ export function createGit(root: string, gitPath = 'git'): Git {
     run,
     async out(args, options) {
       const result = await run(args, options)
-      if (!result.ok) throw new GitError(lastLines(result.stderr || result.stdout) || `git ${args[0]} failed`, result)
+      if (!result.ok) throw new GitError(lastLines(result.stderr || result.stdout) || t('gitCommandFailed', { command: args[0] }), result)
       return result.stdout
     }
   }

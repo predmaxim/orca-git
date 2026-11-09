@@ -3,6 +3,7 @@ import { basename, isAbsolute, resolve } from 'node:path'
 import type { OrcaWorkerApi } from 'orca/worker'
 import type { RepoInfo, RepoResult, WorkspaceChoice } from '../shared/protocol.ts'
 import { createGit, type Git } from './git.ts'
+import { t } from '../shared/i18n.ts'
 import { readHead } from './log.ts'
 import { operationInProgress } from './rebase.ts'
 
@@ -73,14 +74,14 @@ export async function focusedWorkspace(
   prefer?: string | null
 ): Promise<Workspace | { reason: string; choices?: WorkspaceChoice[] }> {
   const context = (await orca.host.call('workspace.readContext', {})) as Context | null
-  if (!context) return { reason: 'Open a workspace to see its Git log.' }
+  if (!context) return { reason: t('openWorkspace') }
   const { workspaces } = (await orca.host.call('workspace.list', {})) as { workspaces: ListedWorkspace[] }
   const match = matchWorkspace(context, workspaces, prefer ?? lastChoice)
-  if (!match) return { reason: `Workspace "${context.displayName}" was not found.` }
-  if ('remote' in match) return { reason: 'Remote workspaces (SSH, WSL, paired hosts) are not supported yet.' }
+  if (!match) return { reason: t('workspaceNotFound', { name: context.displayName }) }
+  if ('remote' in match) return { reason: t('remoteUnsupported') }
   if ('ambiguous' in match) {
     return {
-      reason: `Several workspaces are named "${context.displayName}". Pick the one you are in:`,
+      reason: t('workspacesAmbiguous', { name: context.displayName }),
       choices: match.ambiguous.map(({ id, name, path, branch }) => ({ id, name, path, branch: shortBranch(branch) }))
     }
   }
@@ -107,7 +108,7 @@ export async function resolveRepo(
   let path: string
   let workspaceId: string | null = null
   if (requested) {
-    if (!isAbsolute(requested) || !existsSync(requested)) return { ok: false, reason: `${requested} no longer exists.` }
+    if (!isAbsolute(requested) || !existsSync(requested)) return { ok: false, reason: t('pathGone', { path: requested }) }
     path = requested
   } else {
     const workspace = await focusedWorkspace(orca, prefer)
@@ -116,7 +117,7 @@ export async function resolveRepo(
     workspaceId = workspace.id
   }
   const root = await toplevel(path, gitPath)
-  if (!root) return { ok: false, reason: `${basename(path)} is not a Git repository.` }
+  if (!root) return { ok: false, reason: t('notGitRepo', { name: basename(path) }) }
   const git = createGit(root, gitPath)
   return { ok: true, repo: await describeRepo(git, root, workspaceId), git }
 }

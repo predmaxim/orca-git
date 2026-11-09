@@ -77,9 +77,9 @@ const isFiltered = () =>
 
 const app = document.getElementById('app')!
 
-const searchInput = h('input', { placeholder: 'Text or hash', spellcheck: false, 'aria-label': 'Filter by text or hash' }) as HTMLInputElement
-const regexToggle = h('button', { class: `toggle${prefs.regex ? ' on' : ''}`, title: 'Regex' }, '.*')
-const caseToggle = h('button', { class: `toggle${prefs.matchCase ? ' on' : ''}`, title: 'Match case' }, 'Cc')
+const searchInput = h('input', { placeholder: t('searchPlaceholder'), spellcheck: false, 'aria-label': t('searchAria') }) as HTMLInputElement
+const regexToggle = h('button', { class: `toggle${prefs.regex ? ' on' : ''}`, title: t('regexTip') }, '.*')
+const caseToggle = h('button', { class: `toggle${prefs.matchCase ? ' on' : ''}`, title: t('matchCaseTip') }, 'Cc')
 const refreshButton = h('button', { class: 'tool', title: t('refresh') }, icon('refresh'))
 const fetchButton = h('button', { class: 'tool', title: t('fetch') }, icon('down'))
 const tabButton = h('button', { class: 'tool', title: t('openInTab') }, icon('external'))
@@ -104,19 +104,19 @@ const banner = h(
   { class: 'banner', role: 'status' },
   bannerText,
   bannerActions,
-  h('button', { class: 'tool', title: 'Dismiss', onclick: () => hideBanner() }, icon('close'))
+  h('button', { class: 'tool', title: t('dismiss'), onclick: () => hideBanner() }, icon('close'))
 )
 
-const treeSearch = h('input', { class: 'field tree-search', placeholder: 'Search branches', spellcheck: false }) as HTMLInputElement
+const treeSearch = h('input', { class: 'field tree-search', placeholder: t('searchBranches'), spellcheck: false }) as HTMLInputElement
 const tree = h('div', { class: 'tree' })
 
 const header = h(
   'div',
   { class: 'header columns' },
-  h('div', { class: 'subject' }, 'Subject'),
-  h('div', { class: 'author' }, 'Author'),
-  h('div', { class: 'date' }, 'Date'),
-  h('div', { class: 'hash' }, 'Hash')
+  h('div', { class: 'subject' }, t('colSubject')),
+  h('div', { class: 'author' }, t('colAuthor')),
+  h('div', { class: 'date' }, t('colDate')),
+  h('div', { class: 'hash' }, t('colHash'))
 )
 const sizer = h('div', { class: 'sizer' })
 const viewport = h('div', { class: 'viewport', tabindex: 0, role: 'grid', 'aria-multiselectable': 'true' }, sizer)
@@ -233,7 +233,7 @@ function hideBanner(): void {
 function showOperationBanner(): void {
   if (!repo?.operation) return
   showBanner(
-    `A ${repo.operation} is in progress in this repository. History rewrites are disabled until it is finished or aborted.`,
+    t('operationBanner', { operation: repo.operation }),
     'info',
     [],
     true
@@ -261,25 +261,25 @@ function rewriteBlocker(hashes: string[], fixupParent: boolean): string | undefi
     const i = position.get(hash)
     if (i === undefined) {
       return reachable.has(hash)
-        ? 'Commits of merged branches cannot be rewritten (not on the first-parent history of HEAD)'
-        : 'Only commits of the current branch can be rewritten'
+        ? t('rewriteMergedBranch')
+        : t('rewriteOnlyCurrent')
     }
     oldest = Math.max(oldest, i)
   }
   if (fixupParent) oldest++
   const merge = mainline.slice(0, oldest + 1).find((row) => row.parents.length > 1)
-  if (merge) return `History between HEAD and the selection contains the merge commit ${shortHash(merge.hash)}`
+  if (merge) return t('rewriteAcrossMerge', { hash: shortHash(merge.hash) })
   return undefined
 }
 
 function renderEmpty(): void {
   let text = ''
   let retry = false
-  if (!repo) text = loadError ?? 'Loading…'
+  if (!repo) text = loadError ?? t('diffLoading')
   else if (loadError) {
     text = loadError
     retry = true
-  } else if (!rows.length) text = loading ? 'Loading…' : isFiltered() || filter.branches?.length ? 'No commits match the filters.' : 'No commits yet.'
+  } else if (!rows.length) text = loading ? t('diffLoading') : isFiltered() || filter.branches?.length ? t('noCommitsMatch') : t('noCommitsYet')
   empty.style.display = text ? '' : 'none'
   if (!repo && choices.length) {
     empty.replaceChildren(
@@ -299,7 +299,7 @@ function renderEmpty(): void {
     )
     return
   }
-  empty.replaceChildren(text, retry ? h('button', { class: 'btn', onclick: () => void refreshAll() }, 'Retry') : '')
+  empty.replaceChildren(text, retry ? h('button', { class: 'btn', onclick: () => void refreshAll() }, t('retry')) : '')
 }
 
 const choiceKey = (list: WorkspaceChoice[]) => list.map((c) => c.id).sort().join('|')
@@ -352,7 +352,7 @@ function rowElement(index: number): HTMLElement {
       'div',
       {
         class: `cell author${refs?.me && commit.author === refs.me ? ' me' : ''}`,
-        title: `${commit.author} <${commit.email}>${committerDiffers ? `\nCommitted by ${commit.committer}` : ''}`
+        title: `${commit.author} <${commit.email}>${committerDiffers ? `\n${t('authorCommittedBy', { name: commit.committer })}` : ''}`
       },
       commit.author + (committerDiffers ? '*' : '')
     ),
@@ -456,7 +456,7 @@ async function loadPage(): Promise<void> {
   } catch (error) {
     if (token !== loadToken) return
     hasMore = false
-    showBanner(`Could not load more commits: ${errorMessage(error)}`, 'error')
+    showBanner(t('loadMoreFailed', { error: errorMessage(error) }), 'error')
   } finally {
     if (token === loadToken) loading = false
   }
@@ -471,7 +471,7 @@ async function loadRefs(): Promise<void> {
     repo.head = refs.head
   } catch (error) {
     refs = null
-    showBanner(`Could not read branches: ${errorMessage(error)}`, 'error')
+    showBanner(t('refsFailed', { error: errorMessage(error) }), 'error')
   }
   renderTree()
   filterBar.update()
@@ -514,7 +514,7 @@ function setRepo(next: RepoInfo): void {
     anchor = cursor = -1
     filter = { ...filter, branches: [] }
     viewport.scrollTop = 0
-    document.title = `Git Log: ${next.name}`
+    document.title = t('docTitle', { name: next.name })
     void api.watch(next.root).catch(() => undefined)
   }
   if (next.operation) showOperationBanner()
@@ -637,20 +637,20 @@ function branchMenu(event: MouseEvent, ref: BranchRef & { kind: 'local' | 'remot
   const localName = ref.kind === 'remote' ? ref.name.slice(ref.name.indexOf('/') + 1) : ref.name
   const entries: MenuEntry[] = [
     ref.kind === 'local'
-      ? { label: 'Checkout', icon: 'checkout', disabled: current, hint: 'Already checked out', run: () => void act({ kind: 'checkout', target: ref.name }, `Checking out ${ref.name}…`) }
+      ? { label: t('checkout'), icon: 'checkout', disabled: current, hint: t('checkoutAlready'), run: () => void act({ kind: 'checkout', target: ref.name }, t('checkingOut', { name: ref.name })) }
       : ref.kind === 'remote'
         ? {
-            label: `Checkout as '${localName}'`,
+            label: t('checkoutAs', { name: localName }),
             icon: 'checkout',
             disabled: Boolean(refs?.locals.some((l) => l.name === localName)),
-            hint: `A local branch ${localName} already exists`,
-            run: () => void act({ kind: 'checkout', target: localName }, `Checking out ${localName}…`)
+            hint: t('localBranchExists', { name: localName }),
+            run: () => void act({ kind: 'checkout', target: localName }, t('checkingOut', { name: localName }))
           }
-        : { label: 'Checkout Revision', icon: 'checkout', disabled: ref.kind === 'head', run: () => void act({ kind: 'checkout', target: ref.hash }, 'Checking out…') },
-    { label: `New Branch from '${ref.name}'…`, icon: 'branch', run: () => void newBranch(ref.hash) },
+        : { label: t('checkoutRevision'), icon: 'checkout', disabled: ref.kind === 'head', run: () => void act({ kind: 'checkout', target: ref.hash }, t('checkingOutBare')) },
+    { label: t('newBranchFrom', { name: ref.name }), icon: 'branch', run: () => void newBranch(ref.hash) },
     'separator',
-    { icon: 'search', label: filter.branches?.includes(ref.full) ? 'Show All Branches' : `Show Only '${ref.name}'`, run: () => applyFilter({ branches: filter.branches?.includes(ref.full) ? [] : [ref.full] }) },
-    { label: 'Copy Name', icon: 'copy', run: () => copyText(ref.name) }
+    { icon: 'search', label: filter.branches?.includes(ref.full) ? t('showAllBranches') : t('showOnly', { name: ref.name }), run: () => applyFilter({ branches: filter.branches?.includes(ref.full) ? [] : [ref.full] }) },
+    { label: t('copyName'), icon: 'copy', run: () => copyText(ref.name) }
   ]
   if (ref.kind === 'local' || ref.kind === 'remote') {
     entries.push('separator')
@@ -740,7 +740,7 @@ async function jumpTo(hash: string): Promise<void> {
   await loadUntil(() => indexByHash.has(hash))
   const index = indexByHash.get(hash)
   if (index === undefined) {
-    showBanner(isFiltered() || filter.branches?.length ? 'That commit is hidden by the current filters.' : 'That commit is not in the log.', 'info')
+    showBanner(isFiltered() || filter.branches?.length ? t('commitHidden') : t('commitNotInLog'), 'info')
     return
   }
   selectOnly(index)
@@ -836,7 +836,7 @@ viewport.addEventListener('keydown', (event) => {
 
 function copyHashes(): void {
   const hashes = selectedHashes()
-  if (copyText(hashes.join(' '))) showBanner(`Copied ${hashes.length === 1 ? shortHash(hashes[0]) : `${hashes.length} hashes`}.`, 'success')
+  if (copyText(hashes.join(' '))) showBanner(hashes.length === 1 ? t('copiedHash', { hash: shortHash(hashes[0]) }) : t('copiedHashes', { count: hashes.length }), 'success')
 }
 
 // ---------- Files ----------
@@ -1013,7 +1013,7 @@ async function act(action: ActionRequest | BranchAction, progress: string): Prom
   if (result.ok) {
     const previous = result.previousHead
     const undo = previous && UNDOABLE.has(action.kind)
-      ? [{ label: 'Undo', run: () => void act({ kind: 'reset', hash: previous, mode: 'keep' }, 'Undoing…').then((r) => r?.ok && showBanner(`Restored HEAD to ${shortHash(previous)}.`, 'success')) }]
+      ? [{ label: t('undo'), run: () => void act({ kind: 'reset', hash: previous, mode: 'keep' }, t('progUndoing')).then((r) => r?.ok && showBanner(t('restoredHead', { hash: shortHash(previous) }), 'success')) }]
       : []
     showBanner(result.message, 'success', undo)
   } else if (!result.needsForce) showBanner(result.message, 'error')
@@ -1023,7 +1023,7 @@ async function act(action: ActionRequest | BranchAction, progress: string): Prom
 
 async function checked(kind: RewriteKind, hashes: string[]) {
   if (!repo) return null
-  const done = busy('Checking…')
+  const done = busy(t('checking'))
   try {
     const check = await api.check(repo.root, kind, hashes)
     if (!check.ok) {
@@ -1040,50 +1040,50 @@ async function checked(kind: RewriteKind, hashes: string[]) {
 }
 
 const confirmPushed = (pushed: string[], what: string) =>
-  pushed.length ? confirm('Commits Already Pushed', pushedWarning(pushed), what, true) : Promise.resolve(true)
+  pushed.length ? confirm(t('pushedTitle'), pushedWarning(pushed), what, true) : Promise.resolve(true)
 
 async function squash(hashes: string[]): Promise<void> {
   const check = await checked('squash', hashes)
   if (!check) return
   const chosen = new Set(hashes)
   const combined = check.commits.filter((c) => chosen.has(c.hash)).map((c) => c.message).join('\n\n')
-  const message = await editMessage('Squash Commits', combined, 'Squash', check.pushed.length ? pushedWarning(check.pushed) : null)
-  if (message) await act({ kind: 'squash', hashes, message }, `Squashing ${hashes.length} commits…`)
+  const message = await editMessage(t('squashTitle'), combined, t('btnSquash'), check.pushed.length ? pushedWarning(check.pushed) : null)
+  if (message) await act({ kind: 'squash', hashes, message }, t('progSquashing', { count: hashes.length }))
 }
 
 async function fixup(hashes: string[]): Promise<void> {
   const check = await checked('fixup', hashes)
-  if (check && (await confirmPushed(check.pushed, 'Fixup'))) await act({ kind: 'fixup', hashes }, 'Fixing up…')
+  if (check && (await confirmPushed(check.pushed, t('btnFixup')))) await act({ kind: 'fixup', hashes }, t('progFixingUp'))
 }
 
 async function drop(hashes: string[]): Promise<void> {
   const check = await checked('drop', hashes)
-  if (check && (await confirmPushed(check.pushed, 'Drop'))) await act({ kind: 'drop', hashes }, `Dropping ${hashes.length} commit${hashes.length > 1 ? 's' : ''}…`)
+  if (check && (await confirmPushed(check.pushed, t('btnDrop')))) await act({ kind: 'drop', hashes }, t('progDropping', { count: hashes.length }))
 }
 
 async function reword(hash: string): Promise<void> {
   const check = await checked('reword', [hash])
   if (!check) return
   const current = check.commits.find((c) => c.hash === hash)?.message ?? ''
-  const message = await editMessage('Edit Commit Message', current, 'OK', check.pushed.length ? pushedWarning(check.pushed) : null)
-  if (message && message !== current) await act({ kind: 'reword', hash, message }, 'Updating message…')
+  const message = await editMessage(t('rewordTitle'), current, t('ok'), check.pushed.length ? pushedWarning(check.pushed) : null)
+  if (message && message !== current) await act({ kind: 'reword', hash, message }, t('progUpdatingMessage'))
 }
 
 async function rebaseFrom(hash: string): Promise<void> {
   const check = await checked('rebase', [hash])
   if (!check) return
   const plan = await askRebasePlan(check.commits, check.pushed)
-  if (plan) await act({ kind: 'rebase', plan }, 'Rebasing…')
+  if (plan) await act({ kind: 'rebase', plan }, t('progRebasing'))
 }
 
 async function undoCommit(hash: string): Promise<void> {
   const check = await checked('undo', [hash])
-  if (check && (await confirmPushed(check.pushed, 'Undo Commit'))) await act({ kind: 'undo', hash }, 'Undoing commit…')
+  if (check && (await confirmPushed(check.pushed, t('btnUndoCommit')))) await act({ kind: 'undo', hash }, t('progUndoingCommit'))
 }
 
 async function newBranch(hash: string): Promise<void> {
-  const answer = await askName('Create New Branch', 'Branch name', 'Create', { label: 'Checkout branch', checked: true })
-  if (answer) await act({ kind: 'branch', hash, name: answer.name, checkout: answer.checked }, 'Creating branch…')
+  const answer = await askName(t('newBranchTitle'), t('branchNameLabel'), t('create'), { label: t('checkoutBranchLabel'), checked: true })
+  if (answer) await act({ kind: 'branch', hash, name: answer.name, checkout: answer.checked }, t('progCreatingBranch'))
 }
 
 async function renameBranch(name: string): Promise<void> {
@@ -1100,21 +1100,21 @@ async function deleteBranch(name: string): Promise<void> {
 }
 
 async function newTag(hash: string): Promise<void> {
-  const answer = await askName(`Create Tag on ${shortHash(hash)}`, 'Tag name', 'Create')
-  if (answer) await act({ kind: 'tag', hash, name: answer.name }, 'Creating tag…')
+  const answer = await askName(t('newTagTitle', { hash: shortHash(hash) }), t('tagNameLabel'), t('create'))
+  if (answer) await act({ kind: 'tag', hash, name: answer.name }, t('progCreatingTag'))
 }
 
 async function reset(hash: string): Promise<void> {
   const mode = await askReset(repo?.head.branch ?? null, hash)
   if (!mode) return
-  if (mode === 'hard' && !(await confirm('Hard Reset', 'Uncommitted changes will be lost. Continue?', 'Reset', true))) return
-  await act({ kind: 'reset', hash, mode }, 'Resetting…')
+  if (mode === 'hard' && !(await confirm(t('hardResetTitle'), t('hardResetConfirm'), t('reset'), true))) return
+  await act({ kind: 'reset', hash, mode }, t('progResetting'))
 }
 
 async function createPatch(hashes: string[]): Promise<void> {
   if (!repo) return
   const root = repo.root
-  const done = busy('Creating patch…')
+  const done = busy(t('progCreatingPatch'))
   let preview
   try {
     preview = await api.patch(root, hashes)
@@ -1127,19 +1127,19 @@ async function createPatch(hashes: string[]): Promise<void> {
   const choice = await askPatch(hashes.length, preview.size, preview.name, Boolean(preview.text))
   if (!choice) return
   if (choice.action === 'copy') {
-    if (copyText(preview.text!)) showBanner(`Copied the patch of ${hashes.length === 1 ? shortHash(hashes[0]) : `${hashes.length} commits`}.`, 'success')
-    else showBanner('Could not copy to the clipboard.', 'error')
+    if (copyText(preview.text!)) showBanner(hashes.length === 1 ? t('patchCopiedOne', { hash: shortHash(hashes[0]) }) : t('patchCopiedMany', { count: hashes.length }), 'success')
+    else showBanner(t('clipboardFailed'), 'error')
     return
   }
   try {
     let saved = await api.patch(root, hashes, choice.path)
     if (!saved.ok && saved.exists) {
-      if (!(await confirm('File Already Exists', `${saved.reason} Overwrite it?`, 'Overwrite', true))) return
+      if (!(await confirm(t('fileExistsTitle'), t('overwriteQuestion', { reason: saved.reason }), t('overwrite'), true))) return
       saved = await api.patch(root, hashes, choice.path, true)
     }
     if (!saved.ok) return showBanner(saved.reason, 'error')
     const path = saved.path!
-    showBanner(`Patch saved to ${path}.`, 'success', [{ label: 'Copy Path', run: () => void copyText(path) }])
+    showBanner(t('patchSaved', { path }), 'success', [{ label: t('copyPath'), run: () => void copyText(path) }])
   } catch (error) {
     showBanner(errorMessage(error), 'error')
   }
@@ -1153,39 +1153,39 @@ function commitMenu(x: number, y: number): void {
   const single = n === 1 ? commits[0] : null
   const merges = commits.some((c) => c.parents.length > 1)
   const operation = repo.operation
-  const rewriteHint = operation ? `A ${operation} is in progress` : rewriteBlocker(hashes, false)
+  const hintBusy = operation ? t('hintOperation', { operation }) : undefined
+  const rewriteHint = hintBusy ?? rewriteBlocker(hashes, false)
   const rewriteOff = Boolean(rewriteHint)
   const fixupHint = operation ? rewriteHint : rewriteBlocker(hashes, n === 1)
-  const plural = n > 1 ? 's' : ''
 
   const entries: MenuEntry[] = [
-    { label: `Copy Revision Number${plural}`, icon: 'copy', shortcut: 'Ctrl+C', run: copyHashes },
+    { label: t('cmCopyRevision', { count: n }), icon: 'copy', shortcut: 'Ctrl+C', run: copyHashes },
     {
-      label: 'Cherry-Pick',
+      label: t('cmCherryPick'),
       icon: 'cherry',
       disabled: Boolean(operation) || (!isFiltered() && hashes.some((hash) => reachable.has(hash))) || merges,
-      hint: operation ? `A ${operation} is in progress` : merges ? 'Merge commits cannot be cherry-picked here' : 'Already in the current branch',
-      run: () => void act({ kind: 'cherryPick', hashes }, 'Cherry-picking…')
+      hint: hintBusy ?? (merges ? t('hintCherryMerge') : t('hintInCurrent')),
+      run: () => void act({ kind: 'cherryPick', hashes }, t('progCherryPick'))
     },
     {
-      label: 'Create Patch…',
+      label: t('cmCreatePatch'),
       icon: 'patch',
       disabled: merges,
-      hint: 'Merge commits cannot be exported as a patch',
+      hint: t('hintPatchMerge'),
       run: () => void createPatch(hashes)
     },
     'separator',
-    { label: 'Checkout Revision', icon: 'checkout', disabled: !single, hint: 'Select one commit', run: () => void act({ kind: 'checkout', target: single!.hash }, 'Checking out…') }
+    { label: t('checkoutRevision'), icon: 'checkout', disabled: !single, hint: t('hintSelectOne'), run: () => void act({ kind: 'checkout', target: single!.hash }, t('checkingOutBare')) }
   ]
   if (single) {
     for (const label of refLabels(single.refs, repo.head.branch)) {
       if (label.kind === 'local' && !label.current) {
         const name = label.refs[0]
-        entries.push({ label: `Checkout '${name}'`, run: () => void act({ kind: 'checkout', target: name }, `Checking out ${name}…`) })
+        entries.push({ label: t('checkoutQuoted', { name }), run: () => void act({ kind: 'checkout', target: name }, t('checkingOut', { name })) })
       } else if (label.kind === 'remote') {
         const name = label.text.slice(label.text.indexOf('/') + 1)
         if (!refs?.locals.some((l) => l.name === name)) {
-          entries.push({ label: `Checkout '${label.text}' as '${name}'`, run: () => void act({ kind: 'checkout', target: name }, `Checking out ${name}…`) })
+          entries.push({ label: t('checkoutQuotedAs', { remote: label.text, name }), run: () => void act({ kind: 'checkout', target: name }, t('checkingOut', { name })) })
         }
       }
     }
@@ -1193,41 +1193,41 @@ function commitMenu(x: number, y: number): void {
   entries.push(
     'separator',
     {
-      label: 'Reset Current Branch to Here…',
+      label: t('cmResetHere'),
       icon: 'reset',
       disabled: !single || Boolean(operation),
-      hint: operation ? `A ${operation} is in progress` : 'Select one commit',
+      hint: hintBusy ?? t('hintSelectOne'),
       run: () => void reset(single!.hash)
     },
     {
-      label: `Revert Commit${plural}`,
+      label: t('cmRevert', { count: n }),
       icon: 'revert',
       disabled: Boolean(operation) || merges,
-      hint: operation ? `A ${operation} is in progress` : 'Merge commits cannot be reverted here',
-      run: () => void act({ kind: 'revert', hashes }, 'Reverting…')
+      hint: hintBusy ?? t('hintRevertMerge'),
+      run: () => void act({ kind: 'revert', hashes }, t('progReverting'))
     },
     {
-      label: 'Undo Commit…',
+      label: t('cmUndoCommit'),
       icon: 'undo',
       disabled: !single || single.hash !== repo.head.hash || Boolean(operation),
-      hint: 'Only the latest commit can be undone',
+      hint: t('hintOnlyLatest'),
       run: () => void undoCommit(single!.hash)
     },
     'separator',
-    { label: 'Edit Commit Message…', icon: 'edit', disabled: !single || rewriteOff, hint: rewriteHint ?? 'Select one commit', run: () => void reword(single!.hash) },
-    { label: n > 1 ? 'Fixup Commits' : 'Fixup into Previous', icon: 'fixup', disabled: Boolean(fixupHint), hint: fixupHint, run: () => void fixup(hashes) },
-    { label: 'Squash Commits…', icon: 'squash', disabled: n < 2 || rewriteOff, hint: rewriteHint ?? 'Select at least two commits', run: () => void squash(hashes) },
-    { label: `Drop Commit${plural}`, icon: 'drop', disabled: rewriteOff, hint: rewriteHint, run: () => void drop(hashes) },
+    { label: t('cmEditMessage'), icon: 'edit', disabled: !single || rewriteOff, hint: rewriteHint ?? t('hintSelectOne'), run: () => void reword(single!.hash) },
+    { label: n > 1 ? t('cmFixupMany') : t('cmFixupPrev'), icon: 'fixup', disabled: Boolean(fixupHint), hint: fixupHint, run: () => void fixup(hashes) },
+    { label: t('cmSquash'), icon: 'squash', disabled: n < 2 || rewriteOff, hint: rewriteHint ?? t('hintSelectTwo'), run: () => void squash(hashes) },
+    { label: t('cmDrop', { count: n }), icon: 'drop', disabled: rewriteOff, hint: rewriteHint, run: () => void drop(hashes) },
     {
-      label: 'Interactively Rebase from Here…',
+      label: t('cmRebase'),
       icon: 'rebase',
       disabled: !single || rewriteOff,
-      hint: rewriteHint ?? 'Select one commit',
+      hint: rewriteHint ?? t('hintSelectOne'),
       run: () => void rebaseFrom(single!.hash)
     },
     'separator',
-    { label: 'New Branch…', icon: 'branch', disabled: !single, hint: 'Select one commit', run: () => void newBranch(single!.hash) },
-    { label: 'New Tag…', icon: 'tag', disabled: !single, hint: 'Select one commit', run: () => void newTag(single!.hash) }
+    { label: t('cmNewBranch'), icon: 'branch', disabled: !single, hint: t('hintSelectOne'), run: () => void newBranch(single!.hash) },
+    { label: t('cmNewTag'), icon: 'tag', disabled: !single, hint: t('hintSelectOne'), run: () => void newTag(single!.hash) }
   )
   showMenu(x, y, entries, viewport)
 }
@@ -1250,7 +1250,7 @@ fetchButton.addEventListener('click', async () => {
 tabButton.addEventListener('click', async () => {
   try {
     const result = await api.openTab(repo?.workspaceId)
-    if (!result.ok) showBanner(result.reason ?? 'Could not open the editor tab.', 'error')
+    if (!result.ok) showBanner(result.reason ?? t('openTabFailed'), 'error')
   } catch (error) {
     showBanner(errorMessage(error), 'error')
   }

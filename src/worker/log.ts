@@ -1,5 +1,6 @@
 import type { BranchRef, CommitDetails, CommitRow, FileChange, LogFilter, LogPage, RefsResult } from '../shared/protocol.ts'
 import type { Git } from './git.ts'
+import { t } from '../shared/i18n.ts'
 
 const FS = '\x1f'
 const RS = '\x1e'
@@ -48,7 +49,7 @@ export function escapeRegex(text: string): string {
 const gitDate = (seconds: number) => new Date(seconds * 1000).toISOString().replace('T', ' ').replace(/\.\d+Z$/, ' +0000')
 
 function assertRevision(rev: string): string {
-  if (!rev || rev.startsWith('-') || /[\s~^:?*[\\]/.test(rev.replace(/^refs\//, ''))) throw new Error(`Invalid revision: ${rev}`)
+  if (!rev || rev.startsWith('-') || /[\s~^:?*[\\]/.test(rev.replace(/^refs\//, ''))) throw new Error(t('invalidRevision', { rev }))
   return rev
 }
 
@@ -80,7 +81,7 @@ export async function readLogPage(git: Git, filter: LogFilter, skip: number, lim
   // An empty repository (no HEAD yet) is an empty log, not an error.
   if (!result.ok) {
     if (!(await readHead(git)).hash) return { commits: [], hasMore: false }
-    throw new Error(result.stderr.trim() || 'git log failed')
+    throw new Error(result.stderr.trim() || t('gitLogFailed'))
   }
   const commits = parseLog(result.stdout)
   const hasMore = commits.length > limit
