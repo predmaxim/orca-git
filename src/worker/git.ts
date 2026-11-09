@@ -13,6 +13,8 @@ export interface GitOptions {
 }
 
 export interface Git {
+  /** The git executable this runner launches. */
+  readonly gitPath: string
   run(args: string[], options?: GitOptions): Promise<GitResult>
   /** Runs and returns stdout, throwing a readable Error when git fails. */
   out(args: string[], options?: GitOptions): Promise<string>
@@ -48,6 +50,7 @@ export function createGit(root: string, gitPath = 'git'): Git {
       )
     })
   return {
+    gitPath,
     run,
     async out(args, options) {
       const result = await run(args, options)

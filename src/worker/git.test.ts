@@ -9,6 +9,7 @@ import { createGit } from './git.ts'
 import { readDetails, readLogPage, readRefs } from './log.ts'
 import { readFileDiff } from './diff.ts'
 import { createPatch } from './patch.ts'
+import { buildTodo } from './rebase.ts'
 
 const dirs: string[] = []
 after(() => dirs.forEach((dir) => rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })))
@@ -242,4 +243,9 @@ test('create patch exports the selected commits oldest first, applies cleanly an
   assert.deepEqual([again.ok, !again.ok && again.exists], [false, true])
   assert.equal((await createPatch(git, root, [hashes[3]], 'out/last.patch', true)).ok, true)
   await assert.rejects(createPatch(git, root, ['HEAD']), /Invalid commit/)
+})
+test('squash and reword todo lines amend with the configured git executable', () => {
+  const hash = 'a'.repeat(40)
+  const todo = buildTodo([{ hash, action: 'reword', message: 'New' }], new Map(), () => '/tmp/message.txt', '/opt/my git/bin/git')
+  assert.ok(todo.includes(`exec '/opt/my git/bin/git' commit --amend`), todo)
 })

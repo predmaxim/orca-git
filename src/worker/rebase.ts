@@ -98,7 +98,8 @@ export function shQuote(text: string): string {
 export function buildTodo(
   plan: PlanItem[],
   messages: Map<string, string>,
-  writeMessage: (text: string) => string
+  writeMessage: (text: string) => string,
+  gitBin = 'git'
 ): string {
   const lines: string[] = []
   let group: { message: string; explicit?: string; reword?: string; squashes: string[] } | null = null
@@ -109,7 +110,7 @@ export function buildTodo(
     if (final === undefined) final = group.reword
     if (final !== undefined) {
       if (!final.trim()) throw new Error('A commit message cannot be empty.')
-      lines.push(`exec git commit --amend --allow-empty --no-verify --cleanup=strip -F ${shQuote(writeMessage(final))}`)
+      lines.push(`exec ${shQuote(gitBin)} commit --amend --allow-empty --no-verify --cleanup=strip -F ${shQuote(writeMessage(final))}`)
     }
     group = null
   }
@@ -179,7 +180,7 @@ export async function runRebase(git: Git, base: string | null, plan: PlanItem[],
       const file = join(dir, `message-${++count}.txt`)
       writeFileSync(file, text.endsWith('\n') ? text : text + '\n')
       return file
-    })
+    }, git.gitPath)
     const todoFile = join(dir, 'todo')
     writeFileSync(todoFile, todo)
     const result = await git.run(
