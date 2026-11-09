@@ -17,7 +17,7 @@ interface DialogOptions<T> {
   buttons: Button<T>[]
   wide?: boolean
   /** Returns an error to keep the dialog open, or null to close with the pressed button's value. */
-  validate?: () => string | null
+  validate?: () => string | null | Promise<string | null>
   focus?: HTMLElement
 }
 
@@ -27,15 +27,30 @@ export function dialog<T>(options: DialogOptions<T>): Promise<T | null> {
   return new Promise((resolve) => {
     const previous = document.activeElement as HTMLElement | null
     const error = h('div', { class: 'error-text' })
+    let closed = false
+    let checking = false
     const finish = (value: T | null) => {
+      if (closed) return
+      closed = true
       overlay.remove()
       document.removeEventListener('keydown', onKey, true)
       previous?.focus({ preventScroll: true })
       resolve(value)
     }
-    const press = (button: Button<T>) => {
+    const press = async (button: Button<T>) => {
       if (button.value === null) return finish(null)
-      const problem = options.validate?.() ?? null
+      // A check that asks the worker keeps the dialog open until it answers; presses meanwhile are ignored.
+      if (checking) return
+      checking = true
+      let problem: string | null
+      try {
+        problem = (await options.validate?.()) ?? null
+      } catch (failure) {
+        problem = failure instanceof Error ? failure.message : String(failure)
+      } finally {
+        checking = false
+      }
+      if (closed) return
       if (problem) {
         error.textContent = problem
         return
@@ -43,7 +58,7 @@ export function dialog<T>(options: DialogOptions<T>): Promise<T | null> {
       finish(button.value)
     }
     const buttons = options.buttons.map((button) =>
-      h('button', { class: `btn ${button.kind ?? ''}`, onclick: () => press(button) }, button.label)
+      h('button', { class: `btn ${button.kind ?? ''}`, onclick: () => void press(button) }, button.label)
     )
     const main = options.buttons.findIndex((b) => b.kind)
     const onKey = (event: KeyboardEvent) => {
@@ -57,7 +72,7 @@ export function dialog<T>(options: DialogOptions<T>): Promise<T | null> {
         if (target.tagName === 'BUTTON' || target.tagName === 'SELECT') return
         if (multiline && !(event.ctrlKey || event.metaKey)) return
         event.preventDefault()
-        press(options.buttons[main])
+        void press(options.buttons[main])
       }
     }
     const overlay = h(

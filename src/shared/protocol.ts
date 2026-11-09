@@ -233,6 +233,8 @@ declare module 'orca' {
     'action.run': { input: { root: string; action: ActionRequest } & ActionGuard; output: ActionResult }
     'branch.run': { input: { root: string; action: BranchAction } & ActionGuard; output: BranchActionResult }
     'backup.delete': { input: { root: string; action: BackupDelete }; output: ActionResult }
+    /** Whether `name` can become a new backup branch or tag; read-only. */
+    'backup.check': { input: { root: string; kind: 'branch' | 'tag'; name: string }; output: { ok: true } | { ok: false; reason: string } }
     /** Remote branches holding commits that rebasing the current branch onto `name` would rewrite. */
     'branch.check': { input: { root: string; name: string }; output: { pushed: string[] } }
     'repo.fetch': { input: { root: string }; output: ActionResult }

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
 import { runAction } from './actions.ts'
-import { createBackup, deleteBackup, runGuarded } from './backup.ts'
+import { checkBackup, createBackup, deleteBackup, runGuarded } from './backup.ts'
 import { runBranchAction } from './branchActions.ts'
 import { createGit } from './git.ts'
 
@@ -87,7 +87,7 @@ test('hostile names and targets are refused before git runs', async () => {
   const head = rev(root, 'HEAD')
   const before = refs(root)
   const bad: unknown[] = [
-    ...['-x', 'a..b', 'a b', 'a@{1}', '', 'refs/heads/../x'].flatMap((name) => [
+    ...['-x', 'a..b', 'a b', 'a@{1}', '', 'refs/heads/../x', 'refs/heads/x', 'refs/tags/x'].flatMap((name) => [
       { kind: 'branch', name, target: head },
       { kind: 'tag', name, target: head }
     ]),
@@ -120,6 +120,37 @@ test('reset --hard with stash keeps the uncommitted changes in the stash', async
   assert.match(sh(root, 'stash', 'list'), /Git plugin backup before reset --hard \(main\)/)
   assert.equal(sh(root, 'status', '--porcelain'), '')
   assert.equal(rev(root, `refs/heads/${NAME}`), head)
+})
+
+test('the backup name check refuses what git would refuse, taken names and folder clashes', async () => {
+  const root = repo()
+  const git = createGit(root)
+  sh(root, 'branch', 'backup/main')
+  sh(root, 'branch', 'backup/x/y')
+  sh(root, 'tag', 'backup/t')
+  const refused: [unknown, unknown][] = [
+    ['branch', 'a b'],
+    ['branch', 'a..b'],
+    ['branch', 'x.lock'],
+    ['branch', `backup/${'x'.repeat(250)}`],
+    ['branch', 'backup/main'],
+    ['branch', 'backup/main/old'],
+    ['branch', 'backup/x'],
+    ['tag', 'backup/t'],
+    ['branch', 'refs/heads/x'],
+    ['tag', 'refs/tags/x'],
+    ['remote', 'backup/ok'],
+    ['branch', 42]
+  ]
+  for (const [kind, name] of refused) {
+    const result = await checkBackup(git, kind, name)
+    assert.equal(result.ok, false, `${kind} ${name}`)
+    assert.ok(!result.ok && result.reason, `${kind} ${name}`)
+  }
+  // Only refs of the same kind clash: the dialog keeps branch and tag names apart itself.
+  assert.deepEqual(await checkBackup(git, 'branch', 'backup/t'), { ok: true })
+  assert.deepEqual(await checkBackup(git, 'tag', 'backup/main'), { ok: true })
+  assert.deepEqual(await checkBackup(git, 'branch', 'backup/main-2'), { ok: true })
 })
 
 test('a clean tree stores no stash', async () => {

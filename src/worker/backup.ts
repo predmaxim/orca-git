@@ -19,6 +19,38 @@ async function tipOf(git: Git, ref: string): Promise<string | null> {
   return result.ok ? result.stdout.trim() : null
 }
 
+/** Longest backup name, in UTF-8 bytes: loose refs are files, and a file name is at most 255 bytes. */
+const NAME_MAX = 200
+
+/**
+ * `name` trimmed, once it can become a new backup `kind`: a name git accepts, not under `refs/`, not taken,
+ * and not a folder of an existing ref or under one (git keeps refs as files). Throws the reason otherwise.
+ */
+async function backupName(git: Git, kind: unknown, name: unknown): Promise<string> {
+  if ((kind !== 'branch' && kind !== 'tag') || typeof name !== 'string') throw new Error(t('backupInvalid'))
+  const checked = await assertName(git, name, kind)
+  if (checked.startsWith('refs/')) throw new Error(t('backupNameRefs'))
+  if (new TextEncoder().encode(checked).length > NAME_MAX) throw new Error(t('backupNameLong', { max: NAME_MAX }))
+  const full = refName(kind, checked)
+  const parents = checked.split('/').slice(0, -1).map((_, i, parts) => refName(kind, parts.slice(0, i + 1).join('/')))
+  // A pattern lists the ref and every ref under it; only the exact parents and the name's own subtree clash.
+  const listed = (await git.out(['for-each-ref', '--format=%(refname)', full, ...parents])).split('\n')
+  const clash = listed.find((ref) => ref === full || ref.startsWith(`${full}/`) || parents.includes(ref))
+  if (clash === full) throw new Error(t('backupExists', { name: checked }))
+  if (clash) throw new Error(t('backupNameClash', { name: checked, ref: clash.replace(/^refs\/(heads|tags)\//, '') }))
+  return checked
+}
+
+/** Whether `name` can become a new backup `kind`, for the dialog to say before it closes. Never throws. */
+export async function checkBackup(git: Git, kind: unknown, name: unknown): Promise<{ ok: true } | { ok: false; reason: string }> {
+  try {
+    await backupName(git, kind, name)
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, reason: refused(error).message }
+  }
+}
+
 /**
  * Creates the backup branch or tag `name` at `target`, never moving an existing ref; with `stash`, first
  * snapshots the uncommitted changes into the stash without touching the work tree. Never throws.
@@ -26,11 +58,8 @@ async function tipOf(git: Git, ref: string): Promise<string | null> {
 export async function createBackup(git: Git, request: unknown): Promise<Made | Refused> {
   try {
     const { kind, name, target, stash } = (request ?? {}) as Record<string, unknown>
-    if ((kind !== 'branch' && kind !== 'tag') || typeof name !== 'string' || typeof target !== 'string' || !HASH.test(target)) {
-      throw new Error(t('backupInvalid'))
-    }
-    const checked = await assertName(git, name, kind)
-    if (await tipOf(git, refName(kind, checked))) throw new Error(t('backupExists', { name: checked }))
+    if (typeof target !== 'string' || !HASH.test(target)) throw new Error(t('backupInvalid'))
+    const checked = await backupName(git, kind, name)
     // stash create writes only objects; the stash ref changes after the backup ref exists.
     const snapshot = stash === true ? (await git.out(['stash', 'create'])).trim() : ''
     await git.out(kind === 'branch' ? ['branch', '--no-track', checked, target] : ['tag', checked, target])

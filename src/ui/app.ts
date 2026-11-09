@@ -993,7 +993,7 @@ function followBranch(name: string, newName?: string): void {
 const dropFilter = (full: string) => filter.branches?.includes(full) && applyFilter({ branches: filter.branches.filter((ref) => ref !== full) })
 
 /** The backup offer for a confirmation; none when the `offerBackup` setting is off or there is no commit to keep. */
-async function offerBackup(branch: string | null, target: string | null | undefined): Promise<BackupBlock | undefined> {
+async function offerBackup(root: string, branch: string | null, target: string | null | undefined): Promise<BackupBlock | undefined> {
   if (!target) return undefined
   const settings = await orca.settings.get().catch((): Record<string, unknown> => ({}))
   if (settings.offerBackup === false) return undefined
@@ -1004,12 +1004,17 @@ async function offerBackup(branch: string | null, target: string | null | undefi
     target,
     kind: settings.backupKind === 'tag' ? 'tag' : 'branch',
     taken,
-    onKind: (kind) => void orca.settings.set('backupKind', kind).catch(() => undefined)
+    onKind: (kind) => void orca.settings.set('backupKind', kind).catch(() => undefined),
+    check: (kind, name) =>
+      api.backupCheck(root, kind, name).then(
+        (result) => (result.ok ? null : result.reason),
+        (error) => errorMessage(error)
+      )
   })
 }
 
 /** A backup of the current branch at the HEAD `scope` saw. */
-const offerHeadBackup = (scope: Scope) => offerBackup(repo?.head.branch ?? null, scope.head)
+const offerHeadBackup = (scope: Scope) => offerBackup(scope.root, repo?.head.branch ?? null, scope.head)
 
 /** Confirms a rewrite of the current branch with the pushed warning and the backup offer; no dialog when there is neither. */
 function confirmRewrite(title: string, pushed: string[], ok: string, backup?: BackupBlock): Promise<boolean> {
@@ -1102,7 +1107,7 @@ async function deleteBranch(scope: Scope, name: string, hash: string): Promise<v
   if (!(await confirm(t('branchDeleteTitle'), t('branchDeleteConfirm', { name }), t('branchDelete'), true))) return
   const result = await act(scope, { kind: 'delete', name, force: false }, t('branchDeleting', { name }))
   if (!result?.needsForce) return
-  const backup = await offerBackup(name, hash)
+  const backup = await offerBackup(scope.root, name, hash)
   if (await confirm(t('branchDeleteTitle'), t('branchDeleteForce', { name }), t('branchDelete'), true, backup)) {
     await act(scope, { kind: 'delete', name, force: true }, t('branchDeleting', { name }), backup?.value())
   }

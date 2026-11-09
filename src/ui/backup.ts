@@ -24,6 +24,8 @@ export interface BackupOptions {
   taken: Set<string>
   /** Called when the person picks branch or tag, to remember the choice. */
   onKind(kind: 'branch' | 'tag'): void
+  /** Asks the worker whether git would create this backup: the reason it would not, or null. */
+  check(kind: 'branch' | 'tag', name: string): Promise<string | null>
 }
 
 export interface BackupBlock {
@@ -31,7 +33,7 @@ export interface BackupBlock {
   /** Shows or hides "Also save uncommitted changes to the stash" (reset --hard only). */
   showStash(show: boolean): void
   /** Why the dialog can't close, or null. */
-  validate(): string | null
+  validate(): Promise<string | null>
   /** The backup to make, or undefined when the box is unchecked. */
   value(): BackupRequest | undefined
 }
@@ -70,11 +72,12 @@ export function backupBlock(options: BackupOptions): BackupBlock {
   return {
     element: h('div', { class: 'backup' }, h('label', { class: 'checkbox' }, enabled, t('backupFirst', { name: options.label })), details),
     showStash: (show) => (stashRow.hidden = !show),
-    validate() {
+    async validate() {
       if (!enabled.checked) return null
       const value = name.value.trim()
       if (!value) return t('backupNameEmpty')
-      return options.taken.has(value) ? t('backupNameTaken', { name: value }) : null
+      if (options.taken.has(value)) return t('backupNameTaken', { name: value })
+      return options.check(kind, value)
     },
     value() {
       if (!enabled.checked) return undefined
