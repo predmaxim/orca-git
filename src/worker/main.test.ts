@@ -239,6 +239,25 @@ test('the plugin\'s own anchor is not rewritten on the next file', async () => {
   }
 })
 
+test('stepping to another file in the Diff tab updates its state and tells the sidebar', async () => {
+  const root = fixture()
+  try {
+    const worker = await mountWorker(main, { host: host(root) })
+    await worker.request('diff.open', diffState(root))
+    const posts = worker.posts.length
+    assert.deepEqual(await worker.request('diff.index', { root, index: 0 }), { ok: true })
+    assert.deepEqual(worker.posts.at(-1), { event: 'diff.current', payload: { root, path: 'one.txt' } })
+    assert.equal((await worker.request('diff.state', { root }))?.index, 0)
+    const bad: any[] = [{ root, index: 2 }, { root, index: -1 }, { root, index: 0.5 }, { root, index: '1' }, { root: tmpdir(), index: 0 }, { index: 0 }]
+    for (const input of bad) assert.deepEqual(await worker.request('diff.index', input), { ok: false }, JSON.stringify(input))
+    assert.equal(worker.posts.length, posts + 1)
+    assert.equal((await worker.request('diff.state', { root }))?.index, 0)
+    await worker.deactivate()
+  } finally {
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
+})
+
 test('same-named workspaces are told apart by terminal titles, then by a previous choice', () => {
   const a = realpathSync.native(mkdtempSync(join(tmpdir(), 'git-log-a-')))
   const b = realpathSync.native(mkdtempSync(join(tmpdir(), 'git-log-b-')))

@@ -55,7 +55,8 @@ async function show(): Promise<void> {
         prefs.diffWholeFile = wholeFile
         localStorage.setItem(PREFS_KEY, JSON.stringify(prefs))
       },
-      onIndex: () => {}
+      // The worker keeps the index (a recreated tab opens on this file) and tells the sidebar.
+      onIndex: (index) => void api.diffIndex(state.root, index).catch(() => undefined)
     })
   }
 }

@@ -209,10 +209,14 @@ declare module 'orca' {
     /** Shows the state in the Diff tab of the workspace that holds `root`, opening the tab if needed. */
     'diff.open': { input: DiffTabState; output: { ok: boolean; reason?: string } }
     'diff.state': { input: { root: string }; output: DiffTabState | null }
+    /** The Diff tab stepped to another file of its state. */
+    'diff.index': { input: { root: string; index: number }; output: { ok: boolean } }
   }
   interface PluginPanelEvents {
     'repo.changed': { root: string }
     /** The Diff tab of `root` has a new state to show. */
     'diff.show': { root: string }
+    /** The file the Diff tab of `root` now shows, for the sidebar to highlight. */
+    'diff.current': { root: string; path: string }
   }
 }

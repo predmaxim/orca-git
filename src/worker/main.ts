@@ -169,6 +169,14 @@ export default function activate(orca: OrcaWorkerApi): void {
   handle('diff.open', openDiff)
 
   handle('diff.state', ({ root }) => diffStates.get(root) ?? null)
+
+  handle('diff.index', ({ root, index }) => {
+    const state = diffStates.get(root)
+    if (!state || !Number.isInteger(index) || index < 0 || index >= state.files.length) return { ok: false }
+    diffStates.set(root, { ...state, index })
+    orca.panels.post('diff.current', { root, path: state.files[index].path })
+    return { ok: true }
+  })
 }
 
 export function deactivate(): void {

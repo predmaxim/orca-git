@@ -65,7 +65,8 @@ export const api = {
   // Outlasts the worker's 120 s git fetch timeout, so its message arrives instead of a frame timeout.
   fetch: (root: string): Promise<ActionResult> => call('repo.fetch', { root }, { timeoutMs: 150_000 }),
   openDiff: (state: DiffTabState): Promise<{ ok: boolean; reason?: string }> => call('diff.open', state),
-  diffState: (root: string): Promise<DiffTabState | null> => call('diff.state', { root })
+  diffState: (root: string): Promise<DiffTabState | null> => call('diff.state', { root }),
+  diffIndex: (root: string, index: number): Promise<{ ok: boolean }> => call('diff.index', { root, index })
 }
 
 export function errorMessage(error: unknown): string {

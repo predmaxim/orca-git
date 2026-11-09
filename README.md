@@ -46,7 +46,8 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   dark palettes in the style of WebStorm, the plugin's own because Orca does not pass theme token colors
   to plugins). Toggle **Whole file** for full context, jump between changes with F7 / Shift+F7 and
   between the files of the selection it was opened from with ← / → (keys or header buttons) or Alt+↑ /
-  Alt+↓ (counter "3/5 files"). Merge commits are compared with their first parent.
+  Alt+↓ (counter "3/5 files"); the panel's Files section highlights the file the tab shows. Merge
+  commits are compared with their first parent.
 - **Multi-select**: click, Ctrl/⌘-click, Shift-click, arrows, Page Up/Down, Home/End, Ctrl+A.
 - **Right-click menu** with icons (or Shift+F10):
   - Copy Revision Number (Ctrl+C), Cherry-Pick, Create Patch… (`git format-patch` of the selection,

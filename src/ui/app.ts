@@ -1190,6 +1190,15 @@ async function openDiff(root: string, index: number): Promise<void> {
   }
 }
 
+// The Diff tab stepped to another file: highlight it here too, if it is still in this selection. No diff.open: it is already shown.
+orca.plugin.on('diff.current', ({ root, path }: { root: string; path: string }) => {
+  if (root !== repo?.root || !selectionFiles.some((file) => file.path === path)) return
+  currentFile = path
+  for (const dir of dirPaths(fileTree)) if (path.startsWith(`${dir}/`)) openFolders.add(dir)
+  drawFiles()
+  filesPane.querySelector('.ft-row.current')?.scrollIntoView({ block: 'nearest' })
+})
+
 orca.plugin.on('repo.changed', ({ root }: { root: string }) => {
   if (root === repo?.root) {
     detailsCache.clear()
