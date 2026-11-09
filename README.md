@@ -133,10 +133,12 @@ keeps them all.
 - The worker checks the name when you press the button, and the dialog stays open with the reason: a
   name git refuses, one under `refs/` or longer than 200 bytes, a taken name, or one that clashes with
   an existing ref folder (`backup/main` and `backup/main/x` cannot both exist).
-- A hard reset first checks the work tree. When tracked files have uncommitted changes, it can also
-  save them to the stash (`git stash create`, then `git stash store`; the work tree is not touched).
-  The hard reset is still confirmed: the stash does not keep untracked files, and both dialogs list the
-  untracked (and ignored) files the reset would overwrite.
+- A reset first checks the work tree. When tracked files have uncommitted changes, a hard reset can
+  also save them to the stash (`git stash create`, then `git stash store`; the work tree is not
+  touched). The hard reset is still confirmed, and both dialogs list the untracked files it would
+  overwrite, ignored ones included: files at a path the target tracks and HEAD does not (or inside a
+  folder at such a path), and files named like a folder the target needs. The stash does not keep
+  them. A file created after the dialog opened is not listed.
 - The banner names the backup and offers Undo and **Show Backup**, which opens its folder in the branch
   tree.
 - Backup branches sit in the `backup/` folder of the branch tree, backup tags among the tags. Their menu
