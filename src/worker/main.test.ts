@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assert, mockHost, mountWorker, test } from 'orca/testing'
@@ -177,6 +177,27 @@ test('a repository that no workspace holds opens no Diff tab', async () => {
     await worker.deactivate()
   } finally {
     for (const dir of [root, other]) rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
+})
+
+test('an anchor name taken by a symlink is not written through', async () => {
+  const root = fixture()
+  const outside = realpathSync.native(mkdtempSync(join(tmpdir(), 'git-log-outside-')))
+  try {
+    const target = join(outside, 'notes.txt')
+    writeFileSync(target, 'keep')
+    symlinkSync(target, join(root, ANCHOR))
+    const h = host(root)
+    const worker = await mountWorker(main, { host: h })
+    const result = await worker.request('diff.open', diffState(root))
+    assert.deepEqual(result, { ok: false, reason: `${join(root, ANCHOR)} is a symbolic link; the plugin does not write through it. Nothing was opened.` })
+    assert.equal(readFileSync(target, 'utf8'), 'keep')
+    assert.deepEqual(h.callsOf('editor.open'), [])
+    assert.deepEqual(worker.posts, [])
+    assert.ok(!readFileSync(join(root, '.git', 'info', 'exclude'), 'utf8').includes(ANCHOR))
+    await worker.deactivate()
+  } finally {
+    for (const dir of [root, outside]) rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   }
 })
 

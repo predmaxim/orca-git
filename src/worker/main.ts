@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import type { OrcaWorkerApi } from 'orca/worker'
 import { pickLocale, setLocale, t } from '../shared/i18n.ts'
@@ -58,8 +58,11 @@ async function openDiff(input: any): Promise<{ ok: boolean; reason?: string }> {
   const root: string = input.root
   const workspace = await workspaceFor(orcaApi, root, await gitPath())
   if (!workspace) return { ok: false, reason: t('diffNoWorkspace') }
+  const anchor = join(workspace.path, DIFF_ANCHOR)
+  // Every file click writes the anchor: a symlink under its name (a cloned repository can carry one) would redirect the write.
+  if (lstatSync(anchor, { throwIfNoEntry: false })?.isSymbolicLink()) return { ok: false, reason: t('diffAnchorLink', { path: anchor }) }
   await exclude(git, root, DIFF_ANCHOR)
-  writeFileSync(join(workspace.path, DIFF_ANCHOR), `${JSON.stringify({ root, workspaceId: workspace.id }, null, 2)}\n`)
+  writeFileSync(anchor, `${JSON.stringify({ root, workspaceId: workspace.id }, null, 2)}\n`)
   diffStates.set(root, { root, files: input.files, index: input.index })
   await orcaApi.host.call('editor.open', { workspaceId: workspace.id, path: DIFF_ANCHOR })
   // An open tab reads the new state on this event; a new one reads it when it starts.

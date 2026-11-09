@@ -73,7 +73,8 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
 - **Diff tab**: opens when you click a file in the panel. Orca has no API for a plugin tab without a
   file, so the tab is a custom editor on a small anchor file, `.orca-git-log.gitdiff`, that the plugin
   writes at the root of the workspace holding the repository and adds to `.git/info/exclude`, so it
-  never shows up as untracked. It is opened only in a workspace whose repository is the panel's. An
+  never shows up as untracked. It is opened only in a workspace whose repository is the panel's, and
+  never written through a symbolic link of that name. An
   anchor `.orca-git-log.gitlog` left by an earlier version (with a full "Git" tab) stays hidden the
   same way and can be deleted.
 
