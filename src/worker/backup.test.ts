@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
@@ -8,7 +8,7 @@ import type { ActionResult } from '../shared/protocol.ts'
 import { runAction } from './actions.ts'
 import { checkBackup, checkReset, createBackup, deleteBackup, runGuarded } from './backup.ts'
 import { runBranchAction } from './branchActions.ts'
-import { createGit } from './git.ts'
+import { createGit, type Git } from './git.ts'
 
 const dirs: string[] = []
 after(() => dirs.forEach((dir) => rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })))
@@ -211,6 +211,53 @@ test('the reset check reports a dirty tree and the untracked or ignored files th
   assert.deepEqual(await checkReset(git, target), { dirty: true, overwritten: ['build.out', 'new.txt'] })
   assert.deepEqual(await checkReset(git, rev(root, 'HEAD~1')), { dirty: true, overwritten: [] })
   await assert.rejects(checkReset(git, 'HEAD'))
+})
+
+test('the reset check lists an untracked file standing where the target needs a folder', async () => {
+  const root = repo()
+  const git = createGit(root)
+  sh(root, 'checkout', '-q', '-b', 'other')
+  mkdirSync(join(root, 'build'))
+  commit(root, 'build/x', 'theirs\n', 'add build/x')
+  mkdirSync(join(root, 'gen'))
+  commit(root, 'gen/y', 'theirs\n', 'add gen/y')
+  const target = rev(root, 'HEAD')
+  sh(root, 'checkout', '-q', 'main')
+  // A file named like the target's folder is replaced by it; a file of mine inside an untracked folder is not.
+  writeFileSync(join(root, 'build'), 'mine\n')
+  mkdirSync(join(root, 'gen'))
+  writeFileSync(join(root, 'gen', 'z'), 'mine\n')
+  assert.deepEqual(await checkReset(git, target), { dirty: false, overwritten: ['build'] })
+})
+
+test('the reset check splits a long list of paths over several git calls', async () => {
+  const root = repo()
+  const real = createGit(root)
+  let calls = 0
+  const git: Git = { ...real, out: (args, options) => ((calls += args[0] === 'ls-files' ? 1 : 0), real.out(args, options)) }
+  sh(root, 'checkout', '-q', '-b', 'other')
+  mkdirSync(join(root, 'long'))
+  const names = Array.from({ length: 150 }, (_, i) => `long/${String(i).padStart(3, '0')}-${'x'.repeat(100)}.txt`)
+  for (const name of names) writeFileSync(join(root, name), 'theirs\n')
+  commit(root, 'c1.txt', 'c1\n', 'add long files')
+  const target = rev(root, 'HEAD')
+  sh(root, 'checkout', '-q', 'main')
+  const mine = [names[0], names[75], names[149]]
+  mkdirSync(join(root, 'long'))
+  for (const name of mine) writeFileSync(join(root, name), 'mine\n')
+  assert.deepEqual(await checkReset(git, target), { dirty: false, overwritten: mine })
+  // 150 pathspecs of about 120 characters each do not fit in one command line of at most 8 KB.
+  assert.ok(calls > 2, `ls-files ran ${calls} times`)
+})
+
+test('the reset check works on a branch with no commits yet', async () => {
+  const root = repo()
+  const git = createGit(root)
+  const target = rev(root, 'HEAD')
+  sh(root, 'checkout', '-q', '--orphan', 'fresh')
+  // The files stay on disk but are no longer tracked: a hard reset to the target overwrites them.
+  sh(root, 'rm', '-q', '-r', '--cached', '.')
+  assert.deepEqual(await checkReset(git, target), { dirty: false, overwritten: ['c1.txt', 'c2.txt', 'c3.txt', 'c4.txt'] })
 })
 
 test('a clean tree stores no stash', async () => {

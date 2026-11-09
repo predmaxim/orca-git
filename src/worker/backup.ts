@@ -52,20 +52,46 @@ export async function checkBackup(git: Git, kind: unknown, name: unknown): Promi
   }
 }
 
+/** Characters of pathspecs per git call: Windows caps a whole command line at 32,767. */
+const PATHSPECS_MAX = 8000
+
+/** What `ls-files -o` with `options` finds at `paths`, ignored files included, in calls of at most PATHSPECS_MAX characters. */
+async function untrackedAt(git: Git, options: string[], paths: string[]): Promise<string[]> {
+  const found: string[] = []
+  let batch: string[] = []
+  let size = 0
+  const flush = async () => {
+    if (batch.length) found.push(...(await git.out(['ls-files', '-z', '-o', ...options, '--', ...batch])).split('\0').filter(Boolean))
+    batch = []
+    size = 0
+  }
+  for (const path of paths) {
+    const spec = `:(literal)${path}`
+    if (batch.length && size + spec.length > PATHSPECS_MAX) await flush()
+    batch.push(spec)
+    size += spec.length + 1
+  }
+  await flush()
+  return found
+}
+
 /**
  * What a hard reset to `target` would lose: whether tracked files have uncommitted changes, and the
- * untracked files, ignored ones included, at paths `target` tracks and HEAD does not (overwritten).
+ * untracked files, ignored ones included, it overwrites: those at a path `target` tracks and HEAD does
+ * not (or inside a folder there), and those standing where `target` needs a folder.
  */
 export async function checkReset(git: Git, target: unknown): Promise<{ dirty: boolean; overwritten: string[] }> {
   if (typeof target !== 'string' || !HASH.test(target)) throw new Error(t('invalidCommit'))
   const dirty = (await git.out(['status', '--porcelain', '-z', '--untracked-files=no'])) !== ''
-  const added = (await git.out(['diff', '-z', '--name-only', '--no-renames', '--diff-filter=A', 'HEAD', target, '--'])).split('\0').filter(Boolean)
-  const overwritten: string[] = []
-  // Batches keep the command line short however many files the target adds.
-  for (let i = 0; i < added.length; i += 500) {
-    const paths = added.slice(i, i + 500).map((path) => `:(literal)${path}`)
-    overwritten.push(...(await git.out(['ls-files', '-z', '-o', '--', ...paths])).split('\0').filter(Boolean))
-  }
+  // On a branch with no commits yet, every file of the target is new.
+  const listed = (await readHead(git)).hash
+    ? await git.out(['diff', '-z', '--name-only', '--no-renames', '--diff-filter=A', 'HEAD', target, '--'])
+    : await git.out(['ls-tree', '-r', '-z', '--name-only', target])
+  const added = listed.split('\0').filter(Boolean)
+  const folders = new Set(added.flatMap((path) => path.split('/').slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join('/'))))
+  // --directory lists an untracked folder as one `name/` line, so only a file named like a folder matches it.
+  const blocking = (await untrackedAt(git, ['--directory'], [...folders])).filter((path) => folders.has(path))
+  const overwritten = [...new Set([...(await untrackedAt(git, [], added)), ...blocking])].sort()
   return { dirty, overwritten }
 }
 
