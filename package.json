@@ -1,5 +1,5 @@
 {
-  "name": "orca-git-log-panel",
+  "name": "orca-git",
   "version": "0.2.0",
   "private": true,
   "type": "module",

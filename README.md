@@ -83,7 +83,7 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
 ## Install
 
 ```sh
-orca plugin install https://github.com/predmaxim/orca-git-log-panel
+orca plugin install https://github.com/predmaxim/orca-git
 ```
 
 Installed from the Git URL the plugin gets the id `predmaxim.git-log`. Orca first lists the access it

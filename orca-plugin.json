@@ -6,7 +6,7 @@
   "version": "0.2.0",
   "description": "WebStorm-style Git log for Orca: branches, commits and the files of a multi-commit selection in the sidebar, their diffs in a Diff tab. Fork of emamalet/Orca-git-log-panel.",
   "license": "MIT",
-  "repository": "https://github.com/predmaxim/orca-git-log-panel",
+  "repository": "https://github.com/predmaxim/orca-git",
   "icon": "images/icon.png",
   "cover": { "path": "images/git-dark.png", "alt": "Git sidebar on the right with six selected commits and their files, and the Diff tab with a unified diff of one of those files on the left" },
   "screenshots": [
