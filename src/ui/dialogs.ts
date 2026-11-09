@@ -37,19 +37,33 @@ export function dialog<T>(options: DialogOptions<T>): Promise<T | null> {
       previous?.focus({ preventScroll: true })
       resolve(value)
     }
-    const press = async (button: Button<T>) => {
-      if (button.value === null) return finish(null)
-      // A check that asks the worker keeps the dialog open until it answers; presses meanwhile are ignored.
-      if (checking) return
+    /** Awaits a check that asks the worker with the dialog frozen, so nothing changes unchecked; Cancel and Escape still work. */
+    const waitFor = async (check: Promise<string | null>): Promise<string | null> => {
       checking = true
-      let problem: string | null
+      const focused = document.activeElement as HTMLElement | null
+      const frozen = Array.from(overlay.querySelectorAll<HTMLInputElement>('input, textarea, select, button')).filter(
+        (el) => !el.disabled && !buttons.some((button, i) => button === el && options.buttons[i].value === null)
+      )
+      for (const el of frozen) el.disabled = true
+      error.classList.add('pending')
+      error.textContent = t('checking')
       try {
-        problem = (await options.validate?.()) ?? null
+        return (await check) ?? null
       } catch (failure) {
-        problem = failure instanceof Error ? failure.message : String(failure)
+        return failure instanceof Error ? failure.message : String(failure)
       } finally {
         checking = false
+        for (const el of frozen) el.disabled = false
+        error.classList.remove('pending')
+        error.textContent = ''
+        if (!closed) focused?.focus({ preventScroll: true })
       }
+    }
+    const press = async (button: Button<T>) => {
+      if (button.value === null) return finish(null)
+      if (checking) return
+      let problem = options.validate?.() ?? null
+      if (problem instanceof Promise) problem = await waitFor(problem)
       if (closed) return
       if (problem) {
         error.textContent = problem

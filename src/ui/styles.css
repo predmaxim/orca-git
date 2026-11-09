@@ -1232,6 +1232,10 @@ textarea.field {
   font-size: 11.5px;
 }
 
+.error-text.pending {
+  color: var(--muted-fg);
+}
+
 /* Interactive rebase */
 .rebase-list {
   border: 1px solid var(--border);
