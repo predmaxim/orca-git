@@ -1,0 +1,72 @@
+<style>
+  .ow{background:#1e1e1e;border:1px solid #3a3a3a;border-radius:6px;overflow:hidden;font:11.5px/1.5 system-ui,sans-serif;color:#ccc;text-align:left}
+  .top{display:flex;gap:12px;align-items:center;padding:5px 10px;border-bottom:1px solid #333;background:#232323;color:#aaa}
+  .top b{color:#ddd;font-weight:500}
+  .seg{display:inline-flex;border:1px solid #444;border-radius:4px;overflow:hidden}
+  .seg span{padding:1px 8px}.seg .on{background:#3a3f4b;color:#fff}
+  .blk{border-bottom:1px solid #2c2c2c}
+  .bh{position:relative;display:flex;gap:8px;align-items:center;padding:4px 10px;background:#262626;border-bottom:1px solid #303030;color:#ddd}
+  .bh .st{font-weight:600;width:12px}.A{color:#5fb865}.M{color:#4c8cf5}.D{color:#e5676f}.R{color:#c27ad6}
+  .bh .path{font-family:ui-monospace,monospace;font-size:11px}
+  .bh .cnt{margin-left:auto;font-family:ui-monospace,monospace;font-size:10.5px}
+  .bh .cnt .p{color:#5fb865}.bh .cnt .m{color:#e5676f}
+  .bh .act{color:#8a8a8a;margin-left:10px}
+  .code{font-family:ui-monospace,monospace;font-size:10.5px}
+  .l{display:flex;white-space:nowrap}
+  .n{width:30px;text-align:right;color:#666;padding-right:8px}
+  .add{background:rgba(46,160,67,.2)}.del{background:rgba(248,81,73,.2)}
+  .kw{color:#cf8e6d}.str{color:#6aab73}.num{color:#2aacb8}.cm{color:#7a7e85;font-style:italic}
+  .hunk{color:#8a8a8a;background:#1f2a36;padding:1px 10px;font-family:ui-monospace,monospace;font-size:10.5px}
+  .collapsed{color:#8a8a8a;padding:3px 10px;font-size:11px}
+  .note{padding:4px 10px;color:#8a8a8a;font-size:11px}
+  .card-image{padding:12px;background:#111}
+</style>
+
+<h2>Вкладка «Diff»: все файлы выделения подряд</h2>
+<p class="subtitle">Esc (или кнопка «All files») — все файлы стопкой; клик по файлу в сайдбаре или по заголовку блока — один файл. Демо-данные.</p>
+
+<div class="cards">
+  <div class="card" data-choice="stack" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="ow">
+        <div class="top"><span class="seg"><span class="on">All files</span><span>One file</span></span><span><b>3 files</b> · <span style="color:#5fb865">+17</span> <span style="color:#e5676f">−2</span></span><span style="margin-left:auto">▥ Split ▭ Unified · ⊟ Collapse all</span></div>
+
+        <div class="blk">
+          <div class="bh"><span>▾</span><span class="st M">M</span><span class="path">config/app.yml</span><span class="cnt"><span class="p">+2</span> <span class="m">−0</span></span><span class="act">↗ open</span></div>
+          <div class="hunk">@@ -1,2 +1,4 @@</div>
+          <div class="code">
+            <div class="l"><span class="n">1</span>name: demo</div>
+            <div class="l"><span class="n">2</span>port: <span class="num">8080</span></div>
+            <div class="l add"><span class="n">3</span>upload:</div>
+            <div class="l add"><span class="n">4</span>  retries: <span class="num">3</span></div>
+          </div>
+        </div>
+
+        <div class="blk">
+          <div class="bh"><span>▸</span><span class="st A">A</span><span class="path">src/api/search.ts</span><span class="cnt"><span class="p">+4</span> <span class="m">−0</span></span><span class="act">↗ open</span></div>
+          <div class="collapsed">свёрнут — клик по заголовку разворачивает</div>
+        </div>
+
+        <div class="blk">
+          <div class="bh"><span>▾</span><span class="st M">M</span><span class="path">src/api/upload.ts</span><span class="cnt"><span class="p">+11</span> <span class="m">−2</span></span><span class="act">↗ open</span></div>
+          <div class="hunk">@@ -1,7 +1,16 @@</div>
+          <div class="code">
+            <div class="l"><span class="n">1</span><span class="kw">import</span> { send } <span class="kw">from</span> <span class="str">"./http"</span></div>
+            <div class="l del"><span class="n">3</span><span class="kw">const</span> RETRY_LIMIT = <span class="num">1</span></div>
+            <div class="l add"><span class="n">3</span><span class="kw">const</span> RETRY_LIMIT = <span class="num">3</span></div>
+            <div class="l add"><span class="n">4</span><span class="kw">const</span> BACKOFF_MS = <span class="num">500</span></div>
+            <div class="l add"><span class="n">6</span><span class="cm">// Wait longer after each failure</span></div>
+            <div class="l"><span class="n">7</span><span class="kw">export async function</span> upload(file: string) {</div>
+            <div class="l del"><span class="n">6</span>  <span class="kw">return</span> send(<span class="str">"/upload"</span>, { file })</div>
+            <div class="l add"><span class="n">8</span>  <span class="kw">for</span> (<span class="kw">let</span> attempt = <span class="num">1</span>; ; attempt++) {</div>
+            <div class="note">… ещё 8 строк</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Все файлы подряд (как «Files changed» на GitHub)</h3>
+      <p>У каждого блока липкий заголовок: свернуть ▾/▸, статус, путь, +/−, «открыть файл». Блоки грузятся по мере прокрутки; большие и бинарные файлы — свёрнуты с кнопкой «показать».</p>
+    </div>
+  </div>
+</div>
