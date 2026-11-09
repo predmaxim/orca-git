@@ -57,7 +57,8 @@ export function renderBranches(container: HTMLElement, host: BranchesHost, query
           class: `node-row${filtered ? ' filtered' : ''}`,
           style: `padding-left:${4 + depth * 14 + 16}px`,
           title: `${ref.full}${ref.upstream ? `\nTracking ${ref.upstream}` : ''}\n${t('branchRowTip', { kind: t(kind === 'tag' ? 'kindTag' : 'kindBranch') })}`,
-          onclick: () => host.filterTo(ref.full),
+          // The second click of a double click does nothing: filterTo toggles and would undo the first.
+          onclick: (event: MouseEvent) => event.detail <= 1 && host.filterTo(ref.full),
           ondblclick: () => ref.hash && host.select(ref.hash),
           oncontextmenu: (event: MouseEvent) => {
             event.preventDefault()

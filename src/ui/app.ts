@@ -534,6 +534,9 @@ async function start(): Promise<void> {
 
 // ---------- Filters ----------
 
+/** The reload the latest filter change started; a jump waits for it so it lands on the new rows. */
+let filterReload: Promise<void> = Promise.resolve()
+
 function applyFilter(change: Partial<LogFilter>): void {
   filter = { ...filter, ...change }
   for (const key of Object.keys(filter) as (keyof LogFilter)[]) {
@@ -542,7 +545,7 @@ function applyFilter(change: Partial<LogFilter>): void {
   }
   filterBar.update()
   renderTree()
-  void reloadLog()
+  filterReload = reloadLog()
 }
 
 let searchTimer: ReturnType<typeof setTimeout> | undefined
@@ -673,6 +676,7 @@ function selectRange(to: number, additive: boolean): void {
 }
 
 async function jumpTo(hash: string): Promise<void> {
+  await filterReload
   let index = indexByHash.get(hash)
   while (index === undefined && hasMore && rows.length < 10_000) {
     await loadMore()
