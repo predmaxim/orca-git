@@ -485,3 +485,65 @@ test('opening the tab with a reveal posts it and hands it over once', …)
 - [ ] **Step 5: Черновики issue в Орку** (`github.com/stablyai/orca`) — в `docs/orca-issues.md`, на английском: (1) API «открыть вкладку плагина без файла»; (2) отдавать фреймам плагинов цвета подсветки синтаксиса активной темы (`tokenColors`), например переменными `--orca-syntax-*` или полем в `FrameTheme`. Не публиковать: показать пользователю.
 - [ ] **Step 6: Commit** — `git commit -m "Document the fork and its screenshots"`.
 - [ ] **Step 7: Передать пользователю** (не делать самому без его слова): push в `origin`, установку `orca plugin install https://github.com/predmaxim/orca-git-log-panel` с показом запрошенного доступа до `--approve`, выключение `emamalet.git-log`, публикацию issue.
+
+### Task 15: Бэкап перед опасными операциями
+
+Добавлена 2026-11-10 по решению пользователя; дизайн — раздел «Бэкап перед опасными операциями» в спецификации, макет `docs/superpowers/specs/backup-mockup.html` (вариант «А»).
+
+**Files:**
+- Create: `src/worker/backup.ts`, `src/worker/backup.test.ts`, `src/ui/backup.ts` (часть подтверждения: галочка, ветка/тег, имя; генерация имени)
+- Modify: `src/shared/protocol.ts` (тип `BackupRequest`, необязательное поле `backup` во входе `action.run` и `branch.run`), `src/worker/main.ts` (создать бэкап до действия), `src/ui/app.ts` и `src/ui/dialogs.ts` (подтверждения опасных операций), `src/ui/branches.ts` (меню бэкапов), `src/shared/i18n.ts`, `orca-plugin.json` (`contributes.settings`: `offerBackup` boolean, по умолчанию `true`; `backupKind` `"branch" | "tag"`, по умолчанию `"branch"`), `README.md`
+
+**Interfaces:**
+- `interface BackupRequest { kind: 'branch' | 'tag'; name: string; target: string; stash?: boolean }` — `target` — 40-символьный хеш, на который ставится бэкап (вершина текущей ветки или удаляемой ветки).
+- `createBackup(git: Git, request: BackupRequest): Promise<{ ok: true; name: string; stash?: string } | { ok: false; message: string }>` в `src/worker/backup.ts`: проверяет `target` (`^[0-9a-f]{40}$`), имя (`git check-ref-format --branch` для ветки, `git check-ref-format refs/tags/<имя>` для тега, не начинается с `-`), что ссылки ещё нет; затем `git branch --no-track <имя> <target>` или `git tag <имя> <target>` (без `-f`); при `stash: true` — `git stash create`, и если вывод не пуст — `git stash store -m "Git plugin backup before reset --hard (<ветка>)" <хеш>`.
+- `suggestBackupName(branch: string | null, head: string, existing: Set<string>, now: Date): string` в `src/ui/backup.ts` — `backup/<ветка>-<ГГГГММДД-ЧЧММ>`, для `null` — `backup/detached-<первые 8 символов head>-<…>`, при занятом имени суффикс `-2`, `-3`…
+- В `main.ts` обработчики `action.run` и `branch.run`: если во входе есть `backup`, сначала `createBackup`; при `ok: false` действие не запускается и возвращается `{ ok: false, message }`; при успехе к результату добавляется `backup: string` (имя) и `stash?: string`.
+
+Поведение интерфейса — по спецификации: галочка включена по умолчанию (если настройка `offerBackup` не выключена), выбор ветка/тег запоминается в `backupKind`, баннер показывает имя бэкапа, Undo и «Show backup»; меню бэкапов (`backup/*` среди веток и тегов) — «Restore <ветка> to This Backup…» (`reset --keep` через существующее действие, с подтверждением и своим предложением бэкапа) и «Delete Backup» (подтверждение; ветка — `git branch -D <имя>` только для имён `backup/*`, тег — `git tag -d <имя>` только для имён `backup/*`). Одна операция — одно окно и один бэкап, сколько бы коммитов она ни затрагивала.
+
+- [ ] **Step 1: Падающие тесты** `src/worker/backup.test.ts` (временные репозитории, стиль `branchActions.test.ts`):
+
+```ts
+test('a branch backup points at the old tip and survives the drop', …)
+  // drop 2 коммитов с backup {kind:'branch', name:'backup/main-20261110-1432', target: HEAD} → ветка бэкапа = старая вершина, оба удалённых коммита достижимы из неё
+test('a tag backup works the same way', …)
+test('a taken name refuses the backup and the action does not run', …)
+  // бэкап-ветка с таким именем уже есть → ok:false, история не изменилась
+test('hostile names and targets are refused before git runs', …)
+  // '-x', 'a..b', 'a b', 'a@{1}', target 'HEAD' / 'abc' → ok:false, ни одной новой ссылки
+test('reset --hard with stash keeps the uncommitted changes in the stash', …)
+  // грязное дерево, reset hard c backup {stash:true} → git stash show -p stash@{0} содержит изменения; рабочая копия чистая
+test('deleting an unmerged branch with a backup keeps its commits reachable', …)
+test('restoring to a backup refuses when it would overwrite local changes', …)
+  // reset --keep к бэкапу при конфликтующих локальных изменениях → ok:false, файлы как были
+```
+
+И в `src/ui/backup.test.ts` — `suggestBackupName`: обычная ветка, ветка с `/`, detached HEAD, занятое имя → `-2`, `-3`.
+- [ ] **Step 2: Убедиться, что падают** — `orca plugin test . --json > /tmp/orca-git-log-test.log 2>&1`.
+- [ ] **Step 3: Реализовать** воркер, протокол, подтверждения, меню, настройки, строки `en`/`ru`.
+- [ ] **Step 4: Тесты зелёные**, типы, `orca plugin validate`/`check`; снимок подтверждения на демо-репозитории (`/tmp/git-demo`).
+- [ ] **Step 5: Commit** — `git commit -m "Offer a backup branch or tag before risky operations"` (можно двумя коммитами: воркер, интерфейс).
+
+### Task 16: Безопасность git — тесты на вредные случаи и независимый аудит
+
+Добавлена 2026-11-10 по требованию пользователя: пользователи плагина не должны навредить своим репозиториям через плагин.
+
+**Files:**
+- Create: `src/worker/safety.test.ts` (матрица), `docs/git-safety.md` (таблица операций: команда git с аргументами, откуда берутся входы, как проверяются, что при сбое, тест)
+- Modify: код воркера и интерфейса только для исправления найденных ошибок — каждое исправление отдельным коммитом с регрессионным тестом.
+
+Матрица: для каждой операции плагина — checkout (ветка, хеш, удалённая ветка), новая ветка, новый тег, cherry-pick, revert, reset soft/mixed/keep/hard, undo commit, squash, fixup, drop, reword, interactive rebase, create patch, rename, delete (`-d`/`-D`), merge, rebase onto, fetch, restore to backup, delete backup, Undo после действия — тесты во временных репозиториях на:
+1. результат при нормальном вводе;
+2. отказ до запуска git при неверном или враждебном вводе (имена с `-`, `..`, пробелами, `@{`, неверные хеши, чужие пути);
+3. безопасный сбой: конфликт или ошибка → операция прервана, ветки, HEAD, индекс и файлы как были;
+4. грязное рабочее дерево → локальные изменения не потеряны (или операция отказывается);
+5. запушенные коммиты → интерфейс предупреждает до переписывания (проверка в воркере);
+6. операция в процессе (rebase/merge/cherry-pick, начатые в терминале) → отказ.
+
+- [ ] **Step 1:** составить `docs/git-safety.md` по коду (каждый вызов `git.run`/`git.out` в `src/worker/`).
+- [ ] **Step 2:** написать матрицу тестов; падающие — это найденные ошибки.
+- [ ] **Step 3:** исправить каждую найденную ошибку отдельным коммитом.
+- [ ] **Step 4:** полный прогон, типы, `validate`/`check`.
+- [ ] **Step 5: Commit** — `git commit -m "Test every git operation against harmful cases"` и коммиты исправлений.
+- [ ] **Step 6:** независимый аудит всех вызовов git свежим агентом без общего контекста (самая сильная модель); найденное — исправить, повторный аудит исправлений.

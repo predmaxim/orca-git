@@ -1,0 +1,107 @@
+<style>
+  .dlg{background:#2b2d30;border:1px solid #43454a;border-radius:8px;padding:14px 16px;font:12px/1.5 system-ui,sans-serif;color:#dfe1e5;text-align:left;box-shadow:0 8px 24px rgba(0,0,0,.5);max-width:440px;margin:0 auto}
+  .dlg h4{margin:0 0 6px;font-size:13px;color:#fff}
+  .dlg .muted{color:#8a8d93}
+  .warn{background:rgba(229,165,10,.12);border:1px solid rgba(229,165,10,.4);border-radius:5px;padding:6px 8px;margin:8px 0;color:#e5c07b}
+  .chk{display:flex;gap:8px;align-items:flex-start;margin:10px 0 4px}
+  .box{width:14px;height:14px;border-radius:3px;background:#3574f0;color:#fff;font-size:10px;line-height:14px;text-align:center;flex:none;margin-top:2px}
+  .box.off{background:transparent;border:1px solid #6f737a}
+  .radio{display:flex;gap:14px;margin:4px 0 6px 22px}
+  .rb{display:inline-block;width:11px;height:11px;border-radius:50%;border:1px solid #6f737a;margin-right:5px;vertical-align:-1px}
+  .rb.on{border:4px solid #3574f0;width:5px;height:5px}
+  .field{margin-left:22px;border:1px solid #3574f0;border-radius:4px;padding:3px 7px;font-family:ui-monospace,monospace;font-size:11.5px;color:#fff;background:#1e1f22}
+  .hint{margin:3px 0 0 22px;font-size:11px;color:#8a8d93}
+  .btns{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+  .btn{border:1px solid #4e5157;border-radius:4px;padding:3px 12px;color:#dfe1e5}
+  .btn.pri{background:#3574f0;border-color:#3574f0;color:#fff}
+  .btn.dan{background:#c94f4f;border-color:#c94f4f;color:#fff}
+  .step{font-size:11px;color:#8a8d93;margin:0 0 6px;text-align:center}
+  .arrow{text-align:center;color:#8a8d93;margin:8px 0}
+  .banner{background:#1f3324;border:1px solid #2f5a37;border-radius:6px;padding:7px 10px;font:12px system-ui;color:#cfe8d3;display:flex;gap:12px;align-items:center;max-width:560px;margin:0 auto}
+  .banner b{color:#fff}
+  .banner .lnk{color:#6aa6ff;margin-left:auto}
+  .tree{background:#1e1e1e;border:1px solid #3a3a3a;border-radius:6px;font:11.5px/1.6 system-ui;color:#ccc;padding:6px 0;max-width:320px;margin:0 auto;text-align:left}
+  .tree .r{padding:0 8px;white-space:nowrap}
+  .tree .i1{padding-left:22px}.tree .i2{padding-left:36px}.tree .i3{padding-left:50px}
+  .menu{background:#2b2d30;border:1px solid #43454a;border-radius:6px;font:12px system-ui;color:#dfe1e5;padding:4px 0;width:250px;margin:6px 0 0 120px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+  .menu div{padding:3px 12px}.menu .sel{background:#2e436e}
+  .card-image{padding:14px;background:#151515}
+  h3.grp{margin:1.6rem 0 .3rem}
+  table.ops{border-collapse:collapse;font-size:12.5px;margin-top:.5rem}
+  table.ops td,table.ops th{border:1px solid var(--border,#444);padding:4px 8px;text-align:left;vertical-align:top}
+</style>
+
+<h2>Бэкап перед опасными операциями</h2>
+<p class="subtitle">Два варианта диалога, потом — что видно после операции. Кликни вариант, детали — в терминале.</p>
+
+<h3 class="grp">1. Как спрашивать</h3>
+<div class="cards">
+  <div class="card" data-choice="one-dialog" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="dlg">
+        <h4>Drop 2 commits?</h4>
+        <div class="muted">fix(ABC-102): Retry failed uploads<br>fix(ABC-102): Make retries configurable</div>
+        <div class="warn">⚠ 2 commits are already pushed to origin/fix/ABC-102. Rewriting them changes history others may have.</div>
+        <div class="chk"><span class="box">✓</span><span>Back up <b>fix/ABC-102</b> first</span></div>
+        <div class="radio"><span><span class="rb on"></span>Branch</span><span><span class="rb"></span>Tag</span></div>
+        <div class="field">backup/fix/ABC-102-20261110-1432</div>
+        <div class="hint">Name is editable. Restore from the Branches section.</div>
+        <div class="btns"><span class="btn">Cancel</span><span class="btn dan">Drop</span></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>А. Галочка в том же подтверждении (рекомендую)</h3>
+      <p>Подтверждение опасной операции уже есть в движке — в него добавляется «Сначала сделать бэкап», выбор ветка/тег и готовое имя, которое можно поправить. Один клик, как и сейчас.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="two-step" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="step">шаг 1</div>
+      <div class="dlg">
+        <h4>Drop 2 commits?</h4>
+        <div class="muted">This rewrites the history of fix/ABC-102.</div>
+        <div class="btns"><span class="btn">Cancel</span><span class="btn">Drop without backup</span><span class="btn pri">Back up and drop…</span></div>
+      </div>
+      <div class="arrow">↓</div>
+      <div class="step">шаг 2</div>
+      <div class="dlg">
+        <h4>Back up fix/ABC-102</h4>
+        <div class="radio" style="margin-left:0"><span><span class="rb on"></span>Branch</span><span><span class="rb"></span>Tag</span></div>
+        <div class="field" style="margin-left:0">backup/fix/ABC-102-20261110-1432</div>
+        <div class="btns"><span class="btn">Back</span><span class="btn dan">Back up and drop</span></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Б. Два шага: спросить → окно бэкапа</h3>
+      <p>Как ты описал: сначала «сделать бэкап?», при «да» — отдельное окно с именем. Нагляднее, но на клик больше при каждой операции.</p>
+    </div>
+  </div>
+</div>
+
+<h3 class="grp">2. После операции</h3>
+<div class="cards">
+  <div class="card" data-choice="after" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="banner">✓ Dropped 2 commits. Backup <b>backup/fix/ABC-102-20261110-1432</b><span class="lnk">Undo</span><span class="lnk" style="margin-left:0">Show backup</span></div>
+      <div style="height:12px"></div>
+      <div class="tree">
+        <div class="r">▾ Local</div>
+        <div class="r i1">▾ backup</div>
+        <div class="r i2">▾ fix</div>
+        <div class="r i3" style="background:#2e436e;color:#fff">ABC-102-20261110-1432</div>
+        <div class="r i1">▸ feature</div>
+        <div class="r i1">★ main</div>
+      </div>
+      <div class="menu">
+        <div class="sel">Restore fix/ABC-102 to This Backup…</div>
+        <div>Check Out</div>
+        <div>Delete Backup</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Баннер и восстановление</h3>
+      <p>В баннере — имя бэкапа, Undo и «показать». Бэкап-ветки лежат в папке <code>backup/</code> дерева веток; в меню — «Вернуть ветку к этому бэкапу» (с подтверждением и своим бэкапом-отменой).</p>
+    </div>
+  </div>
+</div>
