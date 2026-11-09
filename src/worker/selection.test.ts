@@ -87,6 +87,19 @@ test('a rename followed by a delete reports the original file as deleted', async
   assert.deepEqual(files, [{ path: 'a.txt', status: 'D', from: h[0], to: h[2] }])
 })
 
+test('a long contiguous selection lists each file over the commits that touch it', async () => {
+  const steps = Array.from({ length: 30 }, (_, i) => (root: string) => {
+    writeFileSync(join(root, `f${i}.txt`), `${i}\n`)
+    if (i % 10 === 0) writeFileSync(join(root, 'shared.txt'), `${i}\n`)
+  })
+  const { root, hashes: h } = repoWith(steps)
+  const files = await readSelectionFiles(createGit(root), h.slice(1).reverse())
+  assert.deepEqual(files, [
+    ...h.slice(1).map((to, i) => ({ path: `f${i + 1}.txt`, status: 'A', from: h[i], to })),
+    { path: 'shared.txt', status: 'M', from: h[9], to: h[20] }
+  ].sort((a, b) => a.path.localeCompare(b.path)))
+})
+
 test('a path renamed away and added again is listed once', async () => {
   const { root, hashes: h } = repoWith([
     write('a.txt', 'one\ntwo\nthree\nfour\n'),
