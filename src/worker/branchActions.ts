@@ -28,10 +28,10 @@ async function perform(git: Git, action: BranchAction): Promise<BranchActionResu
       const name = await assertName(git, action.name, 'branch')
       if (!(await git.run(['show-ref', '--verify', '--quiet', `refs/heads/${name}`])).ok) throw new Error(t('noLocalBranch', { name }))
       if ((await readHead(git)).branch === name) throw new Error(t('cannotDeleteCurrent'))
-      const result = await git.run(['branch', action.force ? '-D' : '-d', name])
+      const result = await git.run(['branch', action.force === true ? '-D' : '-d', name])
       if (result.ok) return { ok: true, message: t('branchDeleted', { name }) }
       const reason = lastLines(result.stderr || result.stdout, 4)
-      if (!action.force && /not fully merged/.test(reason)) return { ok: false, needsForce: true, message: t('notFullyMerged', { name }) }
+      if (action.force !== true && /not fully merged/.test(reason)) return { ok: false, needsForce: true, message: t('notFullyMerged', { name }) }
       throw new Error(reason || t('couldNotDelete', { name }))
     }
     case 'merge':
