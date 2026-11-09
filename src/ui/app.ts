@@ -1015,7 +1015,7 @@ async function act(action: ActionRequest | BranchAction, progress: string): Prom
     const undo = previous && UNDOABLE.has(action.kind)
       ? [{ label: t('undo'), run: () => void act({ kind: 'reset', hash: previous, mode: 'keep' }, t('progUndoing')).then((r) => r?.ok && showBanner(t('restoredHead', { hash: shortHash(previous) }), 'success')) }]
       : []
-    showBanner(result.message, 'success', undo)
+    showBanner(result.message, result.warning ? 'info' : 'success', undo, result.warning)
   } else if (!result.needsForce) showBanner(result.message, 'error')
   await refreshAll()
   return result

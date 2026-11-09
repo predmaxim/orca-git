@@ -174,6 +174,8 @@ export type BranchAction =
 export interface BranchActionResult extends ActionResult {
   /** The branch is not fully merged; deleting it needs force. */
   needsForce?: boolean
+  /** It ran, but left something for the user to sort out (the message says what); no undo. */
+  warning?: boolean
 }
 
 export type PatchResult =

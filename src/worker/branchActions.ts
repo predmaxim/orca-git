@@ -56,7 +56,10 @@ async function integrate(git: Git, kind: 'merge' | 'rebase', target: string): Pr
     const reason = lastLines(result.stderr || result.stdout, 4)
     throw new Error(`${t(kind === 'merge' ? 'mergeFailed' : 'rebaseFailed')}${reason ? `\n${reason}` : ''}`)
   }
-  return { ok: true, message: t(kind === 'merge' ? 'merged' : 'rebased', { name }), ...(previousHead ? { previousHead } : {}) }
+  const message = t(kind === 'merge' ? 'merged' : 'rebased', { name })
+  // git exits 0 when the autostash does not apply cleanly: the changes stay in the stash and the tree has conflicts.
+  if ((await git.run(['diff', '--name-only', '--diff-filter=U', '--'])).stdout.trim()) return { ok: true, warning: true, message: `${message} ${t('autostashConflict')}` }
+  return { ok: true, message, ...(previousHead ? { previousHead } : {}) }
 }
 
 /** `git fetch --all` without pruning; never throws. */

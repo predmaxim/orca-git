@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
@@ -114,6 +114,59 @@ test('rebase onto replays the current branch on the target', async () => {
   const result = await runBranchAction(createGit(root), { kind: 'rebaseOnto', name: 'main' })
   assert.equal(result.ok, true)
   assert.deepEqual(sh(root, 'log', '--format=%s').split('\n'), ['topic work', 'main work', 'c1'])
+})
+
+/** c1 has a.txt and b.txt; topic edits a.txt, main edits b.txt; HEAD is on main. */
+function forked(): string {
+  const root = newRepo()
+  writeFileSync(join(root, 'b.txt'), '1\n')
+  commit(root, 'a.txt', '1\n', 'c1')
+  sh(root, 'checkout', '-q', '-b', 'topic')
+  commit(root, 'a.txt', 'topic\n', 'topic edit')
+  sh(root, 'checkout', '-q', 'main')
+  commit(root, 'b.txt', 'main\n', 'main edit')
+  return root
+}
+
+test('merge and rebase onto keep uncommitted changes the target does not touch', async () => {
+  const merged = forked()
+  writeFileSync(join(merged, 'b.txt'), 'local\n')
+  const merge = await runBranchAction(createGit(merged), { kind: 'merge', name: 'topic' })
+  assert.equal(merge.ok, true)
+  assert.ok(merge.previousHead)
+  assert.equal(readFileSync(join(merged, 'b.txt'), 'utf8'), 'local\n')
+  assert.equal(sh(merged, 'stash', 'list'), '')
+
+  const rebased = forked()
+  sh(rebased, 'checkout', '-q', 'topic')
+  writeFileSync(join(rebased, 'a.txt'), 'local\n')
+  const rebase = await runBranchAction(createGit(rebased), { kind: 'rebaseOnto', name: 'main' })
+  assert.equal(rebase.ok, true)
+  assert.ok(rebase.previousHead)
+  assert.equal(readFileSync(join(rebased, 'a.txt'), 'utf8'), 'local\n')
+  assert.equal(sh(rebased, 'stash', 'list'), '')
+})
+
+test('merge and rebase onto warn, without undo, when the uncommitted changes cannot be re-applied', async () => {
+  const merged = forked()
+  writeFileSync(join(merged, 'a.txt'), 'local\n')
+  const merge = await runBranchAction(createGit(merged), { kind: 'merge', name: 'topic' })
+  assert.equal(merge.ok, true)
+  assert.equal(merge.warning, true)
+  assert.equal(merge.previousHead, undefined)
+  assert.ok(merge.message.startsWith('Merged topic into the current branch.'), merge.message)
+  assert.ok(merge.message.includes('git stash list'), merge.message)
+  assert.match(sh(merged, 'stash', 'list'), /autostash/)
+
+  const rebased = forked()
+  sh(rebased, 'checkout', '-q', 'topic')
+  writeFileSync(join(rebased, 'b.txt'), 'local\n')
+  const rebase = await runBranchAction(createGit(rebased), { kind: 'rebaseOnto', name: 'main' })
+  assert.equal(rebase.ok, true)
+  assert.equal(rebase.warning, true)
+  assert.equal(rebase.previousHead, undefined)
+  assert.ok(rebase.message.startsWith('Rebased the current branch onto main.'), rebase.message)
+  assert.match(sh(rebased, 'stash', 'list'), /autostash/)
 })
 
 test('merge is refused while a rebase is in progress', async () => {
