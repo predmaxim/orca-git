@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { tmpdir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { assert, mockHost, mountWorker, test } from 'orca/testing'
 import * as main from './main.ts'
@@ -216,6 +216,48 @@ test('an anchor name taken by anything but the plugin\'s own anchor opens nothin
     await worker.deactivate()
   } finally {
     for (const dir of [root, outside]) rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
+})
+
+test('a FIFO under the anchor name is refused without blocking', async () => {
+  const root = fixture()
+  try {
+    const anchor = join(root, ANCHOR)
+    try {
+      execFileSync('mkfifo', [anchor])
+    } catch {
+      return // no mkfifo on this platform
+    }
+    const h = host(root)
+    const worker = await mountWorker(main, { host: h })
+    const result = await worker.request('diff.open', diffState(root))
+    assert.deepEqual(result, { ok: false, reason: `${anchor} already exists and is not the plugin's file. Nothing was opened.` })
+    assert.ok(lstatSync(anchor).isFIFO())
+    assert.ok(!readFileSync(join(root, '.git', 'info', 'exclude'), 'utf8').includes(ANCHOR))
+    assert.deepEqual(h.callsOf('editor.open'), [])
+    await worker.deactivate()
+  } finally {
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
+})
+
+test('a workspace the anchor cannot be created in says why and opens nothing', async () => {
+  if (userInfo().uid === 0) return // root writes into a read-only folder anyway
+  const root = fixture()
+  try {
+    const h = host(root)
+    const worker = await mountWorker(main, { host: h })
+    chmodSync(root, 0o555)
+    const result = await worker.request('diff.open', diffState(root))
+    chmodSync(root, 0o755)
+    assert.deepEqual(result, { ok: false, reason: `Could not create ${join(root, ANCHOR)}: EACCES. Nothing was opened.` })
+    assert.ok(!existsSync(join(root, ANCHOR)))
+    assert.ok(!readFileSync(join(root, '.git', 'info', 'exclude'), 'utf8').includes(ANCHOR))
+    assert.deepEqual(h.callsOf('editor.open'), [])
+    await worker.deactivate()
+  } finally {
+    chmodSync(root, 0o755)
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   }
 })
 

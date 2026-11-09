@@ -1,4 +1,4 @@
-import { appendFileSync, constants, existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, closeSync, constants, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import type { OrcaWorkerApi } from 'orca/worker'
 import { pickLocale, setLocale, t } from '../shared/i18n.ts'
@@ -52,26 +52,58 @@ async function exclude(git: Git, root: string, pattern: string): Promise<void> {
   appendFileSync(file, `${current && !current.endsWith('\n') ? '\n' : ''}${pattern}\n`)
 }
 
-/**
- * Creates the Diff tab's anchor, or accepts the one this plugin already wrote for `root` as it is.
- * False when anything else has that name: a file of the user, a link, a directory. It is left alone.
- */
-function claimAnchor(anchor: string, root: string, text: string): boolean {
+const { O_RDONLY, O_NOFOLLOW = 0, O_NONBLOCK = 0 } = constants
+
+/** Whether `anchor` is the file this plugin wrote for `root`. Never follows a link or waits on a FIFO. */
+function isOurAnchor(anchor: string, root: string): boolean {
+  let fd: number
   try {
-    // wx never follows a symlink, even a dangling one, and never replaces a file.
-    writeFileSync(anchor, text, { flag: 'wx' })
-    return true
-  } catch (error: any) {
-    if (error?.code !== 'EEXIST') throw error
-  }
-  const stat = lstatSync(anchor, { throwIfNoEntry: false })
-  if (!stat?.isFile() || stat.size > 4096) return false
-  try {
-    const flag = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)
-    return JSON.parse(readFileSync(anchor, { encoding: 'utf8', flag }))?.root === root
+    fd = openSync(anchor, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
   } catch {
     return false
   }
+  try {
+    const stat = fstatSync(fd)
+    if (!stat.isFile() || stat.size > 4096) return false
+    const bytes = new Uint8Array(stat.size)
+    const read = readSync(fd, bytes, 0, bytes.length, 0)
+    return JSON.parse(new TextDecoder().decode(bytes.subarray(0, read)))?.root === root
+  } catch {
+    return false
+  } finally {
+    closeSync(fd)
+  }
+}
+
+/**
+ * Creates the Diff tab's anchor, or accepts the one this plugin already wrote for `root` as it is.
+ * Otherwise returns why not; anything else under that name is left alone.
+ */
+function claimAnchor(anchor: string, root: string, text: string): string | null {
+  let fd: number
+  try {
+    // wx never follows a symlink, even a dangling one, and never replaces a file.
+    fd = openSync(anchor, 'wx')
+  } catch (error: any) {
+    if (error?.code === 'EEXIST') return isOurAnchor(anchor, root) ? null : t('diffAnchorTaken', { path: anchor })
+    return t('diffAnchorFailed', { path: anchor, code: error?.code ?? String(error) })
+  }
+  let failure: any = null
+  try {
+    writeFileSync(fd, text)
+  } catch (error) {
+    failure = error
+  } finally {
+    closeSync(fd)
+  }
+  if (!failure) return null
+  // Only the file this call created: a half-written one would be refused as not ours on every later click.
+  try {
+    unlinkSync(anchor)
+  } catch {
+    // Already gone.
+  }
+  return t('diffAnchorFailed', { path: anchor, code: failure?.code ?? String(failure) })
 }
 
 async function openDiff(input: any): Promise<{ ok: boolean; reason?: string }> {
@@ -81,9 +113,8 @@ async function openDiff(input: any): Promise<{ ok: boolean; reason?: string }> {
   const workspace = await workspaceFor(orcaApi, root, await gitPath())
   if (!workspace) return { ok: false, reason: t('diffNoWorkspace') }
   const anchor = join(workspace.path, DIFF_ANCHOR)
-  if (!claimAnchor(anchor, root, `${JSON.stringify({ root, workspaceId: workspace.id }, null, 2)}\n`)) {
-    return { ok: false, reason: t('diffAnchorTaken', { path: anchor }) }
-  }
+  const refused = claimAnchor(anchor, root, `${JSON.stringify({ root, workspaceId: workspace.id }, null, 2)}\n`)
+  if (refused) return { ok: false, reason: refused }
   await exclude(git, root, DIFF_ANCHOR)
   diffStates.set(root, { root, files: input.files, index: input.index })
   await orcaApi.host.call('editor.open', { workspaceId: workspace.id, path: DIFF_ANCHOR })
