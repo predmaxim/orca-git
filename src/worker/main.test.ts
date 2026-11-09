@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assert, mockHost, mountWorker, test } from 'orca/testing'
@@ -180,24 +180,61 @@ test('a repository that no workspace holds opens no Diff tab', async () => {
   }
 })
 
-test('an anchor name taken by a symlink is not written through', async () => {
+test('an anchor name taken by anything but the plugin\'s own anchor opens nothing and stays as it was', async () => {
   const root = fixture()
   const outside = realpathSync.native(mkdtempSync(join(tmpdir(), 'git-log-outside-')))
   try {
+    const anchor = join(root, ANCHOR)
     const target = join(outside, 'notes.txt')
     writeFileSync(target, 'keep')
-    symlinkSync(target, join(root, ANCHOR))
+    const exclude = join(root, '.git', 'info', 'exclude')
+    const before = readFileSync(exclude, 'utf8')
     const h = host(root)
     const worker = await mountWorker(main, { host: h })
-    const result = await worker.request('diff.open', diffState(root))
-    assert.deepEqual(result, { ok: false, reason: `${join(root, ANCHOR)} is a symbolic link; the plugin does not write through it. Nothing was opened.` })
+    const taken: [string, () => void][] = [
+      ['a file of the user', () => writeFileSync(anchor, 'my notes\n')],
+      ['an anchor of another repository', () => writeFileSync(anchor, JSON.stringify({ root: outside }))],
+      ['a hard link', () => linkSync(target, anchor)],
+      ['a symlink', () => symlinkSync(target, anchor)],
+      ['a dangling symlink', () => symlinkSync(join(outside, 'missing'), anchor)],
+      ['a directory', () => mkdirSync(anchor)]
+    ]
+    for (const [name, make] of taken) {
+      make()
+      const content = lstatSync(anchor).isFile() ? readFileSync(anchor, 'utf8') : null
+      const result = await worker.request('diff.open', diffState(root))
+      assert.deepEqual(result, { ok: false, reason: `${anchor} already exists and is not the plugin's file. Nothing was opened.` }, name)
+      if (content !== null) assert.equal(readFileSync(anchor, 'utf8'), content, name)
+      rmSync(anchor, { recursive: true, force: true })
+    }
     assert.equal(readFileSync(target, 'utf8'), 'keep')
+    assert.equal(readFileSync(exclude, 'utf8'), before)
     assert.deepEqual(h.callsOf('editor.open'), [])
     assert.deepEqual(worker.posts, [])
-    assert.ok(!readFileSync(join(root, '.git', 'info', 'exclude'), 'utf8').includes(ANCHOR))
+    assert.equal(await worker.request('diff.state', { root }), null)
     await worker.deactivate()
   } finally {
     for (const dir of [root, outside]) rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
+})
+
+test('the plugin\'s own anchor is not rewritten on the next file', async () => {
+  const root = fixture()
+  try {
+    const h = host(root)
+    const worker = await mountWorker(main, { host: h })
+    assert.deepEqual(await worker.request('diff.open', diffState(root)), { ok: true })
+    const anchor = join(root, ANCHOR)
+    const content = readFileSync(anchor, 'utf8')
+    utimesSync(anchor, 1_000_000, 1_000_000)
+    assert.deepEqual(await worker.request('diff.open', { ...diffState(root), index: 0 }), { ok: true })
+    assert.equal(statSync(anchor).mtimeMs, 1_000_000_000)
+    assert.equal(readFileSync(anchor, 'utf8'), content)
+    assert.equal(h.callsOf('editor.open').length, 2)
+    assert.equal((await worker.request('diff.state', { root }))?.index, 0)
+    await worker.deactivate()
+  } finally {
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   }
 })
 

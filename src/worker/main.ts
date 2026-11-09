@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, constants, existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import type { OrcaWorkerApi } from 'orca/worker'
 import { pickLocale, setLocale, t } from '../shared/i18n.ts'
@@ -52,6 +52,28 @@ async function exclude(git: Git, root: string, pattern: string): Promise<void> {
   appendFileSync(file, `${current && !current.endsWith('\n') ? '\n' : ''}${pattern}\n`)
 }
 
+/**
+ * Creates the Diff tab's anchor, or accepts the one this plugin already wrote for `root` as it is.
+ * False when anything else has that name: a file of the user, a link, a directory. It is left alone.
+ */
+function claimAnchor(anchor: string, root: string, text: string): boolean {
+  try {
+    // wx never follows a symlink, even a dangling one, and never replaces a file.
+    writeFileSync(anchor, text, { flag: 'wx' })
+    return true
+  } catch (error: any) {
+    if (error?.code !== 'EEXIST') throw error
+  }
+  const stat = lstatSync(anchor, { throwIfNoEntry: false })
+  if (!stat?.isFile() || stat.size > 4096) return false
+  try {
+    const flag = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)
+    return JSON.parse(readFileSync(anchor, { encoding: 'utf8', flag }))?.root === root
+  } catch {
+    return false
+  }
+}
+
 async function openDiff(input: any): Promise<{ ok: boolean; reason?: string }> {
   if (!validDiffState(input)) return { ok: false, reason: t('diffInvalid') }
   const git = await gitFor(input.root)
@@ -59,10 +81,10 @@ async function openDiff(input: any): Promise<{ ok: boolean; reason?: string }> {
   const workspace = await workspaceFor(orcaApi, root, await gitPath())
   if (!workspace) return { ok: false, reason: t('diffNoWorkspace') }
   const anchor = join(workspace.path, DIFF_ANCHOR)
-  // Every file click writes the anchor: a symlink under its name (a cloned repository can carry one) would redirect the write.
-  if (lstatSync(anchor, { throwIfNoEntry: false })?.isSymbolicLink()) return { ok: false, reason: t('diffAnchorLink', { path: anchor }) }
+  if (!claimAnchor(anchor, root, `${JSON.stringify({ root, workspaceId: workspace.id }, null, 2)}\n`)) {
+    return { ok: false, reason: t('diffAnchorTaken', { path: anchor }) }
+  }
   await exclude(git, root, DIFF_ANCHOR)
-  writeFileSync(anchor, `${JSON.stringify({ root, workspaceId: workspace.id }, null, 2)}\n`)
   diffStates.set(root, { root, files: input.files, index: input.index })
   await orcaApi.host.call('editor.open', { workspaceId: workspace.id, path: DIFF_ANCHOR })
   // An open tab reads the new state on this event; a new one reads it when it starts.
