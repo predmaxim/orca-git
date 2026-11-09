@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import type { OrcaWorkerApi } from 'orca/worker'
+import { pickLocale, setLocale } from '../shared/i18n.ts'
 import type { RepoResult } from '../shared/protocol.ts'
 import { checkRewrite, runAction } from './actions.ts'
 import { fetchAll, runBranchAction } from './branchActions.ts'
@@ -65,16 +66,23 @@ async function openTab(prefer?: string): Promise<{ ok: boolean; reason?: string 
 export default function activate(orca: OrcaWorkerApi): void {
   orcaApi = orca
 
-  orca.panels.handle('repo.resolve', async (input): Promise<RepoResult> => {
+  // Each request names the caller's language; set it before the handler runs.
+  const handle = (name: string, handler: (input: any) => unknown) =>
+    orca.panels.handle(name, (input: any) => {
+      setLocale(pickLocale(input?.locale))
+      return handler(input)
+    })
+
+  handle('repo.resolve', async (input): Promise<RepoResult> => {
     const result = await resolveRepo(orca, await gitPath(), input?.root, input?.workspaceId)
     if (!result.ok) return result
     if (result.git) repos.set(result.repo.root, result.git)
     return { ok: true, repo: result.repo }
   })
 
-  orca.panels.handle('repo.refs', async ({ root }) => readRefs(await gitFor(root)))
+  handle('repo.refs', async ({ root }) => readRefs(await gitFor(root)))
 
-  orca.panels.handle('repo.watch', async ({ root }) => {
+  handle('repo.watch', async ({ root }) => {
     const git = await gitFor(root)
     if (!watchers.has(root)) {
       watchers.set(
@@ -85,49 +93,49 @@ export default function activate(orca: OrcaWorkerApi): void {
     return { ok: (await watchers.get(root)) !== null }
   })
 
-  orca.panels.handle('log.page', async ({ root, filter, skip, limit }) => {
+  handle('log.page', async ({ root, filter, skip, limit }) => {
     const pageSize = Number(limit ?? (await setting('pageSize', 300)))
     const size = Math.min(2000, Math.max(1, Number.isFinite(pageSize) ? Math.floor(pageSize) : 300))
     return readLogPage(await gitFor(root), filter ?? {}, Math.max(0, Math.floor(Number(skip) || 0)), size)
   })
 
-  orca.panels.handle('commit.details', async ({ root, hash }) => readDetails(await gitFor(root), hash))
+  handle('commit.details', async ({ root, hash }) => readDetails(await gitFor(root), hash))
 
-  orca.panels.handle('file.diff', async ({ root, hash, path, oldPath, wholeFile }) =>
+  handle('file.diff', async ({ root, hash, path, oldPath, wholeFile }) =>
     readFileDiff(await gitFor(root), hash, path, oldPath, Boolean(wholeFile))
   )
 
-  orca.panels.handle('selection.files', async ({ root, hashes }) => readSelectionFiles(await gitFor(root), hashes))
+  handle('selection.files', async ({ root, hashes }) => readSelectionFiles(await gitFor(root), hashes))
 
-  orca.panels.handle('range.diff', async ({ root, from, to, path, oldPath, wholeFile }) =>
+  handle('range.diff', async ({ root, from, to, path, oldPath, wholeFile }) =>
     readRangeDiff(await gitFor(root), from, to, path, oldPath, Boolean(wholeFile))
   )
 
-  orca.panels.handle('patch.create', async ({ root, hashes, path, overwrite }) =>
+  handle('patch.create', async ({ root, hashes, path, overwrite }) =>
     createPatch(await gitFor(root), root, hashes, path, Boolean(overwrite))
   )
 
-  orca.panels.handle('action.check', async ({ root, kind, hashes }) => checkRewrite(await gitFor(root), kind, hashes))
+  handle('action.check', async ({ root, kind, hashes }) => checkRewrite(await gitFor(root), kind, hashes))
 
-  orca.panels.handle('action.run', async ({ root, action }) => {
+  handle('action.run', async ({ root, action }) => {
     const result = await runAction(await gitFor(root), action)
     orca.panels.post('repo.changed', { root })
     return result
   })
 
-  orca.panels.handle('branch.run', async ({ root, action }) => {
+  handle('branch.run', async ({ root, action }) => {
     const result = await runBranchAction(await gitFor(root), action)
     orca.panels.post('repo.changed', { root })
     return result
   })
 
-  orca.panels.handle('repo.fetch', async ({ root }) => {
+  handle('repo.fetch', async ({ root }) => {
     const result = await fetchAll(await gitFor(root))
     if (result.ok) orca.panels.post('repo.changed', { root })
     return result
   })
 
-  orca.panels.handle('tab.open', (input) => openTab(input?.workspaceId))
+  handle('tab.open', (input) => openTab(input?.workspaceId))
 
   orca.commands.register('open-tab', async () => {
     const result = await openTab()

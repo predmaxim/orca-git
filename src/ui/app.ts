@@ -9,6 +9,9 @@ import { createFilterBar } from './filters.ts'
 import { reachableFrom, refLabels, relativeDate, fullDate, shortHash } from './format.ts'
 import { computeGraph, graphSvg, ROW_HEIGHT, type GraphRow } from './graph.ts'
 import { showMenu, type MenuEntry } from './menu.ts'
+import { pickLocale, setLocale } from '../shared/i18n.ts'
+
+setLocale(pickLocale(orca.locale))
 
 const MODE = document.body.dataset.mode === 'editor' ? 'editor' : 'panel'
 const PREFS_KEY = `git-log.prefs.${MODE}`

@@ -24,6 +24,7 @@ interface FrameOrca {
     on(event: string, handler: (payload: any) => void): Disposable
   }
   on(event: string, handler: (payload: any) => void): Disposable
+  locale: string
   host: { has(method: string): boolean; call(method: string, params?: unknown): Promise<any> }
   document?: { get(): Promise<{ content: { kind: string; text?: string } }> }
 }
@@ -32,23 +33,27 @@ export const orca = (globalThis as unknown as { orca: FrameOrca }).orca
 
 const LONG = { timeoutMs: 120_000 }
 
+// Every request carries the frame language so the worker answers in it.
+const call = (name: string, input: object, options?: { timeoutMs?: number }): Promise<any> =>
+  orca.plugin.request(name, { ...input, locale: orca.locale }, options)
+
 export const api = {
   resolve: (root?: string, workspaceId?: string): Promise<RepoResult> =>
-    orca.plugin.request('repo.resolve', root ? { root } : workspaceId ? { workspaceId } : {}),
-  refs: (root: string): Promise<RefsResult> => orca.plugin.request('repo.refs', { root }),
-  watch: (root: string): Promise<{ ok: boolean }> => orca.plugin.request('repo.watch', { root }),
+    call('repo.resolve', root ? { root } : workspaceId ? { workspaceId } : {}),
+  refs: (root: string): Promise<RefsResult> => call('repo.refs', { root }),
+  watch: (root: string): Promise<{ ok: boolean }> => call('repo.watch', { root }),
   page: (root: string, filter: LogFilter, skip: number, limit?: number): Promise<LogPage> =>
-    orca.plugin.request('log.page', { root, filter, skip, ...(limit ? { limit } : {}) }, LONG),
-  details: (root: string, hash: string): Promise<CommitDetails> => orca.plugin.request('commit.details', { root, hash }),
+    call('log.page', { root, filter, skip, ...(limit ? { limit } : {}) }, LONG),
+  details: (root: string, hash: string): Promise<CommitDetails> => call('commit.details', { root, hash }),
   diff: (root: string, hash: string, file: FileChange, wholeFile: boolean): Promise<FileDiff> =>
-    orca.plugin.request('file.diff', { root, hash, path: file.path, ...(file.oldPath ? { oldPath: file.oldPath } : {}), wholeFile }, LONG),
+    call('file.diff', { root, hash, path: file.path, ...(file.oldPath ? { oldPath: file.oldPath } : {}), wholeFile }, LONG),
   patch: (root: string, hashes: string[], path?: string, overwrite = false): Promise<PatchResult> =>
-    orca.plugin.request('patch.create', { root, hashes, ...(path ? { path, overwrite } : {}) }, LONG),
+    call('patch.create', { root, hashes, ...(path ? { path, overwrite } : {}) }, LONG),
   check: (root: string, kind: RewriteKind, hashes: string[]): Promise<CheckResult> =>
-    orca.plugin.request('action.check', { root, kind, hashes }, LONG),
-  run: (root: string, action: ActionRequest): Promise<ActionResult> => orca.plugin.request('action.run', { root, action }, LONG),
+    call('action.check', { root, kind, hashes }, LONG),
+  run: (root: string, action: ActionRequest): Promise<ActionResult> => call('action.run', { root, action }, LONG),
   openTab: (workspaceId?: string | null): Promise<{ ok: boolean; reason?: string }> =>
-    orca.plugin.request('tab.open', workspaceId ? { workspaceId } : {})
+    call('tab.open', workspaceId ? { workspaceId } : {})
 }
 
 export function errorMessage(error: unknown): string {
