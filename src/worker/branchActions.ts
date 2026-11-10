@@ -4,6 +4,7 @@ import { lastLines, type Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
 import { readHead } from './log.ts'
 import { autostashConflict, noteUnstaged, operationInProgress, operationRefusal, pushedTo } from './rebase.ts'
+import { noteWarnings } from './warnings.ts'
 
 const NETWORK_TIMEOUT_MS = 120_000
 const HASH = /^[0-9a-f]{40}$/
@@ -15,7 +16,8 @@ async function stillAt(git: Git, ref: string, tip: unknown): Promise<boolean> {
 }
 
 /** Runs a branch action; never throws, a failure is `{ ok: false, message }`. */
-export async function runBranchAction(git: Git, action: BranchAction): Promise<BranchActionResult> {
+export async function runBranchAction(plain: Git, action: BranchAction): Promise<BranchActionResult> {
+  const { git, withWarnings } = noteWarnings(plain)
   const attempt = async (): Promise<BranchActionResult> => {
     try {
       return await perform(git, action)
@@ -23,7 +25,7 @@ export async function runBranchAction(git: Git, action: BranchAction): Promise<B
       return { ok: false, message: error instanceof Error ? error.message : String(error) }
     }
   }
-  return action?.kind === 'merge' || action?.kind === 'rebaseOnto' ? noteUnstaged(git, attempt) : attempt()
+  return withWarnings(await (action?.kind === 'merge' || action?.kind === 'rebaseOnto' ? noteUnstaged(git, attempt) : attempt()))
 }
 
 async function perform(git: Git, action: BranchAction): Promise<BranchActionResult> {
@@ -132,12 +134,13 @@ async function returnAutostash(git: Git): Promise<string | null> {
 }
 
 /** `git fetch --all` without pruning; never throws. */
-export async function fetchAll(git: Git): Promise<ActionResult> {
+export async function fetchAll(plain: Git): Promise<ActionResult> {
+  const { git, withWarnings } = noteWarnings(plain)
   const remotes = await git.run(['remote'])
   if (!remotes.ok || !remotes.stdout.trim()) return { ok: false, message: t('noRemotes') }
   // fetch.prune, remote.<name>.prune and fetch.pruneTags would delete remote branches and local tags, backups included.
   const result = await git.run(['fetch', '--all', '--no-prune', '--no-prune-tags'], { timeoutMs: NETWORK_TIMEOUT_MS })
-  if (result.ok) return { ok: true, message: t('fetched') }
+  if (result.ok) return withWarnings({ ok: true, message: t('fetched') })
   const reason = lastLines(result.stderr, 4)
   return { ok: false, message: `${t('fetchFailed')}${reason ? `\n${reason}` : ''}` }
 }

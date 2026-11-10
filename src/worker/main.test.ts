@@ -81,6 +81,9 @@ test('action.run and branch.run check the HEAD the dialog showed and make the ba
     assert.equal(stale.ok, false)
     const stuck = await worker.request('branch.run', { root, action: { kind: 'rebaseOnto', name: 'refs/heads/main', tip: head }, expectHead: parent })
     assert.equal(stuck.ok, false)
+    // A checkout moves HEAD: it too needs the HEAD the menu showed.
+    const unbound = await worker.request('action.run', { root, action: { kind: 'checkout', target: parent, detach: true } })
+    assert.equal(unbound.ok, false)
     // A stash goes only with a hard reset.
     const stashed = await worker.request('action.run', { root, action: { kind: 'drop', hashes: [head] }, expectHead: head, backup: { kind: 'branch', name, target: head, stash: true } })
     assert.equal(stashed.ok, false)

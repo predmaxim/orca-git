@@ -140,9 +140,10 @@ export type ActionRequest =
   /**
    * `target`: a local branch, or with `detach: true` a full commit hash (a branch can be named like one).
    * `track`: a remote branch (full ref) to make `target` from, as a new local branch tracking it.
+   * `leave`: move HEAD even though commits only a detached HEAD holds are left behind (asked first; see `leaves`).
    */
-  | { kind: 'checkout'; target: string; track?: string; detach?: boolean }
-  | { kind: 'branch'; hash: string; name: string; checkout: boolean }
+  | { kind: 'checkout'; target: string; track?: string; detach?: boolean; leave?: boolean }
+  | { kind: 'branch'; hash: string; name: string; checkout: boolean; leave?: boolean }
   | { kind: 'tag'; hash: string; name: string }
   | { kind: 'cherryPick'; hashes: string[] }
   | { kind: 'revert'; hashes: string[] }
@@ -177,6 +178,10 @@ export interface ActionResult {
   head?: string
   /** It ran, but left something for the user to sort out (the message says what); no undo. */
   warning?: boolean
+  /** Nothing ran: moving HEAD would leave these commits (the first 20; `message` gives how many) on no branch. */
+  leaves?: string[]
+  /** The `warning:` messages git printed while the action ran and succeeded. */
+  gitWarnings?: string[]
 }
 
 /** A branch or tag the worker creates at `target` (40 hex) before a risky action; never overwrites a ref. */

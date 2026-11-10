@@ -2,6 +2,7 @@ import type { ActionRequest, ActionResult, CheckResult, RewriteKind } from '../s
 import { lastLines, type Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
 import { readHead } from './log.ts'
+import { noteWarnings } from './warnings.ts'
 import {
   autostashConflict,
   noteUnstaged,
@@ -124,8 +125,31 @@ async function rewrite(git: Git, action: Extract<ActionRequest, { kind: 'squash'
   }
 }
 
-export async function runAction(git: Git, action: ActionRequest): Promise<ActionResult> {
-  return REWRITES.has(action?.kind) ? noteUnstaged(git, () => attempt(git, action)) : attempt(git, action)
+export async function runAction(plain: Git, action: ActionRequest): Promise<ActionResult> {
+  const { git, withWarnings } = noteWarnings(plain)
+  return withWarnings(await (REWRITES.has(action?.kind) ? noteUnstaged(git, () => attempt(git, action)) : attempt(git, action)))
+}
+
+/** Moving HEAD would leave `commits` (their number, and the first few) on no branch; nothing ran. */
+class LeavesCommits extends Error {
+  commits: string[]
+  constructor(commits: string[]) {
+    super(t('leavesCommits', { count: commits.length }))
+    this.commits = commits.slice(0, 20)
+  }
+}
+
+/**
+ * Refuses to move HEAD away from commits only a detached HEAD holds, unless the request says `leave: true` (the
+ * panel asks first and offers a backup): git only warns, and they are then kept by nothing but the HEAD reflog.
+ */
+async function guardLeaving(git: Git, leave: unknown): Promise<void> {
+  if (leave === true) return
+  const head = await readHead(git)
+  if (head.branch || !head.hash) return
+  // Read-only. Only branches, tags and remote branches keep a commit here (not the stash); `--`: a file may be named HEAD.
+  const commits = (await git.out(['rev-list', 'HEAD', '--not', '--branches', '--tags', '--remotes', '--'])).split('\n').filter(Boolean)
+  if (commits.length) throw new LeavesCommits(commits)
 }
 
 async function attempt(git: Git, action: ActionRequest): Promise<ActionResult> {
@@ -136,6 +160,7 @@ async function attempt(git: Git, action: ActionRequest): Promise<ActionResult> {
     if (REWRITES.has(action.kind) && (await autostashConflict(git))) return { ok: true, warning: true, message: `${message} ${t('autostashConflict')}` }
     return { ok: true, message, ...(previousHead ? { previousHead } : {}) }
   } catch (error) {
+    if (error instanceof LeavesCommits) return { ok: false, message: error.message, leaves: error.commits }
     return { ok: false, message: error instanceof Error ? error.message : String(error) }
   }
 }
@@ -148,6 +173,7 @@ async function perform(git: Git, action: ActionRequest): Promise<string> {
   }
   switch (action.kind) {
     case 'checkout': {
+      await guardLeaving(git, action.leave)
       const target = typeof action.target === 'string' ? action.target.trim() : ''
       if (action.track !== undefined) {
         // A new local branch tracking exactly the remote branch clicked: switch's own guess refuses a name several
@@ -175,6 +201,7 @@ async function perform(git: Git, action: ActionRequest): Promise<string> {
     case 'branch': {
       const [hash] = assertHashes([action.hash])
       const name = await assertName(git, action.name, 'branch')
+      if (action.checkout) await guardLeaving(git, action.leave)
       // <hash>^{commit}: git checkout -b and git branch read a bare 40-hex start as a branch of that name first.
       await git.out(action.checkout ? ['checkout', '-b', name, `${hash}^{commit}`, '--'] : ['branch', name, `${hash}^{commit}`])
       return t(action.checkout ? 'createdCheckedOut' : 'createdBranch', { name })

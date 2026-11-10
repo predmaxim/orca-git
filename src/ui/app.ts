@@ -617,16 +617,16 @@ function branchMenu(event: MouseEvent, ref: BranchRef & { kind: 'local' | 'remot
   const hintBusy = operation ? t('hintOperation', { operation }) : undefined
   const entries: MenuEntry[] = [
     ref.kind === 'local'
-      ? { label: t('checkout'), icon: 'checkout', disabled: current || Boolean(operation), hint: hintBusy ?? t('checkoutAlready'), run: () => void act(scope, { kind: 'checkout', target: ref.name }, t('checkingOut', { name: ref.name })) }
+      ? { label: t('checkout'), icon: 'checkout', disabled: current || Boolean(operation), hint: hintBusy ?? t('checkoutAlready'), run: () => void moveHead(scope, { kind: 'checkout', target: ref.name }, t('checkingOut', { name: ref.name })) }
       : ref.kind === 'remote'
         ? {
             label: t('checkoutAs', { name: localName }),
             icon: 'checkout',
             disabled: Boolean(operation) || Boolean(refs?.locals.some((l) => l.name === localName)),
             hint: hintBusy ?? t('localBranchExists', { name: localName }),
-            run: () => void act(scope, { kind: 'checkout', target: localName, track: ref.full }, t('checkingOut', { name: localName }))
+            run: () => void moveHead(scope, { kind: 'checkout', target: localName, track: ref.full }, t('checkingOut', { name: localName }))
           }
-        : { label: t('checkoutRevision'), icon: 'checkout', disabled: ref.kind === 'head' || Boolean(operation), hint: hintBusy, run: () => void act(scope, { kind: 'checkout', target: ref.hash, detach: true }, t('checkingOutBare')) },
+        : { label: t('checkoutRevision'), icon: 'checkout', disabled: ref.kind === 'head' || Boolean(operation), hint: hintBusy, run: () => void moveHead(scope, { kind: 'checkout', target: ref.hash, detach: true }, t('checkingOutBare')) },
     { label: t('newBranchFrom', { name: ref.name }), icon: 'branch', run: () => void newBranch(scope, ref.hash) },
     'separator',
     { icon: 'search', label: filter.branches?.includes(ref.full) ? t('showAllBranches') : t('showOnly', { name: ref.name }), run: () => applyFilter({ branches: filter.branches?.includes(ref.full) ? [] : [ref.full] }) },
@@ -926,8 +926,8 @@ function updateDetails(): void {
 
 const UNDOABLE = new Set<string>(['cherryPick', 'revert', 'reset', 'squash', 'fixup', 'drop', 'reword', 'rebase', 'merge', 'rebaseOnto'])
 const BRANCH_KINDS = new Set<string>(['rename', 'delete', 'merge', 'rebaseOnto'])
-/** Actions on the current branch: they run only on the HEAD the user saw when the flow started. */
-const ON_HEAD = new Set<string>([...UNDOABLE, 'undo'])
+/** Actions on the current branch, and checkouts: they run only on the HEAD the user saw when the flow started. */
+const ON_HEAD = new Set<string>([...UNDOABLE, 'undo', 'checkout'])
 
 /** The repository a flow acts on and the HEAD it saw, taken before the flow's first dialog. */
 interface Scope {
@@ -953,7 +953,7 @@ function unchanged(scope: Scope, onHead = false): boolean {
  * is no longer the one `scope` saw, and makes `backup` before anything else.
  */
 async function act(scope: Scope, action: ActionRequest | BranchAction | BackupDelete, progress: string, backup?: BackupRequest): Promise<BranchActionResult | null> {
-  const onHead = ON_HEAD.has(action.kind)
+  const onHead = ON_HEAD.has(action.kind) || (action.kind === 'branch' && action.checkout)
   if (!unchanged(scope, onHead)) return null
   const root = scope.root
   // Always for an action on HEAD: the worker refuses one that comes without it.
@@ -971,7 +971,8 @@ async function act(scope: Scope, action: ActionRequest | BranchAction | BackupDe
   // The worker reports a backup it made even when the action then failed.
   const made = backup && result.backup ? `refs/${backup.kind === 'tag' ? 'tags' : 'heads'}/${result.backup}` : null
   const show = made ? [{ label: t('showBackup'), run: () => reveal(made) }] : []
-  const text = [result.message, result.backup && t('backupMade', { name: result.backup }), result.stash && t('backupStashed', { hash: shortHash(result.stash) })].filter(Boolean).join(' ')
+  // git's own warnings, one per line, after the message: they say what git left behind.
+  const text = [[result.message, result.backup && t('backupMade', { name: result.backup }), result.stash && t('backupStashed', { hash: shortHash(result.stash) })].filter(Boolean).join(' '), ...(result.gitWarnings ?? [])].join('\n')
   if (result.ok) {
     if (action.kind === 'rename') followBranch(action.name, action.newName)
     else if (action.kind === 'delete') followBranch(action.name)
@@ -981,8 +982,8 @@ async function act(scope: Scope, action: ActionRequest | BranchAction | BackupDe
     const undo = previous && result.head && UNDOABLE.has(action.kind)
       ? [{ label: t('undo'), run: () => void act({ root, head: result.head }, { kind: 'reset', hash: previous, mode: 'keep' }, t('progUndoing')).then((r) => r?.ok && showBanner(t('restoredHead', { hash: shortHash(previous) }), 'success')) }]
       : []
-    showBanner(text, result.warning ? 'info' : 'success', [...undo, ...show], result.warning)
-  } else if (!result.needsForce) showBanner(text, 'error', show)
+    showBanner(text, result.warning ? 'info' : 'success', [...undo, ...show], result.warning || Boolean(result.gitWarnings?.length))
+  } else if (!result.needsForce && !result.leaves) showBanner(text, 'error', show)
   await refreshAll()
   return result
 }
@@ -1096,11 +1097,23 @@ async function undoCommit(scope: Scope, hash: string): Promise<void> {
   if (check && (await confirmPushed(check.pushed, t('btnUndoCommit')))) await act(scope, { kind: 'undo', hash }, t('progUndoingCommit'))
 }
 
+/**
+ * Runs a checkout, or a new branch checked out. When HEAD is detached on commits no branch holds, the worker refuses
+ * and names them: this confirms leaving them, with the backup offer Reset makes, and runs it again.
+ */
+async function moveHead(scope: Scope, action: Extract<ActionRequest, { kind: 'checkout' | 'branch' }>, progress: string): Promise<void> {
+  const result = await act(scope, action, progress)
+  if (!result?.leaves) return
+  const backup = await offerHeadBackup(scope)
+  const list = h('ul', { class: 'file-list mono' }, ...result.leaves.map((hash) => h('li', null, `${shortHash(hash)} ${rows[indexByHash.get(hash) ?? -1]?.subject ?? ''}`)))
+  if (await confirm(t('leaveTitle'), [result.message, list], t('btnContinue'), true, backup)) await act(scope, { ...action, leave: true }, progress, backup?.value())
+}
+
 async function newBranch(scope: Scope, hash: string): Promise<void> {
   // While an operation is stopped only the branch itself can be made: no checkout to offer.
   const checkout = repo?.operation ? undefined : { label: t('checkoutBranchLabel'), checked: true }
   const answer = await askName(t('newBranchTitle'), t('branchNameLabel'), t('create'), checkout)
-  if (answer) await act(scope, { kind: 'branch', hash, name: answer.name, checkout: answer.checked }, t('progCreatingBranch'))
+  if (answer) await moveHead(scope, { kind: 'branch', hash, name: answer.name, checkout: answer.checked }, t('progCreatingBranch'))
 }
 
 async function renameBranch(scope: Scope, name: string): Promise<void> {
@@ -1245,17 +1258,17 @@ function commitMenu(x: number, y: number): void {
       run: () => void createPatch(scope, hashes)
     },
     'separator',
-    { label: t('checkoutRevision'), icon: 'checkout', disabled: !single || Boolean(operation), hint: hintBusy ?? t('hintSelectOne'), run: () => void act(scope, { kind: 'checkout', target: single!.hash, detach: true }, t('checkingOutBare')) }
+    { label: t('checkoutRevision'), icon: 'checkout', disabled: !single || Boolean(operation), hint: hintBusy ?? t('hintSelectOne'), run: () => void moveHead(scope, { kind: 'checkout', target: single!.hash, detach: true }, t('checkingOutBare')) }
   ]
   if (single) {
     for (const label of refLabels(single.refs, repo.head.branch)) {
       if (label.kind === 'local' && !label.current) {
         const name = label.refs[0]
-        entries.push({ label: t('checkoutQuoted', { name }), disabled: Boolean(operation), hint: hintBusy, run: () => void act(scope, { kind: 'checkout', target: name }, t('checkingOut', { name })) })
+        entries.push({ label: t('checkoutQuoted', { name }), disabled: Boolean(operation), hint: hintBusy, run: () => void moveHead(scope, { kind: 'checkout', target: name }, t('checkingOut', { name })) })
       } else if (label.kind === 'remote') {
         const name = label.text.slice(label.text.indexOf('/') + 1)
         if (!refs?.locals.some((l) => l.name === name)) {
-          entries.push({ label: t('checkoutQuotedAs', { remote: label.text, name }), disabled: Boolean(operation), hint: hintBusy, run: () => void act(scope, { kind: 'checkout', target: name, track: `refs/remotes/${label.text}` }, t('checkingOut', { name })) })
+          entries.push({ label: t('checkoutQuotedAs', { remote: label.text, name }), disabled: Boolean(operation), hint: hintBusy, run: () => void moveHead(scope, { kind: 'checkout', target: name, track: `refs/remotes/${label.text}` }, t('checkingOut', { name })) })
         }
       }
     }

@@ -60,7 +60,8 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
     oldest first, copied to the clipboard or saved to a file inside the repository only: a path
     outside it (such as `~/Downloads`), inside `.git` (under any name that reaches it) or through a
     link is refused)
-  - Checkout Revision, checkout a branch at that commit, check out a remote branch as local
+  - Checkout Revision, checkout a branch at that commit, check out a remote branch as local. Leaving a
+    detached HEAD that holds commits on no branch asks first and offers a backup branch.
   - Reset Current Branch to Here… (soft / mixed / hard / keep), Revert Commits, Undo Commit
   - Edit Commit Message…, Fixup, Squash Commits…, Drop Commits, Interactively Rebase from Here…
   - New Branch…, New Tag…
@@ -70,14 +71,15 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
 - Commits already pushed to a remote branch trigger a warning before they are rewritten: by Edit Commit
   Message, Fixup, Squash, Drop, the interactive rebase, Undo Commit or Rebase Current onto This.
 - An action runs in the repository its menu was opened on. If the workspace switches to another
-  repository while a dialog is open (or, for an action on the current branch, HEAD moves), nothing
-  runs and a banner says so. The worker checks HEAD once more right before it runs such an action, and
-  Undo runs only while HEAD is still where the action left it. Merge, rebase onto and deleting an
-  unmerged branch run only while that branch is still at the commit the menu showed. New branch,
-  rename and checkout refuse names git would expand, like `@{-1}`, names under `refs/` and names shaped
-  like a full commit hash; checkout takes only a branch (`git switch`) or, for Checkout Revision, a full commit hash given
-  as `<hash>^{commit}` so that a branch named like the hash cannot take its place, and merge and
-  rebase onto take the branch's full ref.
+  repository while a dialog is open (or, for an action on the current branch or a checkout, HEAD
+  moves), nothing runs and a banner says so. The worker checks HEAD once more right before it runs
+  such an action, and Undo runs only while HEAD is still where the action left it. Merge, rebase onto
+  and deleting an unmerged branch run only while that branch is still at the commit the menu showed.
+  New branch, rename and checkout refuse names git would expand, like `@{-1}`, names under `refs/`
+  and names shaped like a full commit hash; checkout takes only a branch (`git switch`) or, for
+  Checkout Revision, a full commit hash given as `<hash>^{commit}` so that a branch named like the
+  hash cannot take its place, and merge and rebase onto take the branch's full ref. Warnings git
+  prints while an action succeeds show in the banner under its message.
 - While a rebase, merge, cherry-pick or revert started elsewhere (a terminal) is stopped, the worker
   refuses every action that moves HEAD or touches the work tree, and the menus disable them; a new
   branch without checkout and a new tag still work. A cherry-pick or revert that left only its todo
@@ -142,9 +144,10 @@ same way.
 ## Backups before risky operations
 
 Squash, fixup, drop, edit message, the interactive rebase, reset (any mode), rebase current onto a
-branch and deleting an unmerged branch (`git branch -D`) ask in their confirmation whether to back up
-first. The box is checked by default: pick a branch (the default) or a tag and keep or edit the
-suggested name, `backup/<branch>-<YYYYMMDD-HHMM>` (`backup/detached-<hash>-…` for a detached HEAD,
+branch, deleting an unmerged branch (`git branch -D`) and leaving a detached HEAD that holds commits
+on no branch ask in their confirmation whether to back up first. The box is checked by default: pick
+a branch (the default) or a tag and keep or edit the suggested name,
+`backup/<branch>-<YYYYMMDD-HHMM>` (`backup/detached-<hash>-…` for a detached HEAD,
 with `-2`, `-3`… when the name is taken). Fixup, drop and rebase onto, which ran without a dialog when
 nothing was pushed, now show one to make the offer. One operation makes one backup, however many
 commits it touches: it points at the old tip of the branch (for a deleted branch, at that branch) and

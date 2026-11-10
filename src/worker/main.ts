@@ -32,8 +32,12 @@ async function setting<T>(key: string, fallback: T): Promise<T> {
 
 const gitPath = () => setting('gitPath', 'git').then((path) => (typeof path === 'string' && path.trim()) || 'git')
 
-/** Actions on the current branch: a frame must send the HEAD their confirmation showed (`expectHead`). */
-const ON_HEAD = new Set(['cherryPick', 'revert', 'reset', 'undo', 'squash', 'fixup', 'drop', 'reword', 'rebase', 'merge', 'rebaseOnto'])
+/**
+ * Actions on the current branch, and those that move HEAD elsewhere (a checkout, a new branch checked out): a frame
+ * must send the HEAD their confirmation showed (`expectHead`).
+ */
+const ON_HEAD = new Set(['cherryPick', 'revert', 'reset', 'undo', 'squash', 'fixup', 'drop', 'reword', 'rebase', 'merge', 'rebaseOnto', 'checkout'])
+const onHead = (action: any) => ON_HEAD.has(action?.kind) || (action?.kind === 'branch' && action?.checkout === true)
 
 /** A git runner for a root a panel sends back; only roots this worker resolved are accepted. */
 async function gitFor(root: unknown): Promise<Git> {
@@ -184,7 +188,7 @@ export default function activate(orca: OrcaWorkerApi): void {
   handle('action.run', async ({ root, action, expectHead, backup }) => {
     const git = await gitFor(root)
     const hardReset = action?.kind === 'reset' && action?.mode === 'hard'
-    const result = await runGuarded(git, { expectHead, backup }, 'HEAD', () => runAction(git, action), { hardReset, onHead: ON_HEAD.has(action?.kind) })
+    const result = await runGuarded(git, { expectHead, backup }, 'HEAD', () => runAction(git, action), { hardReset, onHead: onHead(action) })
     orca.panels.post('repo.changed', { root })
     return result
   })
@@ -193,7 +197,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     const git = await gitFor(root)
     // A deleted branch's backup keeps that branch; every other branch action moves HEAD.
     const tip = action?.kind === 'delete' ? { branch: action.name } : 'HEAD'
-    const result = await runGuarded(git, { expectHead, backup }, tip, () => runBranchAction(git, action), { onHead: ON_HEAD.has(action?.kind) })
+    const result = await runGuarded(git, { expectHead, backup }, tip, () => runBranchAction(git, action), { onHead: onHead(action) })
     orca.panels.post('repo.changed', { root })
     return result
   })

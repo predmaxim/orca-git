@@ -4,7 +4,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, 
 import { tmpdir } from 'node:os'
 import { join, relative, sep } from 'node:path'
 import { after, test } from 'node:test'
-import type { ActionResult, PlanItem } from '../shared/protocol.ts'
+import type { ActionRequest, ActionResult, PlanItem } from '../shared/protocol.ts'
 import { checkRewrite, runAction } from './actions.ts'
 import { createBackup, deleteBackup, runGuarded } from './backup.ts'
 import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
@@ -736,6 +736,34 @@ test('Undo after an action refuses once HEAD or the files it would reset have mo
   assert.deepEqual(snapshot(w.root), before)
 })
 
+test('moving HEAD away from commits on no branch asks first, and git\'s warning comes back with the result', async () => {
+  const w = world()
+  sh(w.root, 'remote', 'add', 'origin', join(w.root, 'nowhere.git'))
+  sh(w.root, 'update-ref', 'refs/remotes/origin/feature', w.t2)
+  sh(w.root, 'checkout', '-q', '--detach', w.c3)
+  const lost = commit(w.root, 'd.txt', 'd\n', 'on a detached HEAD')
+  const moves: [string, ActionRequest][] = [
+    ['checkout of a branch', { kind: 'checkout', target: 'topic' }],
+    ['checkout of a commit', { kind: 'checkout', target: w.c1, detach: true }],
+    ['checkout as', { kind: 'checkout', target: 'feature', track: 'refs/remotes/origin/feature' }],
+    ['new branch, checked out', { kind: 'branch', hash: w.c1, name: 'fresh', checkout: true }]
+  ]
+  for (const [label, action] of moves) {
+    const before = snapshot(w.root)
+    const result = await runAction(createGit(w.root), action)
+    assert.equal(result.ok, false, `${label}: ${result.message}`)
+    assert.deepEqual(result.leaves, [lost], label)
+    assert.deepEqual(snapshot(w.root), before, label)
+  }
+  // A new branch without checkout leaves HEAD where it is.
+  assert.equal((await runAction(createGit(w.root), { kind: 'branch', hash: w.c1, name: 'fresh', checkout: false })).ok, true)
+  // Confirmed: HEAD moves, and git's own warning comes back for the banner.
+  const left = await runAction(createGit(w.root), { kind: 'checkout', target: 'topic', leave: true })
+  assert.equal(left.ok, true, left.message)
+  assert.equal(sh(w.root, 'branch', '--show-current'), 'topic')
+  assert.match(left.gitWarnings?.join('\n') ?? '', /^Warning: you are leaving 1 commit behind, not connected to any of your branches/)
+})
+
 test('force delete, merge and rebase onto run only while the branch is at the commit the menu showed', async () => {
   const w = world()
   // The menu showed topic at t1; it has moved to t2 since (a fetch into it, a terminal). Without a tip nothing is checked.
@@ -756,16 +784,16 @@ test('undo commit resets to the parent of the commit it checked, even when HEAD 
   const real = createGit(w.root)
   let moved = false
   // A commit from a terminal lands between the check and the reset.
+  const race = (args: string[]) => {
+    if (args[0] === 'reset' && !moved) {
+      moved = true
+      commit(w.root, 'r.txt', 'r\n', 'from a terminal')
+    }
+  }
   const racing: Git = {
     gitPath: real.gitPath,
-    run: real.run,
-    out: async (args, options) => {
-      if (args[0] === 'reset' && !moved) {
-        moved = true
-        commit(w.root, 'r.txt', 'r\n', 'from a terminal')
-      }
-      return real.out(args, options)
-    }
+    run: (args, options) => (race(args), real.run(args, options)),
+    out: (args, options) => (race(args), real.out(args, options))
   }
   const result = await runAction(racing, { kind: 'undo', hash: w.c3 })
   assert.equal(result.ok, true, result.message)
