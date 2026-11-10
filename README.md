@@ -120,10 +120,12 @@ orca plugin shot local.git-log --editor <repo>/.orca-git-log.gitdiff   # the Dif
 
 Squash, fixup, drop, reword and the interactive rebase dialog all run `git rebase -i --autostash`
 with a generated todo list (`GIT_SEQUENCE_EDITOR`) and messages written to a file, so no editor ever
-opens; a message keeps its lines that start with `#`. The selection must be a run of non-merge commits on the current branch. If the rebase stops on
-a conflict it is aborted, and the branch is left exactly as it was. If the uncommitted changes do not
-apply cleanly to the rewritten branch, git keeps them in the stash: the banner says so and offers no
-Undo.
+opens; a message keeps its lines that start with `#`. The selection must be a run of non-merge
+commits on the current branch. If the rebase stops on a conflict it is aborted, and the branch is
+left exactly as it was. If the uncommitted changes do not apply cleanly to the rewritten branch, git
+keeps them in the stash: the banner says so and offers no Undo. Git gives the changes back without
+their staging (new files stay added), and the banner says that too; merge and rebase onto work the
+same way.
 
 ## Backups before risky operations
 

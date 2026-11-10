@@ -3,17 +3,20 @@ import { assertName } from './actions.ts'
 import { lastLines, type Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
 import { readHead } from './log.ts'
-import { autostashConflict, operationInProgress, operationRefusal, pushedTo } from './rebase.ts'
+import { autostashConflict, noteUnstaged, operationInProgress, operationRefusal, pushedTo } from './rebase.ts'
 
 const NETWORK_TIMEOUT_MS = 120_000
 
 /** Runs a branch action; never throws, a failure is `{ ok: false, message }`. */
 export async function runBranchAction(git: Git, action: BranchAction): Promise<BranchActionResult> {
-  try {
-    return await perform(git, action)
-  } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : String(error) }
+  const attempt = async (): Promise<BranchActionResult> => {
+    try {
+      return await perform(git, action)
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : String(error) }
+    }
   }
+  return action?.kind === 'merge' || action?.kind === 'rebaseOnto' ? noteUnstaged(git, attempt) : attempt()
 }
 
 async function perform(git: Git, action: BranchAction): Promise<BranchActionResult> {

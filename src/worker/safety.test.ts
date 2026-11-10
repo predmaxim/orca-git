@@ -498,6 +498,46 @@ test('rewritten messages keep lines that start with #', async () => {
   assert.match(sh(w.root, 'log', '-1', '--format=%B'), /^#12 is fixed by this$/m)
 })
 
+test('staged, unstaged and untracked changes come back from rewrites, merge and rebase onto, and lost staging is said', async () => {
+  const side = (w: World) => {
+    sh(w.root, 'checkout', '-q', '-b', 'side', w.c1)
+    commit(w.root, 's.txt', 's\n', 'side')
+    sh(w.root, 'checkout', '-q', 'main')
+  }
+  const runs: [string, (w: World) => void, (git: Git, w: World) => Promise<Result>][] = [
+    ['squash', nothing, (git, w) => runAction(git, { kind: 'squash', hashes: [w.c3, w.c2], message: 'squashed' })],
+    ['drop', nothing, (git, w) => runAction(git, { kind: 'drop', hashes: [w.c2] })],
+    ['reword', nothing, (git, w) => runAction(git, { kind: 'reword', hash: w.c2, message: 'reworded' })],
+    ['merge', (w) => commit(w.root, 'a.txt', 'topic\n', 'match topic'), (git) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/topic' })],
+    ['rebase onto', side, (git) => runBranchAction(git, { kind: 'rebaseOnto', name: 'refs/heads/side' })],
+    ['drop with a conflict', (w) => commit(w.root, 'a.txt', 'main again\n', 'c4'), (git, w) => runAction(git, { kind: 'drop', hashes: [w.c3] })],
+    ['merge with a conflict', nothing, (git) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/topic' })],
+    ['rebase onto with a conflict', nothing, (git) => runBranchAction(git, { kind: 'rebaseOnto', name: 'refs/heads/topic' })]
+  ]
+  for (const [label, prepare, run] of runs) {
+    const w = world()
+    prepare(w)
+    commit(w.root, 'e.txt', 'e\n', 'e')
+    writeFileSync(join(w.root, 'b.txt'), 'staged b\n')
+    writeFileSync(join(w.root, 'n.txt'), 'new n\n')
+    sh(w.root, 'add', 'b.txt', 'n.txt')
+    writeFileSync(join(w.root, 'e.txt'), 'local e\n')
+    writeFileSync(join(w.root, 'u.txt'), 'mine\n')
+    const result = await run(createGit(w.root), w)
+    assert.equal(result.ok, !label.includes('conflict'), `${label}: ${result.message}`)
+    const files = Object.fromEntries(['b.txt', 'n.txt', 'e.txt', 'u.txt'].map((name) => [name, readFileSync(join(w.root, name), 'utf8')]))
+    assert.deepEqual(files, { 'b.txt': 'staged b\n', 'n.txt': 'new n\n', 'e.txt': 'local e\n', 'u.txt': 'mine\n' }, label)
+    // git's autostash puts changes back unstaged, except new files, which stay added.
+    assert.equal(sh(w.root, 'diff', '--cached', '--name-only'), 'n.txt', label)
+    assert.match(result.message, /no longer staged/, label)
+  }
+  // Nothing staged, or only new files: nothing to say.
+  const w = world()
+  writeFileSync(join(w.root, 'n.txt'), 'new n\n')
+  sh(w.root, 'add', 'n.txt')
+  assert.doesNotMatch((await runAction(createGit(w.root), { kind: 'drop', hashes: [w.c2] })).message, /staged/)
+})
+
 /** Runs `run` with no committer identity in `root` (as on a fresh machine), then puts the test identity back. */
 async function withoutIdentity<T>(root: string, run: () => Promise<T> | T): Promise<T> {
   sh(root, 'config', 'user.useConfigOnly', 'true')

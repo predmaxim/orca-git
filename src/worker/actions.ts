@@ -4,6 +4,7 @@ import { t } from '../shared/i18n.ts'
 import { readHead } from './log.ts'
 import {
   autostashConflict,
+  noteUnstaged,
   operationInProgress,
   operationRefusal,
   planFor,
@@ -122,6 +123,10 @@ async function rewrite(git: Git, action: Extract<ActionRequest, { kind: 'squash'
 }
 
 export async function runAction(git: Git, action: ActionRequest): Promise<ActionResult> {
+  return REWRITES.has(action?.kind) ? noteUnstaged(git, () => attempt(git, action)) : attempt(git, action)
+}
+
+async function attempt(git: Git, action: ActionRequest): Promise<ActionResult> {
   const previousHead = (await readHead(git)).hash ?? undefined
   try {
     const message = await perform(git, action)

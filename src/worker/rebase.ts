@@ -182,6 +182,24 @@ export async function operationRefusal(git: Git): Promise<string | null> {
   return t((await todoOnly(git, operation)) ? 'opTodoLeft' : 'opInProgress', { operation })
 }
 
+/** Files staged against HEAD. */
+async function stagedFiles(git: Git): Promise<string[]> {
+  const result = await git.run(['diff', '--cached', '--name-only', '-z', '--'])
+  return result.ok ? result.stdout.split('\0').filter(Boolean) : []
+}
+
+/**
+ * Runs `run`, an operation with --autostash, and says so in its message when files staged before are staged no
+ * more: git puts the stash back without the staging (new files stay added), whether the operation ran or was aborted.
+ */
+export async function noteUnstaged<R extends { message: string }>(git: Git, run: () => Promise<R>): Promise<R> {
+  const before = await stagedFiles(git)
+  const result = await run()
+  if (!before.length) return result
+  const after = new Set(await stagedFiles(git))
+  return before.some((file) => !after.has(file)) ? { ...result, message: `${result.message} ${t('stagingLost')}` } : result
+}
+
 /** git exits 0 when the autostash does not apply cleanly: the changes stay in the stash and the tree has conflicts. */
 export async function autostashConflict(git: Git): Promise<boolean> {
   return Boolean((await git.run(['diff', '--name-only', '--diff-filter=U', '--'])).stdout.trim())
