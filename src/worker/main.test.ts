@@ -58,7 +58,11 @@ test('resolves the focused workspace, pages the log and runs an action', async (
 
     const [newest, middle] = page.commits
     assert.deepEqual(worker.posts[0], started)
-    const run = await worker.request('action.run', { root, action: { kind: 'drop', hashes: [middle.hash] }, id: 'request-1' })
+    // An action on the current branch needs the HEAD its confirmation showed: without it nothing runs.
+    const unbound = await worker.request('action.run', { root, action: { kind: 'drop', hashes: [middle.hash] } })
+    assert.equal(unbound.ok, false)
+    assert.equal(sh(root, 'rev-parse', 'HEAD'), newest.hash)
+    const run = await worker.request('action.run', { root, action: { kind: 'drop', hashes: [middle.hash] }, expectHead: newest.hash, id: 'request-1' })
     assert.equal(run.ok, true, run.message)
     assert.equal(run.previousHead, newest.hash)
     // A panel that stopped waiting gets the result from the last post.
@@ -80,8 +84,11 @@ test('action.run and branch.run check the HEAD the dialog showed and make the ba
     const name = 'backup/main-20261110-1432'
     const stale = await worker.request('action.run', { root, action: { kind: 'drop', hashes: [head] }, expectHead: parent, backup: { kind: 'branch', name, target: parent } })
     assert.equal(stale.ok, false)
-    const stuck = await worker.request('branch.run', { root, action: { kind: 'rebaseOnto', name: 'refs/heads/main' }, expectHead: parent })
+    const stuck = await worker.request('branch.run', { root, action: { kind: 'rebaseOnto', name: 'refs/heads/main', tip: head }, expectHead: parent })
     assert.equal(stuck.ok, false)
+    // A checkout moves HEAD: it too needs the HEAD the menu showed.
+    const unbound = await worker.request('action.run', { root, action: { kind: 'checkout', target: parent, detach: true } })
+    assert.equal(unbound.ok, false)
     // A stash goes only with a hard reset.
     const stashed = await worker.request('action.run', { root, action: { kind: 'drop', hashes: [head] }, expectHead: head, backup: { kind: 'branch', name, target: head, stash: true } })
     assert.equal(stashed.ok, false)

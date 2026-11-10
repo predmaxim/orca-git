@@ -331,6 +331,15 @@ export const en = {
   cannotDeleteCurrent: 'Cannot delete the current branch.',
   branchDeleted: 'Deleted branch {name}.',
   notFullyMerged: '{name} is not fully merged.',
+  branchMoved: 'Branch {name} has moved since it was shown. Nothing was done.',
+  leavesCommits: {
+    one: 'HEAD holds {count} commit that no branch, tag or remote branch keeps. Moving HEAD away leaves it behind.',
+    other: 'HEAD holds {count} commits that no branch, tag or remote branch keeps. Moving HEAD away leaves them behind.'
+  },
+  leaveTitle: 'Commits on No Branch',
+  btnContinue: 'Continue',
+  moreGitWarnings: { one: '…and {count} more warning from git', other: '…and {count} more warnings from git' },
+  lineEndingWarnings: { one: 'Line endings of {count} file will be converted the next time git touches it (core.autocrlf or .gitattributes).', other: 'Line endings of {count} files will be converted the next time git touches them (core.autocrlf or .gitattributes).' },
   couldNotDelete: 'Could not delete {name}.',
   notBranchOrCommit: '"{name}" is not a local or remote branch.',
   merged: 'Merged {name} into the current branch.',
@@ -689,6 +698,17 @@ export const ru: Record<keyof typeof en, Message> = {
   cannotDeleteCurrent: 'Нельзя удалить текущую ветку.',
   branchDeleted: 'Ветка {name} удалена.',
   notFullyMerged: 'Ветка {name} слита не полностью.',
+  branchMoved: 'Ветка {name} сдвинулась с тех пор, как была показана. Ничего не сделано.',
+  leavesCommits: {
+    one: 'В истории HEAD есть {count} коммит, которого нет ни в одной ветке, теге или удалённой ветке. Если перейти отсюда, он останется позади.',
+    few: 'В истории HEAD есть {count} коммита, которых нет ни в одной ветке, теге или удалённой ветке. Если перейти отсюда, они останутся позади.',
+    many: 'В истории HEAD есть {count} коммитов, которых нет ни в одной ветке, теге или удалённой ветке. Если перейти отсюда, они останутся позади.',
+    other: 'В истории HEAD есть {count} коммита, которых нет ни в одной ветке, теге или удалённой ветке. Если перейти отсюда, они останутся позади.'
+  },
+  leaveTitle: 'Коммиты вне веток',
+  btnContinue: 'Продолжить',
+  moreGitWarnings: { one: '…и ещё {count} предупреждение git', few: '…и ещё {count} предупреждения git', many: '…и ещё {count} предупреждений git', other: '…и ещё {count} предупреждения git' },
+  lineEndingWarnings: { one: 'В {count} файле git сменит концы строк, когда коснётся его в следующий раз (core.autocrlf или .gitattributes).', few: 'В {count} файлах git сменит концы строк, когда коснётся их в следующий раз (core.autocrlf или .gitattributes).', many: 'В {count} файлах git сменит концы строк, когда коснётся их в следующий раз (core.autocrlf или .gitattributes).', other: 'В {count} файла git сменит концы строк, когда коснётся их в следующий раз (core.autocrlf или .gitattributes).' },
   couldNotDelete: 'Не удалось удалить {name}.',
   notBranchOrCommit: '«{name}» — не локальная и не удалённая ветка.',
   merged: '{name} слита в текущую ветку.',

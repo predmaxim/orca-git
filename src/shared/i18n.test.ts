@@ -62,7 +62,7 @@ test('worker messages switch to Russian with the request locale', async () => {
     const worker = await mountWorker(main, { host: mockHost({ results: {} }) })
     const hashes = (n: number) => [sh('rev-parse', `HEAD~${n}`)]
     // The panel adds `locale` to every request (api.ts), which the typed protocol does not list.
-    const request = (locale: string) => ({ root, locale, action: { kind: 'drop' as const, hashes: hashes(1) } })
+    const request = (locale: string) => ({ root, locale, expectHead: sh('rev-parse', 'HEAD'), action: { kind: 'drop' as const, hashes: hashes(1) } })
     const ru = await worker.request('action.run', request('ru'))
     assert.equal(ru.ok, true, ru.message)
     assert.equal(ru.message, 'Удалён 1 коммит.')

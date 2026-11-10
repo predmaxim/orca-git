@@ -119,7 +119,7 @@ test('reset --hard with stash keeps the uncommitted changes in the stash', async
     { expectHead: head, backup: { kind: 'branch', name: NAME, target: head, stash: true } },
     'HEAD',
     () => runAction(git, { kind: 'reset', hash: rev(root, 'HEAD~2'), mode: 'hard' }),
-    true
+    { hardReset: true }
   )
   assert.equal(result.ok, true, result.message)
   assert.match(result.stash ?? '', /^[0-9a-f]{40}$/)
@@ -159,7 +159,7 @@ test('a stash that cannot be stored names the backup already made, and the actio
     ran = true
     return { ok: true, message: 'ran' }
   }
-  const result = await runGuarded(git, { expectHead: head, backup: { kind: 'branch', name: NAME, target: head, stash: true } }, 'HEAD', run, true)
+  const result = await runGuarded(git, { expectHead: head, backup: { kind: 'branch', name: NAME, target: head, stash: true } }, 'HEAD', run, { hardReset: true })
   assert.equal(result.ok, false)
   assert.ok(result.message.includes(NAME), result.message)
   assert.equal(result.backup, NAME)
@@ -486,7 +486,7 @@ test('deleting an unmerged branch with a backup keeps its commits reachable', as
   const git = createGit(root)
   const name = 'backup/topic-20261110-1432'
   const result = await runGuarded(git, { backup: { kind: 'branch', name, target: tip } }, { branch: 'topic' }, () =>
-    runBranchAction(git, { kind: 'delete', name: 'topic', force: true })
+    runBranchAction(git, { kind: 'delete', name: 'topic', force: true, tip })
   )
   assert.equal(result.ok, true, result.message)
   assert.equal(result.backup, name)
@@ -538,10 +538,25 @@ test('a moved HEAD refuses the action and makes no backup', async () => {
   // A deleted branch's backup must point at that branch.
   const branch = await runGuarded(git, { backup: { kind: 'branch', name: NAME, target: seen } }, { branch: 'main' }, run)
   assert.equal(branch.ok, false)
+  // An action on HEAD sent without the HEAD to expect, or expecting no commit where there is one, is refused.
+  for (const guard of [{}, { backup: { kind: 'branch', name: NAME, target: rev(root, 'HEAD') } }, { expectHead: null }]) {
+    const result = await runGuarded(git, guard, 'HEAD', run, { onHead: true })
+    assert.equal(result.ok, false, JSON.stringify(guard))
+  }
   assert.equal(ran, false)
   assert.equal(refs(root), before)
   const head = rev(root, 'HEAD')
   assert.deepEqual(await runGuarded(git, { expectHead: head }, 'HEAD', run), { ok: true, message: 'ran', head })
+})
+
+test('an action on a branch with no commits yet runs only while HEAD still has none', async () => {
+  const root = repo()
+  const head = rev(root, 'HEAD')
+  sh(root, 'checkout', '-q', '--orphan', 'empty')
+  const git = createGit(root)
+  const run = async () => ({ ok: true, message: 'ran' })
+  assert.deepEqual(await runGuarded(git, { expectHead: null }, 'HEAD', run, { onHead: true }), { ok: true, message: 'ran' })
+  assert.equal((await runGuarded(git, { expectHead: head }, 'HEAD', run, { onHead: true })).ok, false)
 })
 
 test('delete backup removes only backup/ refs that still point where the user saw them', async () => {

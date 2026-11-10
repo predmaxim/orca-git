@@ -2,6 +2,7 @@ import type { ActionRequest, ActionResult, CheckResult, RewriteKind } from '../s
 import { lastLines, type Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
 import { readHead } from './log.ts'
+import { noteWarnings } from './warnings.ts'
 import {
   autostashConflict,
   noteUnstaged,
@@ -18,6 +19,7 @@ import {
 } from './rebase.ts'
 
 const HASH = /^[0-9a-f]{40}$/
+const FULL_HASH = /^([0-9a-f]{40}|[0-9a-f]{64})$/i
 const REWRITES = new Set<string>(['squash', 'fixup', 'drop', 'reword', 'rebase'])
 
 function assertHashes(hashes: unknown): string[] {
@@ -32,7 +34,8 @@ export async function assertName(git: Git, name: string, kind: 'branch' | 'tag')
   const args = kind === 'branch' ? ['check-ref-format', '--branch', trimmed] : ['check-ref-format', `refs/tags/${trimmed}`]
   // --branch expands @{-1} and @{u} to the branch they name: refuse "@{" and any name git does not keep as is.
   // Under refs/ too: branch refs/heads/main is stored as refs/heads/refs/heads/main, yet git reads the name as main.
-  const result = trimmed && !trimmed.startsWith('-') && !trimmed.includes('@{') && !trimmed.startsWith('refs/') ? await git.run(args) : null
+  // A full SHA-1 or SHA-256 hash: git checkout and git branch read that argument as a branch of the name first.
+  const result = trimmed && !trimmed.startsWith('-') && !trimmed.includes('@{') && !trimmed.startsWith('refs/') && !FULL_HASH.test(trimmed) ? await git.run(args) : null
   if (!result?.ok || (kind === 'branch' && result.stdout.trim() !== trimmed)) throw new Error(t(kind === 'branch' ? 'invalidBranchName' : 'invalidTagName', { name: trimmed }))
   return trimmed
 }
@@ -122,8 +125,33 @@ async function rewrite(git: Git, action: Extract<ActionRequest, { kind: 'squash'
   }
 }
 
-export async function runAction(git: Git, action: ActionRequest): Promise<ActionResult> {
-  return REWRITES.has(action?.kind) ? noteUnstaged(git, () => attempt(git, action)) : attempt(git, action)
+export async function runAction(plain: Git, action: ActionRequest): Promise<ActionResult> {
+  const { git, withWarnings } = noteWarnings(plain)
+  return withWarnings(await (REWRITES.has(action?.kind) ? noteUnstaged(git, () => attempt(git, action)) : attempt(git, action)))
+}
+
+/** Moving HEAD would leave `commits` (their number, and the first few) on no branch; nothing ran. */
+class LeavesCommits extends Error {
+  commits: string[]
+  constructor(commits: string[]) {
+    super(t('leavesCommits', { count: commits.length }))
+    this.commits = commits.slice(0, 20)
+  }
+}
+
+/**
+ * Refuses to move HEAD away from commits only a detached HEAD holds, unless the request says `leave: true` (the
+ * panel asks first and offers a backup): git only warns, and then no branch, tag or remote branch keeps them.
+ * `commit`: the 40-hex commit HEAD moves to, which keeps them too; a branch or remote branch target is among the refs.
+ */
+async function guardLeaving(git: Git, leave: unknown, commit?: string): Promise<void> {
+  if (leave === true) return
+  const head = await readHead(git)
+  if (head.branch || !head.hash) return
+  // Read-only. Only the target, branches, tags and remote branches keep a commit here (not the stash); `--`: a file may be named HEAD.
+  const keep = commit ? [`${commit}^{commit}`] : []
+  const commits = (await git.out(['rev-list', 'HEAD', '--not', ...keep, '--branches', '--tags', '--remotes', '--'])).split('\n').filter(Boolean)
+  if (commits.length) throw new LeavesCommits(commits)
 }
 
 async function attempt(git: Git, action: ActionRequest): Promise<ActionResult> {
@@ -134,6 +162,7 @@ async function attempt(git: Git, action: ActionRequest): Promise<ActionResult> {
     if (REWRITES.has(action.kind) && (await autostashConflict(git))) return { ok: true, warning: true, message: `${message} ${t('autostashConflict')}` }
     return { ok: true, message, ...(previousHead ? { previousHead } : {}) }
   } catch (error) {
+    if (error instanceof LeavesCommits) return { ok: false, message: error.message, leaves: error.commits }
     return { ok: false, message: error instanceof Error ? error.message : String(error) }
   }
 }
@@ -146,6 +175,10 @@ async function perform(git: Git, action: ActionRequest): Promise<string> {
   }
   switch (action.kind) {
     case 'checkout': {
+      // A commit only when the request says so, never guessed from the text: a branch can be named like a hash.
+      const commit = action.track === undefined && action.detach === true
+      if (commit && (typeof action.target !== 'string' || !HASH.test(action.target))) throw new Error(t('invalidCommit'))
+      await guardLeaving(git, action.leave, commit ? action.target : undefined)
       const target = typeof action.target === 'string' ? action.target.trim() : ''
       if (action.track !== undefined) {
         // A new local branch tracking exactly the remote branch clicked: switch's own guess refuses a name several
@@ -160,15 +193,20 @@ async function perform(git: Git, action: ActionRequest): Promise<string> {
         await git.out(['branch', '--track', name, track])
         const switched = await git.run(['switch', '--end-of-options', name])
         if (!switched.ok) throw new Error(`${t('branchMadeNotSwitched', { name, upstream: track.slice(13) })}\n${lastLines(switched.stderr || switched.stdout, 4)}`)
-      } else if (HASH.test(target)) await git.out(['checkout', '--detach', target, '--'])
+      } else if (commit) {
+        // <hash>^{commit}: git checkout reads a bare 40-hex argument as a branch of that name first.
+        await git.out(['checkout', '--detach', `${action.target}^{commit}`, '--'])
+      }
       // Anything else must be a local branch: git switch refuses a tag, a remote branch, the stash or a revision.
       else await git.out(['switch', '--end-of-options', await assertName(git, target, 'branch')])
-      return t('checkedOut', { target: HASH.test(target) ? target.slice(0, 8) : target })
+      return t('checkedOut', { target: commit ? target.slice(0, 8) : target })
     }
     case 'branch': {
       const [hash] = assertHashes([action.hash])
       const name = await assertName(git, action.name, 'branch')
-      await git.out(action.checkout ? ['checkout', '-b', name, hash, '--'] : ['branch', name, hash])
+      if (action.checkout) await guardLeaving(git, action.leave, hash)
+      // <hash>^{commit}: git checkout -b and git branch read a bare 40-hex start as a branch of that name first.
+      await git.out(action.checkout ? ['checkout', '-b', name, `${hash}^{commit}`, '--'] : ['branch', name, `${hash}^{commit}`])
       return t(action.checkout ? 'createdCheckedOut' : 'createdBranch', { name })
     }
     case 'tag': {
@@ -196,7 +234,9 @@ async function perform(git: Git, action: ActionRequest): Promise<string> {
     case 'undo': {
       const check = await checkRewrite(git, 'undo', [action.hash])
       if (!check.ok) throw new Error(check.reason)
-      await git.out(['reset', '--soft', 'HEAD~1', '--'])
+      // The parent of the commit the check found at HEAD, not HEAD~1: a commit made since must not be the one undone.
+      const [parent] = assertHashes([(check.commits[0] as Partial<HistoryEntry>).parents?.[0]])
+      await git.out(['reset', '--soft', parent, '--'])
       return t('commitUndone')
     }
     case 'squash':

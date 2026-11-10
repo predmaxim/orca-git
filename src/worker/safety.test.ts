@@ -4,7 +4,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, 
 import { tmpdir } from 'node:os'
 import { join, relative, sep } from 'node:path'
 import { after, test } from 'node:test'
-import type { ActionResult, PlanItem } from '../shared/protocol.ts'
+import type { ActionRequest, ActionResult, PlanItem } from '../shared/protocol.ts'
 import { checkRewrite, runAction } from './actions.ts'
 import { createBackup, deleteBackup, runGuarded } from './backup.ts'
 import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
@@ -141,7 +141,7 @@ test('checkout of a branch, a hash and a remote branch, reset in every mode, and
   sh(w.root, 'update-ref', 'refs/remotes/origin/feature', w.t2)
   assert.equal((await runAction(git, { kind: 'checkout', target: 'topic' })).ok, true)
   assert.equal(sh(w.root, 'branch', '--show-current'), 'topic')
-  assert.equal((await runAction(git, { kind: 'checkout', target: w.c1 })).ok, true)
+  assert.equal((await runAction(git, { kind: 'checkout', target: w.c1, detach: true })).ok, true)
   assert.equal(sh(w.root, 'rev-parse', 'HEAD'), w.c1)
   assert.equal(sh(w.root, 'branch', '--show-current'), '')
   // A remote branch is checked out as a new local branch that tracks it.
@@ -201,6 +201,34 @@ test('new branch and tag names under refs/ are refused before git runs', async (
     await refusedBeforeGit(w, `rename to ${name}`, (git) => runBranchAction(git, { kind: 'rename', name: 'old', newName: name }))
     await refusedBeforeGit(w, `checkout ${name}`, (git) => runAction(git, { kind: 'checkout', target: name }))
   }
+})
+
+test('names shaped like a full commit hash are refused, and a hash reaches git as that commit, never as a branch so named', async () => {
+  const w = world()
+  // git checkout and git branch read a bare 40-hex argument as a branch of that name before the commit.
+  for (const name of [w.c2, w.c2.toUpperCase(), 'a'.repeat(64), 'A'.repeat(64)]) {
+    for (const checkout of [false, true]) await refusedBeforeGit(w, `branch ${name}`, (git) => runAction(git, { kind: 'branch', hash: w.c1, name, checkout }))
+    await refusedBeforeGit(w, `tag ${name}`, (git) => runAction(git, { kind: 'tag', hash: w.c1, name }))
+    await refusedBeforeGit(w, `rename to ${name}`, (git) => runBranchAction(git, { kind: 'rename', name: 'topic', newName: name }))
+    await refusedBeforeGit(w, `checkout of the branch ${name}`, (git) => runAction(git, { kind: 'checkout', target: name }))
+  }
+  // A commit is checked out only when the request says so, and only by its full hash.
+  for (const target of hashes(w)) await refusedBeforeGit(w, `detached checkout of ${JSON.stringify(target)}`, (git) => runAction(git, { kind: 'checkout', target: as(target), detach: true }))
+  // Branches named with c1's and c3's hashes, made in a terminal, at t2.
+  sh(w.root, 'branch', w.c1, w.t2)
+  sh(w.root, 'branch', w.c3, w.t2)
+  const git = createGit(w.root)
+  assert.equal((await runAction(git, { kind: 'branch', hash: w.c1, name: 'fresh', checkout: false })).ok, true)
+  assert.equal(sh(w.root, 'rev-parse', 'refs/heads/fresh'), w.c1)
+  assert.equal((await runAction(git, { kind: 'branch', hash: w.c1, name: 'fresh2', checkout: true })).ok, true)
+  assert.equal(sh(w.root, 'rev-parse', 'HEAD'), w.c1)
+  sh(w.root, 'switch', '-q', 'main')
+  assert.equal((await runAction(git, { kind: 'checkout', target: w.c1, detach: true })).ok, true)
+  assert.equal(sh(w.root, 'rev-parse', 'HEAD'), w.c1)
+  sh(w.root, 'switch', '-q', 'main')
+  // A backup branch of HEAD (c3) keeps c3, not the branch named like it.
+  assert.equal((await createBackup(git, { kind: 'branch', name: 'backup/main-1', target: w.c3 })).ok, true)
+  assert.equal(sh(w.root, 'rev-parse', 'refs/heads/backup/main-1'), w.c3)
 })
 
 test('engine actions refuse hostile names, hashes, modes and plans before git runs', async () => {
@@ -274,15 +302,15 @@ test('merge and rebase onto take the full name of a branch, never a ref its shor
       const before = snapshot(root)
       const label = `${kind} ${branch}`
       if (branch !== 'refs/heads/main') {
-        assert.equal((await runBranchAction(git, { kind, name: branch })).ok, false, label)
+        assert.equal((await runBranchAction(git, { kind, name: branch, tip: x })).ok, false, label)
         await assert.rejects(checkRebaseOnto(git, branch), label)
       }
       for (const name of ['refs/heads/nope', 'refs/heads/side-x~1', 'refs/heads/side-x^{tree}', 'refs/tags/x', ` refs/heads/${branch}`]) {
-        assert.equal((await runBranchAction(git, { kind, name })).ok, false, `${label}: ${name}`)
+        assert.equal((await runBranchAction(git, { kind, name, tip: x })).ok, false, `${label}: ${name}`)
       }
       assert.deepEqual(snapshot(root), before, label)
       assert.deepEqual(await checkRebaseOnto(git, `refs/heads/${branch}`), { pushed: [] }, label)
-      const result = await runBranchAction(git, { kind, name: `refs/heads/${branch}` })
+      const result = await runBranchAction(git, { kind, name: `refs/heads/${branch}`, tip: x })
       assert.equal(result.ok, true, `${label}: ${result.message}`)
       assert.ok(result.message.includes(branch), result.message)
       assert.deepEqual(sh(root, 'ls-tree', '--name-only', 'HEAD').split('\n'), ['a.txt', 'x.txt'], label)
@@ -318,7 +346,7 @@ test('a merge commit names the branch by its short name, or by its full ref when
     const w = world()
     commit(w.root, 'a.txt', 'topic\n', 'match topic')
     const [name, subject] = prepare(w)
-    const result = await runBranchAction(createGit(w.root), { kind: 'merge', name })
+    const result = await runBranchAction(createGit(w.root), { kind: 'merge', name, tip: w.t2 })
     assert.equal(result.ok, true, `${name}: ${result.message}`)
     assert.equal(sh(w.root, 'log', '-1', '--format=%s'), subject, name)
     assert.equal(sh(w.root, 'rev-parse', 'HEAD^2'), w.t2, name)
@@ -411,7 +439,7 @@ test('a conflict or a refusal by git aborts the operation and leaves everything 
   await failsCleanly('checkout over a local edit', editA, (git) => runAction(git, { kind: 'checkout', target: 'topic' }))
   await failsCleanly('checkout over an untracked file', (w) => writeFileSync(join(w.root, 't.txt'), 'mine\n'), (git) => runAction(git, { kind: 'checkout', target: 'topic' }))
   await failsCleanly('new branch over a local edit', editA, (git, w) => runAction(git, { kind: 'branch', hash: w.t1, name: 'fresh', checkout: true }))
-  await failsCleanly('checkout of a commit that does not exist', nothing, (git) => runAction(git, { kind: 'checkout', target: 'f'.repeat(40) }))
+  await failsCleanly('checkout of a commit that does not exist', nothing, (git) => runAction(git, { kind: 'checkout', target: 'f'.repeat(40), detach: true }))
   // Cherry-pick and revert: a conflict on the first or a later commit is aborted.
   await failsCleanly('cherry-pick with a conflict', nothing, (git, w) => runAction(git, { kind: 'cherryPick', hashes: [w.t1] }), /aborted/)
   const t3 = (w: World) => {
@@ -455,15 +483,15 @@ test('a conflict or a refusal by git aborts the operation and leaves everything 
   await failsCleanly('merge refused by a pre-merge-commit hook', (w) => {
     matchTopic(w)
     refuseHook('pre-merge-commit')(w)
-  }, (git) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/topic' }), /aborted/)
-  await failsCleanly('rebase onto refused by a pre-rebase hook', refuseHook('pre-rebase'), (git) => runBranchAction(git, { kind: 'rebaseOnto', name: 'refs/heads/topic' }), /aborted/)
+  }, (git, w) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/topic', tip: w.t2 }), /aborted/)
+  await failsCleanly('rebase onto refused by a pre-rebase hook', refuseHook('pre-rebase'), (git, w) => runBranchAction(git, { kind: 'rebaseOnto', name: 'refs/heads/topic', tip: w.t2 }), /aborted/)
   const inTheWay = (w: World) => {
     matchTopic(w)
     dirty(w)
     writeFileSync(join(w.root, 't.txt'), 'mine\n')
   }
-  await failsCleanly('merge over an untracked file', inTheWay, (git) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/topic' }), /aborted/)
-  await failsCleanly('rebase onto over an untracked file', inTheWay, (git) => runBranchAction(git, { kind: 'rebaseOnto', name: 'refs/heads/topic' }), /aborted/)
+  await failsCleanly('merge over an untracked file', inTheWay, (git, w) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/topic', tip: w.t2 }), /aborted/)
+  await failsCleanly('rebase onto over an untracked file', inTheWay, (git, w) => runBranchAction(git, { kind: 'rebaseOnto', name: 'refs/heads/topic', tip: w.t2 }), /aborted/)
   await failsCleanly('merge of unrelated histories', (w) => {
     sh(w.root, 'checkout', '-q', '--orphan', 'other')
     sh(w.root, 'rm', '-rq', '--cached', '.')
@@ -472,7 +500,7 @@ test('a conflict or a refusal by git aborts the operation and leaves everything 
     sh(w.root, 'commit', '-qm', 'unrelated')
     sh(w.root, 'checkout', '-qf', 'main')
     dirty(w)
-  }, (git) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/other' }), /aborted/)
+  }, (git, w) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/other', tip: sh(w.root, 'rev-parse', 'other') }), /aborted/)
   // Branch actions: git refuses a taken name, an unmerged branch without force and a branch another worktree uses.
   await failsCleanly('rename to a taken name', nothing, (git) => runBranchAction(git, { kind: 'rename', name: 'topic', newName: 'main' }))
   await failsCleanly('delete of an unmerged branch without force', nothing, (git) => runBranchAction(git, { kind: 'delete', name: 'topic', force: false }))
@@ -481,7 +509,7 @@ test('a conflict or a refusal by git aborts the operation and leaves everything 
   const elsewhere = tempDir('git-log-safety-worktree-')
   await failsCleanly('delete of a branch another worktree has checked out', (w) => {
     sh(w.root, 'worktree', 'add', '-q', join(elsewhere, 'wt'), 'topic')
-  }, (git) => runBranchAction(git, { kind: 'delete', name: 'topic', force: true }))
+  }, (git, w) => runBranchAction(git, { kind: 'delete', name: 'topic', force: true, tip: w.t2 }))
   // Patch: an existing file is not overwritten without asking.
   await failsCleanly('patch over an existing file', (w) => writeFileSync(join(w.root, 'out.patch'), 'mine\n'), async (git, w) => {
     const result = await createPatch(git, w.root, [w.c2], 'out.patch')
@@ -507,7 +535,7 @@ test('a cherry-pick of several commits that git refuses at the first leaves no s
 /** Every operation on a fresh world with a local edit to b.txt and an untracked notes.txt. */
 const everyOperation = (w: World): [string, (git: Git) => Promise<Result>][] => [
   ['checkout of a branch', (git) => runAction(git, { kind: 'checkout', target: 'topic' })],
-  ['checkout of a hash', (git) => runAction(git, { kind: 'checkout', target: w.c1 })],
+  ['checkout of a hash', (git) => runAction(git, { kind: 'checkout', target: w.c1, detach: true })],
   ['new branch', (git) => runAction(git, { kind: 'branch', hash: w.c1, name: 'fresh', checkout: false })],
   ['new branch, checked out', (git) => runAction(git, { kind: 'branch', hash: w.c1, name: 'fresh', checkout: true })],
   ['new tag', (git) => runAction(git, { kind: 'tag', hash: w.c1, name: 'v1' })],
@@ -522,10 +550,10 @@ const everyOperation = (w: World): [string, (git: Git) => Promise<Result>][] => 
   ['drop', (git) => runAction(git, { kind: 'drop', hashes: [w.c2] })],
   ['reword', (git) => runAction(git, { kind: 'reword', hash: w.c2, message: 'reworded' })],
   ['interactive rebase', (git) => runAction(git, { kind: 'rebase', plan: [{ hash: w.c3, action: 'pick' }, { hash: w.c2, action: 'pick' }] })],
-  ['merge', (git) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/topic' })],
-  ['rebase onto', (git) => runBranchAction(git, { kind: 'rebaseOnto', name: 'refs/heads/topic' })],
+  ['merge', (git) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/topic', tip: w.t2 })],
+  ['rebase onto', (git) => runBranchAction(git, { kind: 'rebaseOnto', name: 'refs/heads/topic', tip: w.t2 })],
   ['rename', (git) => runBranchAction(git, { kind: 'rename', name: 'topic', newName: 'renamed' })],
-  ['delete', (git) => runBranchAction(git, { kind: 'delete', name: 'topic', force: true })],
+  ['delete', (git) => runBranchAction(git, { kind: 'delete', name: 'topic', force: true, tip: w.t2 })],
   ['fetch', (git) => fetchAll(git)],
   ['backup with stash', (git) => createBackup(git, { kind: 'branch', name: 'backup/main-1', target: w.c3, stash: true }).then((r) => ({ ok: r.ok, message: r.ok ? '' : r.message }))],
   ['restore to a backup', (git) => runAction(git, { kind: 'reset', hash: w.c2, mode: 'keep' })],
@@ -595,11 +623,11 @@ test('staged, unstaged and untracked changes come back from rewrites, merge and 
     ['squash', nothing, (git, w) => runAction(git, { kind: 'squash', hashes: [w.c3, w.c2], message: 'squashed' })],
     ['drop', nothing, (git, w) => runAction(git, { kind: 'drop', hashes: [w.c2] })],
     ['reword', nothing, (git, w) => runAction(git, { kind: 'reword', hash: w.c2, message: 'reworded' })],
-    ['merge', (w) => commit(w.root, 'a.txt', 'topic\n', 'match topic'), (git) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/topic' })],
-    ['rebase onto', side, (git) => runBranchAction(git, { kind: 'rebaseOnto', name: 'refs/heads/side' })],
+    ['merge', (w) => commit(w.root, 'a.txt', 'topic\n', 'match topic'), (git, w) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/topic', tip: w.t2 })],
+    ['rebase onto', side, (git, w) => runBranchAction(git, { kind: 'rebaseOnto', name: 'refs/heads/side', tip: sh(w.root, 'rev-parse', 'side') })],
     ['drop with a conflict', (w) => commit(w.root, 'a.txt', 'main again\n', 'c4'), (git, w) => runAction(git, { kind: 'drop', hashes: [w.c3] })],
-    ['merge with a conflict', nothing, (git) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/topic' })],
-    ['rebase onto with a conflict', nothing, (git) => runBranchAction(git, { kind: 'rebaseOnto', name: 'refs/heads/topic' })]
+    ['merge with a conflict', nothing, (git, w) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/topic', tip: w.t2 })],
+    ['rebase onto with a conflict', nothing, (git, w) => runBranchAction(git, { kind: 'rebaseOnto', name: 'refs/heads/topic', tip: w.t2 })]
   ]
   for (const [label, prepare, run] of runs) {
     const w = world()
@@ -658,14 +686,14 @@ test('a merge git stops before it starts gives the local changes back', async ()
   const w = mergeable()
   // No committer identity: git has already stashed the changes when it finds out.
   const before = snapshot(w.root)
-  const result = await withoutIdentity(w.root, () => runBranchAction(createGit(w.root), { kind: 'merge', name: 'refs/heads/topic' }))
+  const result = await withoutIdentity(w.root, () => runBranchAction(createGit(w.root), { kind: 'merge', name: 'refs/heads/topic', tip: w.t2 }))
   assert.equal(result.ok, false, result.message)
   assert.deepEqual(snapshot(w.root), before)
   // When git cannot store the autostash in the stash list, it drops it anyway: the worker applies it by its hash.
   const locked = mergeable()
   const lockedBefore = snapshot(locked.root)
   writeFileSync(join(locked.root, '.git', 'refs', 'stash.lock'), '')
-  const stuck = await withoutIdentity(locked.root, () => runBranchAction(createGit(locked.root), { kind: 'merge', name: 'refs/heads/topic' }))
+  const stuck = await withoutIdentity(locked.root, () => runBranchAction(createGit(locked.root), { kind: 'merge', name: 'refs/heads/topic', tip: locked.t2 }))
   rmSync(join(locked.root, '.git', 'refs', 'stash.lock'))
   assert.equal(stuck.ok, false)
   assert.doesNotMatch(stuck.message, /git stash list/)
@@ -679,7 +707,7 @@ test('a merge refuses while an earlier merge left local changes under MERGE_AUTO
   const left = sh(w.root, 'rev-parse', 'MERGE_AUTOSTASH')
   writeFileSync(join(w.root, 'b.txt'), 'newer b\n')
   const before = snapshot(w.root)
-  const result = await runBranchAction(createGit(w.root), { kind: 'merge', name: 'refs/heads/topic' })
+  const result = await runBranchAction(createGit(w.root), { kind: 'merge', name: 'refs/heads/topic', tip: w.t2 })
   assert.equal(result.ok, false, result.message)
   assert.match(result.message, /MERGE_AUTOSTASH/)
   assert.deepEqual(snapshot(w.root), before)
@@ -702,6 +730,111 @@ test('Undo after an action refuses once HEAD or the files it would reset have mo
   before = snapshot(w.root)
   assert.equal((await undo()).ok, false)
   assert.deepEqual(snapshot(w.root), before)
+  // An Undo sent without the HEAD to expect is refused, not run unchecked.
+  const unbound = await runGuarded(git, {}, 'HEAD', () => runAction(git, { kind: 'reset', hash: w.c3, mode: 'keep' }), { onHead: true })
+  assert.equal(unbound.ok, false)
+  assert.deepEqual(snapshot(w.root), before)
+})
+
+test('moving HEAD away from commits on no branch asks first, and git\'s warning comes back with the result', async () => {
+  const w = world()
+  sh(w.root, 'remote', 'add', 'origin', join(w.root, 'nowhere.git'))
+  sh(w.root, 'update-ref', 'refs/remotes/origin/feature', w.t2)
+  sh(w.root, 'checkout', '-q', '--detach', w.c3)
+  const lost = commit(w.root, 'd.txt', 'd\n', 'on a detached HEAD')
+  const moves: [string, ActionRequest][] = [
+    ['checkout of a branch', { kind: 'checkout', target: 'topic' }],
+    ['checkout of a commit', { kind: 'checkout', target: w.c1, detach: true }],
+    ['checkout as', { kind: 'checkout', target: 'feature', track: 'refs/remotes/origin/feature' }],
+    ['new branch, checked out', { kind: 'branch', hash: w.c1, name: 'fresh', checkout: true }]
+  ]
+  for (const [label, action] of moves) {
+    const before = snapshot(w.root)
+    const result = await runAction(createGit(w.root), action)
+    assert.equal(result.ok, false, `${label}: ${result.message}`)
+    assert.deepEqual(result.leaves, [lost], label)
+    assert.deepEqual(snapshot(w.root), before, label)
+  }
+  // A new branch without checkout leaves HEAD where it is.
+  assert.equal((await runAction(createGit(w.root), { kind: 'branch', hash: w.c1, name: 'fresh', checkout: false })).ok, true)
+  // Confirmed: HEAD moves, and git's own warning comes back for the banner.
+  const left = await runAction(createGit(w.root), { kind: 'checkout', target: 'topic', leave: true })
+  assert.equal(left.ok, true, left.message)
+  assert.equal(sh(w.root, 'branch', '--show-current'), 'topic')
+  assert.match(left.gitWarnings?.join('\n') ?? '', /^Warning: you are leaving 1 commit behind, not connected to any of your branches/)
+})
+
+test('a checkout or a new branch whose target keeps the commits of a detached HEAD asks nothing', async () => {
+  const w = world()
+  sh(w.root, 'checkout', '-q', '--detach', w.c3)
+  const lost = commit(w.root, 'd.txt', 'd\n', 'on a detached HEAD')
+  const later = commit(w.root, 'e.txt', 'e\n', 'later, on no branch either')
+  sh(w.root, 'checkout', '-q', '--detach', lost)
+  const git = createGit(w.root)
+  // A later commit holds them: nothing is left behind.
+  const moved = await runAction(git, { kind: 'checkout', target: later, detach: true })
+  assert.equal(moved.ok, true, moved.message)
+  // The rescue: a branch at the detached commit itself, checked out.
+  const rescued = await runAction(git, { kind: 'branch', hash: later, name: 'rescue', checkout: true })
+  assert.equal(rescued.ok, true, rescued.message)
+  assert.equal(sh(w.root, 'rev-parse', 'refs/heads/rescue'), later)
+  assert.equal(sh(w.root, 'branch', '--show-current'), 'rescue')
+})
+
+test('the banner gets git\'s own warnings, the line-ending ones as one line', async () => {
+  const w = world()
+  commit(w.root, 'a.txt', 'topic\n', 'match topic')
+  for (let i = 0; i < 8; i++) writeFileSync(join(w.root, `f${i}.txt`), 'x\n')
+  sh(w.root, 'add', '-A')
+  sh(w.root, 'commit', '-q', '-m', 'files')
+  // The default of Git for Windows: the merge's autostash warns once per file.
+  sh(w.root, 'config', 'core.autocrlf', 'true')
+  for (let i = 0; i < 8; i++) writeFileSync(join(w.root, `f${i}.txt`), 'edited\n')
+  // A hook's own output is not git's warning.
+  writeFileSync(join(w.root, '.git', 'hooks', 'post-merge'), '#!/bin/sh\necho "WARNING: node_modules out of date" >&2\n')
+  chmodSync(join(w.root, '.git', 'hooks', 'post-merge'), 0o755)
+  const result = await runBranchAction(createGit(w.root), { kind: 'merge', name: 'refs/heads/topic', tip: w.t2 })
+  assert.equal(result.ok, true, result.message)
+  assert.equal(result.gitWarnings?.length, 1, JSON.stringify(result.gitWarnings))
+  assert.match(result.gitWarnings![0], /line endings of 8 files/i)
+})
+
+test('force delete, merge and rebase onto run only while the branch is at the commit the menu showed', async () => {
+  const w = world()
+  // The menu showed topic at t1; it has moved to t2 since (a fetch into it, a terminal). Without a tip nothing is checked.
+  for (const tip of [w.t1, undefined, 'topic']) {
+    const runs: [string, (git: Git) => Promise<Result>][] = [
+      ['force delete', (git) => runBranchAction(git, as({ kind: 'delete', name: 'topic', force: true, tip }))],
+      ['merge', (git) => runBranchAction(git, as({ kind: 'merge', name: 'refs/heads/topic', tip }))],
+      ['rebase onto', (git) => runBranchAction(git, as({ kind: 'rebaseOnto', name: 'refs/heads/topic', tip }))]
+    ]
+    for (const [label, run] of runs) await refusedBeforeGit(w, `${label} expecting ${tip}`, run)
+  }
+  const deleted = await runBranchAction(createGit(w.root), { kind: 'delete', name: 'topic', force: true, tip: w.t2 })
+  assert.equal(deleted.ok, true, deleted.message)
+})
+
+test('undo commit resets to the parent of the commit it checked, even when HEAD moves on after the check', async () => {
+  const w = world()
+  const real = createGit(w.root)
+  let moved = false
+  // A commit from a terminal lands between the check and the reset.
+  const race = (args: string[]) => {
+    if (args[0] === 'reset' && !moved) {
+      moved = true
+      commit(w.root, 'r.txt', 'r\n', 'from a terminal')
+    }
+  }
+  const racing: Git = {
+    gitPath: real.gitPath,
+    run: (args, options) => (race(args), real.run(args, options)),
+    out: (args, options) => (race(args), real.out(args, options))
+  }
+  const result = await runAction(racing, { kind: 'undo', hash: w.c3 })
+  assert.equal(result.ok, true, result.message)
+  assert.equal(sh(w.root, 'rev-parse', 'HEAD'), w.c2)
+  // A soft reset: what both commits changed stays staged.
+  assert.deepEqual(sh(w.root, 'diff', '--cached', '--name-only').split('\n'), ['a.txt', 'r.txt'])
 })
 
 // ---------- 5. Pushed commits are reported before a rewrite ----------
@@ -827,7 +960,7 @@ test('git itself refuses to rename or delete the branch a terminal is rebasing',
   const before = snapshot(w.root)
   const git = createGit(w.root)
   assert.equal((await runBranchAction(git, { kind: 'rename', name: 'main', newName: 'renamed' })).ok, false)
-  assert.equal((await runBranchAction(git, { kind: 'delete', name: 'main', force: true })).ok, false)
+  assert.equal((await runBranchAction(git, { kind: 'delete', name: 'main', force: true, tip: w.c3 })).ok, false)
   assert.deepEqual(snapshot(w.root), before)
   sh(w.root, 'rebase', '--abort')
   sh(w.root, 'checkout', '-q', '-b', 'backup/main-1')
@@ -868,6 +1001,35 @@ test('create patch saves only inside the repository, outside its .git, and never
     assert.ok(!result.ok && !result.reason.startsWith('threw') && !result.exists, `${path}: ${JSON.stringify(result)}`)
   }
   assert.equal(readFileSync(join(w.root, 'a.txt'), 'utf8'), 'main\n')
+})
+
+test('create patch refuses the git dir under a name other than .git', async () => {
+  // A git dir inside the work tree under another name, as NTFS also allows with .git. or GIT~1: no part of the path is .git.
+  const root = tempDir('git-log-safety-gitdir-')
+  sh(root, 'init', '-q', '-b', 'main', '--separate-git-dir', join(root, 'meta'))
+  sh(root, 'config', 'user.name', 'Tester')
+  sh(root, 'config', 'user.email', 'tester@example.com')
+  sh(root, 'config', 'commit.gpgsign', 'false')
+  writeFileSync(join(root, 'a.txt'), '1\n')
+  sh(root, 'add', 'a.txt')
+  sh(root, 'commit', '-q', '-m', 'c1')
+  const git = createGit(root)
+  const hash = sh(root, 'rev-parse', 'HEAD')
+  const config = readFileSync(join(root, 'meta', 'config'), 'utf8')
+  for (const path of ['meta/config', 'meta/x.patch', 'meta/new/x.patch', 'meta/refs/heads/x.patch']) {
+    for (const overwrite of [false, true]) {
+      const result = await createPatch(git, root, [hash], path, overwrite)
+      assert.equal(result.ok, false, `${path}: ${result.ok ? result.path : result.reason}`)
+    }
+  }
+  assert.equal(readFileSync(join(root, 'meta', 'config'), 'utf8'), config)
+  assert.deepEqual(['x.patch', 'new', 'refs/heads/x.patch'].filter((name) => existsSync(join(root, 'meta', name))), [])
+  assert.equal((await createPatch(git, root, [hash], 'out/c1.patch')).ok, true)
+  // Another folder that only differs in case is the git dir only where the file system ignores case.
+  const sameFolder = existsSync(join(root, 'META'))
+  const other = await createPatch(git, root, [hash], 'META/x.patch')
+  assert.equal(other.ok, !sameFolder, JSON.stringify(other))
+  assert.equal(existsSync(join(root, 'meta', 'x.patch')), false)
 })
 
 test('create patch refuses a FIFO or another file that is not a regular one, without blocking', async () => {

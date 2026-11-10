@@ -297,7 +297,8 @@ export async function createBackup(git: Git, request: unknown): Promise<Made | R
     const checked = await backupName(git, kind, name)
     // stash create writes only objects; the stash ref changes after the backup ref exists.
     const snapshot = stash === true ? (await git.out(['stash', 'create'])).trim() : ''
-    await git.out(kind === 'branch' ? ['branch', '--no-track', checked, target] : ['tag', '--no-sign', checked, target])
+    // <hash>^{commit}: git branch reads a bare 40-hex start as a branch of that name first.
+    await git.out(kind === 'branch' ? ['branch', '--no-track', checked, `${target}^{commit}`] : ['tag', '--no-sign', checked, target])
     if (!snapshot) return { ok: true, name: checked }
     const branch = (await readHead(git)).branch ?? 'HEAD'
     const stored = await git.run(['stash', 'store', '-m', `Git plugin backup before reset --hard (${branch})`, snapshot])
@@ -310,13 +311,14 @@ export async function createBackup(git: Git, request: unknown): Promise<Made | R
 
 /** What `action.run` and `branch.run` take besides the action, as a frame sent it. */
 export interface Guard {
-  /** The HEAD the confirmation showed; the action runs only while HEAD is still there. */
+  /** The HEAD the confirmation showed (null: no commit yet); the action runs only while HEAD is still there. */
   expectHead?: unknown
   backup?: unknown
 }
 
 /**
  * Runs `run` only while HEAD is still `expectHead` and after the backup, when one is asked for, is made.
+ * An action on HEAD (`onHead`) needs `expectHead`: without it the action is refused, never run unchecked.
  * The backup must point at `tip`: HEAD, or the branch an action deletes. A failed action still reports
  * the backup it left; one that ran reports the HEAD it left, for Undo to expect. A stash is taken only
  * for a hard reset (`hardReset`), the one action that throws uncommitted changes away.
@@ -326,14 +328,15 @@ export async function runGuarded<R extends ActionResult>(
   guard: Guard,
   tip: 'HEAD' | { branch: string },
   run: () => Promise<R>,
-  hardReset = false
+  { hardReset = false, onHead = false }: { hardReset?: boolean; onHead?: boolean } = {}
 ): Promise<R | ActionResult> {
   const { expectHead, backup } = guard
-  if (expectHead === undefined && backup === undefined) return run()
+  if (expectHead === undefined && backup === undefined && !onHead) return run()
   let made: Made | undefined
   try {
     const head = (await readHead(git)).hash
-    if (expectHead !== undefined && (typeof expectHead !== 'string' || !HASH.test(expectHead) || expectHead !== head)) throw new Error(t('repoChanged'))
+    const expected = expectHead === null ? head === null : typeof expectHead === 'string' && HASH.test(expectHead) && expectHead === head
+    if ((onHead || expectHead !== undefined) && !expected) throw new Error(t('repoChanged'))
     // Every guarded action on HEAD refuses while an operation is stopped: say so before a backup or stash is made for nothing.
     const busy = tip === 'HEAD' ? await operationRefusal(git) : null
     if (busy) throw new Error(busy)

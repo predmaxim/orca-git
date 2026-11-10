@@ -137,9 +137,13 @@ export interface PlanItem {
 export type RewriteKind = 'squash' | 'fixup' | 'drop' | 'reword' | 'rebase' | 'undo'
 
 export type ActionRequest =
-  /** `track`: a remote branch (full ref) to make `target` from, as a new local branch tracking it. */
-  | { kind: 'checkout'; target: string; track?: string }
-  | { kind: 'branch'; hash: string; name: string; checkout: boolean }
+  /**
+   * `target`: a local branch, or with `detach: true` a full commit hash (a branch can be named like one).
+   * `track`: a remote branch (full ref) to make `target` from, as a new local branch tracking it.
+   * `leave`: move HEAD even though commits only a detached HEAD holds are left behind (asked first; see `leaves`).
+   */
+  | { kind: 'checkout'; target: string; track?: string; detach?: boolean; leave?: boolean }
+  | { kind: 'branch'; hash: string; name: string; checkout: boolean; leave?: boolean }
   | { kind: 'tag'; hash: string; name: string }
   | { kind: 'cherryPick'; hashes: string[] }
   | { kind: 'revert'; hashes: string[] }
@@ -174,6 +178,10 @@ export interface ActionResult {
   head?: string
   /** It ran, but left something for the user to sort out (the message says what); no undo. */
   warning?: boolean
+  /** Nothing ran: moving HEAD would leave these commits (the first 20; `message` gives how many) on no branch. */
+  leaves?: string[]
+  /** The `warning:` messages git printed while the action ran and succeeded. */
+  gitWarnings?: string[]
 }
 
 /** A branch or tag the worker creates at `target` (40 hex) before a risky action; never overwrites a ref. */
@@ -211,18 +219,25 @@ export interface ResetCheck {
   indexUnchecked?: boolean
 }
 
-/** Sent with `action.run` and `branch.run`: the HEAD the confirmation showed, and the backup to make first. */
+/**
+ * Sent with `action.run` and `branch.run`: the HEAD the confirmation showed (null: no commit yet), and the backup to
+ * make first. An action on the current branch without `expectHead` is refused.
+ */
 export interface ActionGuard {
-  expectHead?: string
+  expectHead?: string | null
   backup?: BackupRequest
 }
 
 export type BranchAction =
   | { kind: 'rename'; name: string; newName: string }
-  | { kind: 'delete'; name: string; force: boolean }
-  /** `name`: the full ref, refs/heads/… or refs/remotes/… (a short name can mean another ref). */
-  | { kind: 'merge'; name: string }
-  | { kind: 'rebaseOnto'; name: string }
+  /** `tip`: the commit the dialog showed the branch at; `force` deletes only while the branch is still there. */
+  | { kind: 'delete'; name: string; force: boolean; tip?: string }
+  /**
+   * `name`: the full ref, refs/heads/… or refs/remotes/… (a short name can mean another ref); `tip`: the commit the
+   * menu showed it at, which it must still name.
+   */
+  | { kind: 'merge'; name: string; tip: string }
+  | { kind: 'rebaseOnto'; name: string; tip: string }
 
 export interface BranchActionResult extends ActionResult {
   /** The branch is not fully merged; deleting it needs force. */
