@@ -4,7 +4,7 @@ import type { PatchResult } from '../shared/protocol.ts'
 import type { Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
 
-const { O_WRONLY, O_CREAT, O_TRUNC, O_NOFOLLOW = 0 } = constants
+const { O_WRONLY, O_CREAT, O_TRUNC, O_NOFOLLOW = 0, O_NONBLOCK = 0 } = constants
 
 /** Frame responses are capped at 1 MiB; bigger patches can only be saved. */
 export const MAX_PATCH_TEXT = 900_000
@@ -56,7 +56,8 @@ export async function createPatch(git: Git, root: string, hashes: string[], path
     if (last && !overwrite) return exists
     mkdirSync(dirname(target), { recursive: true })
     // Neither replaces a link made since the check: wx never opens an existing path, O_NOFOLLOW never follows one.
-    const fd = openSync(target, overwrite ? O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW : 'wx')
+    // O_NONBLOCK: a FIFO swapped in since the check fails with ENXIO instead of blocking the worker.
+    const fd = openSync(target, overwrite ? O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_NONBLOCK : 'wx')
     try {
       writeFileSync(fd, text)
     } finally {
