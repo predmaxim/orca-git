@@ -1360,18 +1360,24 @@ fetchButton.addEventListener('click', async () => {
   const show = (result: ActionResult) =>
     showBanner(about(root, [result.message, ...(result.gitWarnings ?? [])].join('\n')), result.ok ? 'success' : 'error', [], Boolean(result.gitWarnings?.length))
   fetchButton.disabled = true
+  let waiting = false
   try {
     const result = await api.fetch(root, id)
     late.end(id)
     show(result)
   } catch (error) {
-    if (timedOut(error)) awaitLate(id, show)
-    else {
+    // git still runs after Orca's timeout: the button stays off until its result comes, as a second fetch would be refused.
+    if (timedOut(error)) {
+      waiting = awaitLate(id, (result) => {
+        fetchButton.disabled = false
+        show(result)
+      })
+    } else {
       late.end(id)
       showBanner(errorMessage(error), 'error')
     }
   } finally {
-    fetchButton.disabled = false
+    if (!waiting) fetchButton.disabled = false
   }
 })
 async function openDiff(root: string, index: number): Promise<void> {
@@ -1399,6 +1405,8 @@ orca.plugin.on('action.done', ({ id, result }: { id: string; result: BranchActio
 // What the worker before this one ran is never posted: stop saying git is still running.
 orca.plugin.on('worker.started', () => {
   if (late.restart()) showBanner(t('workerRestarted'), 'error')
+  // A late fetch it kept the button off for is never posted either.
+  fetchButton.disabled = false
 })
 
 orca.plugin.on('repo.changed', ({ root }: { root: string }) => {
