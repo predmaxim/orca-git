@@ -169,12 +169,15 @@ keeps them all.
   search reads at most 10,000 folder entries and never follows links; a folder it cannot finish is
   named in bold as not fully checked rather than passed. A folder where the target has a submodule
   is kept by the reset and not listed. With `submodule.recurse=true` in the git config the reset also
-  resets submodules: such a folder is then listed like any other, and every populated submodule (one
-  holding `.git`) of the index or the target is named in bold, since the reset resets or removes it.
-  What is inside (uncommitted changes, untracked files, commits on no branch) is not checked one by
-  one, and neither the backup nor the stash keeps it. Not listed: a file created after the dialog
-  opened, and an edit to a file marked `--assume-unchanged`: git status does not see it, and a hard
-  reset that keeps the file writes it back.
+  resets submodules: such a folder is then listed like any other, and every submodule of the index or
+  the target that is populated (holds `.git`) or holds files of yours is named in bold, since the
+  reset resets, removes or checks it out over them. What is inside (uncommitted changes, untracked
+  files, commits on no branch) is not checked one by one, and neither the backup nor the stash keeps
+  it. Edits to files marked `--assume-unchanged`, which git status and the stash skip but a hard
+  reset writes back, are found by hashing those files (`git hash-object`, nothing written) and listed
+  in bold; a file git cannot hash is listed too. If the index is too large to read (over roughly
+  550,000 files), the dialog says in bold that those files and submodules were not checked, and the
+  reset is still offered. A file created after the dialog opened is not listed.
 - The banner names the backup and offers Undo and **Show Backup**, which opens its folder in the branch
   tree.
 - Backup branches sit in the `backup/` folder of the branch tree, backup tags among the tags. Their menu
