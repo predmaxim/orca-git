@@ -82,13 +82,14 @@ test('groupByPrefix nests branches by their prefix', () => {
 })
 
 test('dayInput shows the day the Date filter picked, east of UTC too', () => {
-  const zone = process.env.TZ
-  process.env.TZ = 'Europe/Moscow'
+  const env = process.env
+  const zone = env.TZ
+  env.TZ = 'Europe/Moscow'
   try {
     // Apply reads the input as local midnight; reopening the filter must show the same day.
     assert.equal(dayInput(new Date('2026-11-05T00:00:00').getTime() / 1000), '2026-11-05')
   } finally {
-    if (zone === undefined) delete process.env.TZ
-    else process.env.TZ = zone
+    if (zone === undefined) delete env.TZ
+    else env.TZ = zone
   }
 })
