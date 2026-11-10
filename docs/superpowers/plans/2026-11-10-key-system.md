@@ -149,7 +149,7 @@
   - `carry refused`: `carry: true` при `ignored` → `ok: false`, ничего не тронуто.
   - `literal paths`: файлы `a b.txt`, `ж.txt`, `*.txt`, `:(glob)x`, `[a].txt` в изменениях → стэш забирает ровно их.
   - `flags count only as true`: `stash: 1` → как без флага (`atRisk`).
-  - `submodule.recurse`: сабмодуль (`-c protocol.file.allow=always submodule add`), правка внутри него, `submodule.recurse=true`, цель с другим коммитом сабмодуля — записать в дизайн (раздел «Checkout»), что делает `git switch`; если правка теряется молча — путь сабмодуля с правкой идёт в `conflicts` (тогда `carry = false`, а стэш сабмодуль не спасает — кнопка стэша тоже недоступна, диалог говорит почему).
+  - `submodule.recurse`: сабмодуль (`-c protocol.file.allow=always submodule add`), правка внутри него, `submodule.recurse=true`, цель с другим коммитом сабмодуля — записать в дизайн (раздел «Checkout»), что делает `git switch`; если правка теряется молча — остановиться и спросить пользователя, как её защищать (стэш верхнего репозитория сабмодуль не спасает).
 - [ ] **Step 2:** `orca plugin test .` — тесты падают.
 - [ ] **Step 3: `git.ts`** — `input` пишется в `child.stdin` и закрывается; без `input` stdin как сейчас.
 - [ ] **Step 4: `checkoutRisk`.** HEAD (`rev-parse --verify -q HEAD`; нерождённая ветка — пустое дерево) = цель → `null`. Иначе:
