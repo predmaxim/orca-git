@@ -330,6 +330,17 @@ test('checkout of a remote branch as local tracks the remote branch clicked, wha
     sh(w.root, 'switch', '-q', 'main')
     sh(w.root, 'branch', '-q', '-D', 'feature')
   }
+  // Local changes the remote branch would overwrite: the branch is made, the switch refused, the files kept.
+  sh(w.root, 'config', '--unset', 'checkout.defaultRemote')
+  writeFileSync(join(w.root, 'a.txt'), 'local a\n')
+  const kept = snapshot(w.root)
+  const refused = await runAction(git, { kind: 'checkout', target: 'feature', track: 'refs/remotes/origin/feature' })
+  assert.equal(refused.ok, false)
+  assert.match(refused.message, /feature/)
+  assert.equal(sh(w.root, 'rev-parse', '--abbrev-ref', 'feature@{upstream}'), 'origin/feature')
+  assert.deepEqual({ ...snapshot(w.root), refs: kept.refs }, kept)
+  sh(w.root, 'branch', '-q', '-D', 'feature')
+  sh(w.root, 'checkout', '-q', '--', 'a.txt')
   for (const track of ['origin/feature', 'refs/remotes/origin/nope', 'refs/tags/x', 'refs/heads/topic', '-x', 42]) {
     await refusedBeforeGit(w, `track ${track}`, (g) => runAction(g, as({ kind: 'checkout', target: 'feature', track })))
   }
@@ -339,6 +350,19 @@ test('checkout of a remote branch as local tracks the remote branch clicked, wha
   const before = snapshot(w.root)
   assert.equal((await runAction(git, { kind: 'checkout', target: 'feature', track: 'refs/remotes/origin/feature' })).ok, false)
   assert.deepEqual(snapshot(w.root), before)
+})
+
+test('checkout as refuses a remote branch outside the fetch refspec and leaves the work tree, index and HEAD alone', async () => {
+  // A single-branch clone, then a branch fetched by hand: no remote's refspec maps refs/remotes/origin/topic.
+  const origin = world()
+  const base = tempDir('git-log-safety-clone-')
+  sh(base, 'clone', '-q', '--single-branch', '--branch', 'main', origin.root, 'clone')
+  const root = join(base, 'clone')
+  sh(root, 'fetch', '-q', 'origin', 'topic:refs/remotes/origin/topic')
+  const before = snapshot(root)
+  const result = await runAction(createGit(root), { kind: 'checkout', target: 'topic', track: 'refs/remotes/origin/topic' })
+  assert.equal(result.ok, false, result.message)
+  assert.deepEqual(snapshot(root), before)
 })
 
 test('branch actions refuse hostile names before git runs', async () => {

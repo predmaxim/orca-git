@@ -154,7 +154,12 @@ async function perform(git: Git, action: ActionRequest): Promise<string> {
         if (typeof track !== 'string' || !track.startsWith('refs/remotes/') || !(await git.run(['show-ref', '--verify', '--quiet', track])).ok) {
           throw new Error(t('notBranchOrCommit', { name: String(track) }))
         }
-        await git.out(['switch', '--create', await assertName(git, target, 'branch'), '--track', track])
+        const name = await assertName(git, target, 'branch')
+        // git branch checks the tracking before it writes; `switch --create --track` would update the index and files
+        // first, then fail on a ref no remote's fetch refspec maps and leave the remote branch staged on HEAD.
+        await git.out(['branch', '--track', name, track])
+        const switched = await git.run(['switch', '--end-of-options', name])
+        if (!switched.ok) throw new Error(`${t('branchMadeNotSwitched', { name, upstream: track.slice(13) })}\n${lastLines(switched.stderr || switched.stdout, 4)}`)
       } else if (HASH.test(target)) await git.out(['checkout', '--detach', target, '--'])
       // Anything else must be a local branch: git switch refuses a tag, a remote branch, the stash or a revision.
       else await git.out(['switch', '--end-of-options', await assertName(git, target, 'branch')])
