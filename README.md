@@ -57,6 +57,20 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   ref icons. The interface uses the system font; code uses JetBrainsMono Nerd Font or JetBrains Mono
   when installed.
 - **Multi-select**: click, Ctrl/⌘-click, Shift-click, arrows, Page Up/Down, Home/End, Ctrl+A.
+- **Keyboard, like lazygit**: single keys while focus is in the panel and not in a field, menu or
+  dialog. They go by the physical key, so they work in any keyboard layout; `?` lists them all, and
+  tooltips name them ("User (u)"). No key changes your branches, commits or files; Fetch only
+  downloads from the remotes.
+  - Anywhere in the panel: `1` `2` `3` `4` go to Branches, Commits, Files and Details (a folded
+    section opens first); `0` brings up the Diff tab as it was left (or, if the repository has none
+    yet, opens the current file of the selection); `f` folds or unfolds the current section; `/`
+    searches it (Branches and Commits have a search field); `r` Refresh; `Shift+F` Fetch.
+  - Commits: `b` `u` `d` `p` open the Branch, User, Date and Paths filters (Esc closes one and
+    returns to its button); `.` regex, `c` match case.
+  - Files: `e` expand all, `c` collapse all.
+  - Diff tab: `s` Split (side by side), `u` Unified, `w` Whole file.
+  - Esc in a search clears it; in an empty search it goes back to the list. A thin line along the left
+    edge marks the section the keys act on and stays there while focus is outside the panel.
 - **Right-click menu** with icons (or Shift+F10):
   - Copy Revision Number (Ctrl+C), Cherry-Pick, Create Patch… (`git format-patch` of the selection,
     oldest first, copied to the clipboard or saved to a file inside the repository only: a path
