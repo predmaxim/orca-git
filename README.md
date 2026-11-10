@@ -42,7 +42,7 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
 - **Details section**: one row per selected commit (short hash, title, author); click a row to expand
   the full message, author, committer, date and branches. A single selected commit is expanded at once.
 - **Diff tab**: one editor tab per repository; the next file you open replaces its content. Side by
-  side or unified, with changed words highlighted and syntax highlighting for 26 languages (light and
+  side or unified, with changed words highlighted and syntax highlighting for 24 languages (light and
   dark palettes in the style of WebStorm, the plugin's own because Orca does not pass theme token colors
   to plugins). Toggle **Whole file** for full context, jump between changes with F7 / Shift+F7 and
   between the files of the selection it was opened from with ← / → (keys or header buttons) or Alt+↑ /
