@@ -214,18 +214,25 @@ export interface ResetCheck {
   indexUnchecked?: boolean
 }
 
-/** Sent with `action.run` and `branch.run`: the HEAD the confirmation showed, and the backup to make first. */
+/**
+ * Sent with `action.run` and `branch.run`: the HEAD the confirmation showed (null: no commit yet), and the backup to
+ * make first. An action on the current branch without `expectHead` is refused.
+ */
 export interface ActionGuard {
-  expectHead?: string
+  expectHead?: string | null
   backup?: BackupRequest
 }
 
 export type BranchAction =
   | { kind: 'rename'; name: string; newName: string }
-  | { kind: 'delete'; name: string; force: boolean }
-  /** `name`: the full ref, refs/heads/… or refs/remotes/… (a short name can mean another ref). */
-  | { kind: 'merge'; name: string }
-  | { kind: 'rebaseOnto'; name: string }
+  /** `tip`: the commit the dialog showed the branch at; `force` deletes only while the branch is still there. */
+  | { kind: 'delete'; name: string; force: boolean; tip?: string }
+  /**
+   * `name`: the full ref, refs/heads/… or refs/remotes/… (a short name can mean another ref); `tip`: the commit the
+   * menu showed it at, which it must still name.
+   */
+  | { kind: 'merge'; name: string; tip: string }
+  | { kind: 'rebaseOnto'; name: string; tip: string }
 
 export interface BranchActionResult extends ActionResult {
   /** The branch is not fully merged; deleting it needs force. */

@@ -204,7 +204,9 @@ async function perform(git: Git, action: ActionRequest): Promise<string> {
     case 'undo': {
       const check = await checkRewrite(git, 'undo', [action.hash])
       if (!check.ok) throw new Error(check.reason)
-      await git.out(['reset', '--soft', 'HEAD~1', '--'])
+      // The parent of the commit the check found at HEAD, not HEAD~1: a commit made since must not be the one undone.
+      const [parent] = assertHashes([(check.commits[0] as Partial<HistoryEntry>).parents?.[0]])
+      await git.out(['reset', '--soft', parent, '--'])
       return t('commitUndone')
     }
     case 'squash':

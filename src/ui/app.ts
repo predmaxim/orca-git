@@ -656,7 +656,7 @@ function branchMenu(event: MouseEvent, ref: BranchRef & { kind: 'local' | 'remot
     if (!current) {
       entries.push(
         // The worker takes the full ref: a short name can mean another ref (heads/x, tags/x, a tag named like the branch).
-        { label: t('branchMerge'), icon: 'branch', disabled: Boolean(operation), hint: hintBusy, run: () => void act(scope, { kind: 'merge', name: ref.full }, t('branchMerging', { name: ref.name })) },
+        { label: t('branchMerge'), icon: 'branch', disabled: Boolean(operation), hint: hintBusy, run: () => void act(scope, { kind: 'merge', name: ref.full, tip: ref.hash }, t('branchMerging', { name: ref.name })) },
         { label: t('branchRebase'), icon: 'rebase', disabled: Boolean(operation), hint: hintBusy, run: () => void rebaseOnto(scope, ref) }
       )
     }
@@ -932,7 +932,7 @@ const ON_HEAD = new Set<string>([...UNDOABLE, 'undo'])
 /** The repository a flow acts on and the HEAD it saw, taken before the flow's first dialog. */
 interface Scope {
   root: string
-  /** Undefined skips the HEAD check. */
+  /** Null: no commit yet. Undefined: no HEAD was seen, so an action on the current branch is refused. */
   head?: string | null
 }
 
@@ -943,7 +943,7 @@ const scopeOf = (info: RepoInfo): Scope => ({ root: info.root, head: info.head.h
  * its HEAD); a workspace switch swaps it while a dialog is open. When not, a banner says nothing ran.
  */
 function unchanged(scope: Scope, onHead = false): boolean {
-  if (repo?.root === scope.root && (!onHead || scope.head === undefined || repo.head.hash === scope.head)) return true
+  if (repo?.root === scope.root && (!onHead || (scope.head !== undefined && repo.head.hash === scope.head))) return true
   showBanner(t('repoChanged'), 'error')
   return false
 }
@@ -956,7 +956,8 @@ async function act(scope: Scope, action: ActionRequest | BranchAction | BackupDe
   const onHead = ON_HEAD.has(action.kind)
   if (!unchanged(scope, onHead)) return null
   const root = scope.root
-  const guard = { ...(onHead && scope.head ? { expectHead: scope.head } : {}), ...(backup ? { backup } : {}) }
+  // Always for an action on HEAD: the worker refuses one that comes without it.
+  const guard = { ...(onHead ? { expectHead: scope.head } : {}), ...(backup ? { backup } : {}) }
   const done = busy(progress)
   let result: BranchActionResult
   try {
@@ -977,7 +978,7 @@ async function act(scope: Scope, action: ActionRequest | BranchAction | BackupDe
     else if (action.kind === 'deleteBackup') dropFilter(`refs/${action.ref === 'tag' ? 'tags' : 'heads'}/${action.name}`)
     const previous = result.previousHead
     // The Undo stays bound to this repository and, through the worker, to the HEAD this action left.
-    const undo = previous && UNDOABLE.has(action.kind)
+    const undo = previous && result.head && UNDOABLE.has(action.kind)
       ? [{ label: t('undo'), run: () => void act({ root, head: result.head }, { kind: 'reset', hash: previous, mode: 'keep' }, t('progUndoing')).then((r) => r?.ok && showBanner(t('restoredHead', { hash: shortHash(previous) }), 'success')) }]
       : []
     showBanner(text, result.warning ? 'info' : 'success', [...undo, ...show], result.warning)
@@ -1114,7 +1115,7 @@ async function deleteBranch(scope: Scope, name: string, hash: string): Promise<v
   if (!result?.needsForce) return
   const backup = await offerBackup(scope.root, name, hash)
   if (await confirm(t('branchDeleteTitle'), t('branchDeleteForce', { name }), t('branchDelete'), true, backup)) {
-    await act(scope, { kind: 'delete', name, force: true }, t('branchDeleting', { name }), backup?.value())
+    await act(scope, { kind: 'delete', name, force: true, tip: hash }, t('branchDeleting', { name }), backup?.value())
   }
 }
 
@@ -1132,7 +1133,7 @@ async function rebaseOnto(scope: Scope, ref: BranchRef): Promise<void> {
   }
   const backup = await offerHeadBackup(scope)
   if (await confirmRewrite(t('rebaseOntoTitle', { name: repo?.head.branch ?? 'HEAD', target: name }), pushed, t('btnRebase'), backup)) {
-    await act(scope, { kind: 'rebaseOnto', name: ref.full }, t('branchRebasing', { name }), backup?.value())
+    await act(scope, { kind: 'rebaseOnto', name: ref.full, tip: ref.hash }, t('branchRebasing', { name }), backup?.value())
   }
 }
 

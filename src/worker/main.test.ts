@@ -54,7 +54,11 @@ test('resolves the focused workspace, pages the log and runs an action', async (
     assert.equal(page.hasMore, true)
 
     const [newest, middle] = page.commits
-    const run = await worker.request('action.run', { root, action: { kind: 'drop', hashes: [middle.hash] } })
+    // An action on the current branch needs the HEAD its confirmation showed: without it nothing runs.
+    const unbound = await worker.request('action.run', { root, action: { kind: 'drop', hashes: [middle.hash] } })
+    assert.equal(unbound.ok, false)
+    assert.equal(sh(root, 'rev-parse', 'HEAD'), newest.hash)
+    const run = await worker.request('action.run', { root, action: { kind: 'drop', hashes: [middle.hash] }, expectHead: newest.hash })
     assert.equal(run.ok, true, run.message)
     assert.equal(run.previousHead, newest.hash)
     assert.deepEqual(worker.posts.at(-1), { event: 'repo.changed', payload: { root } })
@@ -75,7 +79,7 @@ test('action.run and branch.run check the HEAD the dialog showed and make the ba
     const name = 'backup/main-20261110-1432'
     const stale = await worker.request('action.run', { root, action: { kind: 'drop', hashes: [head] }, expectHead: parent, backup: { kind: 'branch', name, target: parent } })
     assert.equal(stale.ok, false)
-    const stuck = await worker.request('branch.run', { root, action: { kind: 'rebaseOnto', name: 'refs/heads/main' }, expectHead: parent })
+    const stuck = await worker.request('branch.run', { root, action: { kind: 'rebaseOnto', name: 'refs/heads/main', tip: head }, expectHead: parent })
     assert.equal(stuck.ok, false)
     // A stash goes only with a hard reset.
     const stashed = await worker.request('action.run', { root, action: { kind: 'drop', hashes: [head] }, expectHead: head, backup: { kind: 'branch', name, target: head, stash: true } })

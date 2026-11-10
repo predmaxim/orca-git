@@ -302,15 +302,15 @@ test('merge and rebase onto take the full name of a branch, never a ref its shor
       const before = snapshot(root)
       const label = `${kind} ${branch}`
       if (branch !== 'refs/heads/main') {
-        assert.equal((await runBranchAction(git, { kind, name: branch })).ok, false, label)
+        assert.equal((await runBranchAction(git, { kind, name: branch, tip: x })).ok, false, label)
         await assert.rejects(checkRebaseOnto(git, branch), label)
       }
       for (const name of ['refs/heads/nope', 'refs/heads/side-x~1', 'refs/heads/side-x^{tree}', 'refs/tags/x', ` refs/heads/${branch}`]) {
-        assert.equal((await runBranchAction(git, { kind, name })).ok, false, `${label}: ${name}`)
+        assert.equal((await runBranchAction(git, { kind, name, tip: x })).ok, false, `${label}: ${name}`)
       }
       assert.deepEqual(snapshot(root), before, label)
       assert.deepEqual(await checkRebaseOnto(git, `refs/heads/${branch}`), { pushed: [] }, label)
-      const result = await runBranchAction(git, { kind, name: `refs/heads/${branch}` })
+      const result = await runBranchAction(git, { kind, name: `refs/heads/${branch}`, tip: x })
       assert.equal(result.ok, true, `${label}: ${result.message}`)
       assert.ok(result.message.includes(branch), result.message)
       assert.deepEqual(sh(root, 'ls-tree', '--name-only', 'HEAD').split('\n'), ['a.txt', 'x.txt'], label)
@@ -346,7 +346,7 @@ test('a merge commit names the branch by its short name, or by its full ref when
     const w = world()
     commit(w.root, 'a.txt', 'topic\n', 'match topic')
     const [name, subject] = prepare(w)
-    const result = await runBranchAction(createGit(w.root), { kind: 'merge', name })
+    const result = await runBranchAction(createGit(w.root), { kind: 'merge', name, tip: w.t2 })
     assert.equal(result.ok, true, `${name}: ${result.message}`)
     assert.equal(sh(w.root, 'log', '-1', '--format=%s'), subject, name)
     assert.equal(sh(w.root, 'rev-parse', 'HEAD^2'), w.t2, name)
@@ -483,15 +483,15 @@ test('a conflict or a refusal by git aborts the operation and leaves everything 
   await failsCleanly('merge refused by a pre-merge-commit hook', (w) => {
     matchTopic(w)
     refuseHook('pre-merge-commit')(w)
-  }, (git) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/topic' }), /aborted/)
-  await failsCleanly('rebase onto refused by a pre-rebase hook', refuseHook('pre-rebase'), (git) => runBranchAction(git, { kind: 'rebaseOnto', name: 'refs/heads/topic' }), /aborted/)
+  }, (git, w) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/topic', tip: w.t2 }), /aborted/)
+  await failsCleanly('rebase onto refused by a pre-rebase hook', refuseHook('pre-rebase'), (git, w) => runBranchAction(git, { kind: 'rebaseOnto', name: 'refs/heads/topic', tip: w.t2 }), /aborted/)
   const inTheWay = (w: World) => {
     matchTopic(w)
     dirty(w)
     writeFileSync(join(w.root, 't.txt'), 'mine\n')
   }
-  await failsCleanly('merge over an untracked file', inTheWay, (git) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/topic' }), /aborted/)
-  await failsCleanly('rebase onto over an untracked file', inTheWay, (git) => runBranchAction(git, { kind: 'rebaseOnto', name: 'refs/heads/topic' }), /aborted/)
+  await failsCleanly('merge over an untracked file', inTheWay, (git, w) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/topic', tip: w.t2 }), /aborted/)
+  await failsCleanly('rebase onto over an untracked file', inTheWay, (git, w) => runBranchAction(git, { kind: 'rebaseOnto', name: 'refs/heads/topic', tip: w.t2 }), /aborted/)
   await failsCleanly('merge of unrelated histories', (w) => {
     sh(w.root, 'checkout', '-q', '--orphan', 'other')
     sh(w.root, 'rm', '-rq', '--cached', '.')
@@ -500,7 +500,7 @@ test('a conflict or a refusal by git aborts the operation and leaves everything 
     sh(w.root, 'commit', '-qm', 'unrelated')
     sh(w.root, 'checkout', '-qf', 'main')
     dirty(w)
-  }, (git) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/other' }), /aborted/)
+  }, (git, w) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/other', tip: sh(w.root, 'rev-parse', 'other') }), /aborted/)
   // Branch actions: git refuses a taken name, an unmerged branch without force and a branch another worktree uses.
   await failsCleanly('rename to a taken name', nothing, (git) => runBranchAction(git, { kind: 'rename', name: 'topic', newName: 'main' }))
   await failsCleanly('delete of an unmerged branch without force', nothing, (git) => runBranchAction(git, { kind: 'delete', name: 'topic', force: false }))
@@ -509,7 +509,7 @@ test('a conflict or a refusal by git aborts the operation and leaves everything 
   const elsewhere = tempDir('git-log-safety-worktree-')
   await failsCleanly('delete of a branch another worktree has checked out', (w) => {
     sh(w.root, 'worktree', 'add', '-q', join(elsewhere, 'wt'), 'topic')
-  }, (git) => runBranchAction(git, { kind: 'delete', name: 'topic', force: true }))
+  }, (git, w) => runBranchAction(git, { kind: 'delete', name: 'topic', force: true, tip: w.t2 }))
   // Patch: an existing file is not overwritten without asking.
   await failsCleanly('patch over an existing file', (w) => writeFileSync(join(w.root, 'out.patch'), 'mine\n'), async (git, w) => {
     const result = await createPatch(git, w.root, [w.c2], 'out.patch')
@@ -550,10 +550,10 @@ const everyOperation = (w: World): [string, (git: Git) => Promise<Result>][] => 
   ['drop', (git) => runAction(git, { kind: 'drop', hashes: [w.c2] })],
   ['reword', (git) => runAction(git, { kind: 'reword', hash: w.c2, message: 'reworded' })],
   ['interactive rebase', (git) => runAction(git, { kind: 'rebase', plan: [{ hash: w.c3, action: 'pick' }, { hash: w.c2, action: 'pick' }] })],
-  ['merge', (git) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/topic' })],
-  ['rebase onto', (git) => runBranchAction(git, { kind: 'rebaseOnto', name: 'refs/heads/topic' })],
+  ['merge', (git) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/topic', tip: w.t2 })],
+  ['rebase onto', (git) => runBranchAction(git, { kind: 'rebaseOnto', name: 'refs/heads/topic', tip: w.t2 })],
   ['rename', (git) => runBranchAction(git, { kind: 'rename', name: 'topic', newName: 'renamed' })],
-  ['delete', (git) => runBranchAction(git, { kind: 'delete', name: 'topic', force: true })],
+  ['delete', (git) => runBranchAction(git, { kind: 'delete', name: 'topic', force: true, tip: w.t2 })],
   ['fetch', (git) => fetchAll(git)],
   ['backup with stash', (git) => createBackup(git, { kind: 'branch', name: 'backup/main-1', target: w.c3, stash: true }).then((r) => ({ ok: r.ok, message: r.ok ? '' : r.message }))],
   ['restore to a backup', (git) => runAction(git, { kind: 'reset', hash: w.c2, mode: 'keep' })],
@@ -623,11 +623,11 @@ test('staged, unstaged and untracked changes come back from rewrites, merge and 
     ['squash', nothing, (git, w) => runAction(git, { kind: 'squash', hashes: [w.c3, w.c2], message: 'squashed' })],
     ['drop', nothing, (git, w) => runAction(git, { kind: 'drop', hashes: [w.c2] })],
     ['reword', nothing, (git, w) => runAction(git, { kind: 'reword', hash: w.c2, message: 'reworded' })],
-    ['merge', (w) => commit(w.root, 'a.txt', 'topic\n', 'match topic'), (git) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/topic' })],
-    ['rebase onto', side, (git) => runBranchAction(git, { kind: 'rebaseOnto', name: 'refs/heads/side' })],
+    ['merge', (w) => commit(w.root, 'a.txt', 'topic\n', 'match topic'), (git, w) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/topic', tip: w.t2 })],
+    ['rebase onto', side, (git, w) => runBranchAction(git, { kind: 'rebaseOnto', name: 'refs/heads/side', tip: sh(w.root, 'rev-parse', 'side') })],
     ['drop with a conflict', (w) => commit(w.root, 'a.txt', 'main again\n', 'c4'), (git, w) => runAction(git, { kind: 'drop', hashes: [w.c3] })],
-    ['merge with a conflict', nothing, (git) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/topic' })],
-    ['rebase onto with a conflict', nothing, (git) => runBranchAction(git, { kind: 'rebaseOnto', name: 'refs/heads/topic' })]
+    ['merge with a conflict', nothing, (git, w) => runBranchAction(git, { kind: 'merge', name: 'refs/heads/topic', tip: w.t2 })],
+    ['rebase onto with a conflict', nothing, (git, w) => runBranchAction(git, { kind: 'rebaseOnto', name: 'refs/heads/topic', tip: w.t2 })]
   ]
   for (const [label, prepare, run] of runs) {
     const w = world()
@@ -686,14 +686,14 @@ test('a merge git stops before it starts gives the local changes back', async ()
   const w = mergeable()
   // No committer identity: git has already stashed the changes when it finds out.
   const before = snapshot(w.root)
-  const result = await withoutIdentity(w.root, () => runBranchAction(createGit(w.root), { kind: 'merge', name: 'refs/heads/topic' }))
+  const result = await withoutIdentity(w.root, () => runBranchAction(createGit(w.root), { kind: 'merge', name: 'refs/heads/topic', tip: w.t2 }))
   assert.equal(result.ok, false, result.message)
   assert.deepEqual(snapshot(w.root), before)
   // When git cannot store the autostash in the stash list, it drops it anyway: the worker applies it by its hash.
   const locked = mergeable()
   const lockedBefore = snapshot(locked.root)
   writeFileSync(join(locked.root, '.git', 'refs', 'stash.lock'), '')
-  const stuck = await withoutIdentity(locked.root, () => runBranchAction(createGit(locked.root), { kind: 'merge', name: 'refs/heads/topic' }))
+  const stuck = await withoutIdentity(locked.root, () => runBranchAction(createGit(locked.root), { kind: 'merge', name: 'refs/heads/topic', tip: locked.t2 }))
   rmSync(join(locked.root, '.git', 'refs', 'stash.lock'))
   assert.equal(stuck.ok, false)
   assert.doesNotMatch(stuck.message, /git stash list/)
@@ -707,7 +707,7 @@ test('a merge refuses while an earlier merge left local changes under MERGE_AUTO
   const left = sh(w.root, 'rev-parse', 'MERGE_AUTOSTASH')
   writeFileSync(join(w.root, 'b.txt'), 'newer b\n')
   const before = snapshot(w.root)
-  const result = await runBranchAction(createGit(w.root), { kind: 'merge', name: 'refs/heads/topic' })
+  const result = await runBranchAction(createGit(w.root), { kind: 'merge', name: 'refs/heads/topic', tip: w.t2 })
   assert.equal(result.ok, false, result.message)
   assert.match(result.message, /MERGE_AUTOSTASH/)
   assert.deepEqual(snapshot(w.root), before)
@@ -730,6 +730,48 @@ test('Undo after an action refuses once HEAD or the files it would reset have mo
   before = snapshot(w.root)
   assert.equal((await undo()).ok, false)
   assert.deepEqual(snapshot(w.root), before)
+  // An Undo sent without the HEAD to expect is refused, not run unchecked.
+  const unbound = await runGuarded(git, {}, 'HEAD', () => runAction(git, { kind: 'reset', hash: w.c3, mode: 'keep' }), { onHead: true })
+  assert.equal(unbound.ok, false)
+  assert.deepEqual(snapshot(w.root), before)
+})
+
+test('force delete, merge and rebase onto run only while the branch is at the commit the menu showed', async () => {
+  const w = world()
+  // The menu showed topic at t1; it has moved to t2 since (a fetch into it, a terminal). Without a tip nothing is checked.
+  for (const tip of [w.t1, undefined, 'topic']) {
+    const runs: [string, (git: Git) => Promise<Result>][] = [
+      ['force delete', (git) => runBranchAction(git, as({ kind: 'delete', name: 'topic', force: true, tip }))],
+      ['merge', (git) => runBranchAction(git, as({ kind: 'merge', name: 'refs/heads/topic', tip }))],
+      ['rebase onto', (git) => runBranchAction(git, as({ kind: 'rebaseOnto', name: 'refs/heads/topic', tip }))]
+    ]
+    for (const [label, run] of runs) await refusedBeforeGit(w, `${label} expecting ${tip}`, run)
+  }
+  const deleted = await runBranchAction(createGit(w.root), { kind: 'delete', name: 'topic', force: true, tip: w.t2 })
+  assert.equal(deleted.ok, true, deleted.message)
+})
+
+test('undo commit resets to the parent of the commit it checked, even when HEAD moves on after the check', async () => {
+  const w = world()
+  const real = createGit(w.root)
+  let moved = false
+  // A commit from a terminal lands between the check and the reset.
+  const racing: Git = {
+    gitPath: real.gitPath,
+    run: real.run,
+    out: async (args, options) => {
+      if (args[0] === 'reset' && !moved) {
+        moved = true
+        commit(w.root, 'r.txt', 'r\n', 'from a terminal')
+      }
+      return real.out(args, options)
+    }
+  }
+  const result = await runAction(racing, { kind: 'undo', hash: w.c3 })
+  assert.equal(result.ok, true, result.message)
+  assert.equal(sh(w.root, 'rev-parse', 'HEAD'), w.c2)
+  // A soft reset: what both commits changed stays staged.
+  assert.deepEqual(sh(w.root, 'diff', '--cached', '--name-only').split('\n'), ['a.txt', 'r.txt'])
 })
 
 // ---------- 5. Pushed commits are reported before a rewrite ----------
@@ -855,7 +897,7 @@ test('git itself refuses to rename or delete the branch a terminal is rebasing',
   const before = snapshot(w.root)
   const git = createGit(w.root)
   assert.equal((await runBranchAction(git, { kind: 'rename', name: 'main', newName: 'renamed' })).ok, false)
-  assert.equal((await runBranchAction(git, { kind: 'delete', name: 'main', force: true })).ok, false)
+  assert.equal((await runBranchAction(git, { kind: 'delete', name: 'main', force: true, tip: w.c3 })).ok, false)
   assert.deepEqual(snapshot(w.root), before)
   sh(w.root, 'rebase', '--abort')
   sh(w.root, 'checkout', '-q', '-b', 'backup/main-1')
