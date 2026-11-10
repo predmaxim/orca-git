@@ -149,11 +149,11 @@
   - `carry refused`: `carry: true` при `ignored` → `ok: false`, ничего не тронуто.
   - `literal paths`: файлы `a b.txt`, `ж.txt`, `*.txt`, `:(glob)x`, `[a].txt` в изменениях → стэш забирает ровно их.
   - `flags count only as true`: `stash: 1` → как без флага (`atRisk`).
-  - `submodule.recurse`: сабмодуль (`-c protocol.file.allow=always submodule add`), правка внутри него, `submodule.recurse=true`, цель с другим коммитом сабмодуля — записать в дизайн (раздел «Checkout»), что делает `git switch`; если правка теряется молча — остановиться и спросить пользователя, как её защищать (стэш верхнего репозитория сабмодуль не спасает).
+  - `dirty submodule`: правка внутри сабмодуля (`-c protocol.file.allow=always submodule add`), цель двигает сабмодуль → `checkoutRisk` даёт `null` (у `status` — `--ignore-submodules=dirty`), переход сделан, правка на месте. Проверено на стенде 2026-11-10 (git 2.56.0, `/tmp/subtest.*`): без `submodule.recurse` `git switch` сабмодуль не трогает; с `submodule.recurse=true` отказывает сам (`Cannot update submodule`). Своей проверки сабмодулей не нужно.
 - [ ] **Step 2:** `orca plugin test .` — тесты падают.
 - [ ] **Step 3: `git.ts`** — `input` пишется в `child.stdin` и закрывается; без `input` stdin как сейчас.
 - [ ] **Step 4: `checkoutRisk`.** HEAD (`rev-parse --verify -q HEAD`; нерождённая ветка — пустое дерево) = цель → `null`. Иначе:
-  - `changed` — `git status --porcelain=v1 -z --untracked-files=no` (у переименования — оба пути);
+  - `changed` — `git status --porcelain=v1 -z --untracked-files=no --ignore-submodules=dirty` (у переименования — оба пути);
   - `differ` — `git diff --name-only -z --no-renames <HEAD> <target> --`; `written` — те из них, что есть в цели (`--diff-filter=d`);
   - `conflicts = changed ∩ differ`;
   - места — `written` и их родительские папки, которые на диске не папки (`lstat`); `untracked` — `untrackedAt(git, ['--exclude-standard'], места)`, `ignored` — `untrackedAt(git, ['-i', '--exclude-standard'], места)`;
