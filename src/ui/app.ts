@@ -907,6 +907,8 @@ let detailsKey = ''
 const detailsCache = new Map<string, Promise<CommitDetails>>()
 /** The selection changed while the details section was collapsed: render it when it opens. */
 let detailsStale = false
+/** Reloads the drawn list in place: for a refresh that leaves the selection as it was. */
+let reloadDetails = () => {}
 function updateDetails(): void {
   const hashes = selectedHashes()
   column.section('commits').setSummary(selected.size ? t('selectedCount', { count: selected.size }) : '')
@@ -918,13 +920,12 @@ function updateDetails(): void {
     renderPlaceholder(detailsPane, repo ? t('detailsPlaceholder') : '')
     return
   }
-  if (hashes.join() !== detailsKey) {
-    detailsKey = hashes.join()
-    expanded.clear()
-    if (hashes.length === 1) expanded.add(hashes[0])
-  }
+  if (hashes.join() === detailsKey) return reloadDetails()
+  detailsKey = hashes.join()
+  expanded.clear()
+  if (hashes.length === 1) expanded.add(hashes[0])
   const root = repo.root
-  renderCommitList(
+  reloadDetails = renderCommitList(
     detailsPane,
     hashes.map((hash) => rows[indexByHash.get(hash)!]).filter(Boolean),
     {

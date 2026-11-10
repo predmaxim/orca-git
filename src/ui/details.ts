@@ -40,8 +40,12 @@ function renderBody(d: CommitDetails, host: CommitListHost): HTMLElement {
   )
 }
 
-/** One row per commit, in the order given; a click opens the full description under the row. */
-export function renderCommitList(container: HTMLElement, commits: CommitRow[], host: CommitListHost): void {
+/**
+ * One row per commit, in the order given; a click opens the full description under the row. Returns a reload: the open
+ * rows load their details again and redraw only what changed, so scrolling and a text selection stay.
+ */
+export function renderCommitList(container: HTMLElement, commits: CommitRow[], host: CommitListHost): () => void {
+  const reloads: (() => void)[] = []
   const rows = commits.map((commit) => {
     const chevron = h('span', { class: 'cl-chevron' })
     const body = h('div', { class: 'cl-slot' })
@@ -54,6 +58,9 @@ export function renderCommitList(container: HTMLElement, commits: CommitRow[], h
       h('span', { class: 'cl-author muted' }, commit.author)
     )
     let loaded = false
+    /** The details drawn in the body, as JSON; the latest load wins. */
+    let drawn = ''
+    let loads = 0
     const show = () => {
       const open = host.expanded.has(commit.hash)
       head.setAttribute('aria-expanded', String(open))
@@ -61,15 +68,27 @@ export function renderCommitList(container: HTMLElement, commits: CommitRow[], h
       body.hidden = !open
       if (!open || loaded) return
       loaded = true
-      body.replaceChildren(h('div', { class: 'muted' }, t('diffLoading')))
+      const mine = ++loads
+      if (!drawn) body.replaceChildren(h('div', { class: 'muted' }, t('diffLoading')))
       host.load(commit.hash).then(
-        (details) => body.replaceChildren(renderBody(details, host)),
+        (details) => {
+          const json = JSON.stringify(details)
+          if (mine !== loads || json === drawn) return
+          drawn = json
+          body.replaceChildren(renderBody(details, host))
+        },
         (error) => {
+          if (mine !== loads) return
           loaded = false
+          drawn = ''
           body.replaceChildren(h('div', { class: 'muted' }, error instanceof Error ? error.message : String(error)))
         }
       )
     }
+    reloads.push(() => {
+      loaded = false
+      show()
+    })
     const toggle = () => {
       if (!host.expanded.delete(commit.hash)) host.expanded.add(commit.hash)
       show()
@@ -85,4 +104,5 @@ export function renderCommitList(container: HTMLElement, commits: CommitRow[], h
     return h('div', { class: 'cl-item' }, head, body)
   })
   container.replaceChildren(h('div', { class: 'cl-list' }, ...rows))
+  return () => reloads.forEach((reload) => reload())
 }
