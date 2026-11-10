@@ -30,15 +30,12 @@
   --font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
   --font-code: 'JetBrainsMono Nerd Font', 'JetBrains Mono', ui-monospace, monospace;
   --row-h: 24px;
-  --selection: color-mix(in srgb, var(--primary) 32%, transparent);
-  --selection-inactive: color-mix(in srgb, var(--fg) 12%, transparent);
   color-scheme: dark;
 }
 
 :root.light {
   --toggle-on: color-mix(in srgb, var(--fg) 12%, transparent);
   --field-bg: transparent;
-  --selection: color-mix(in srgb, var(--primary) 22%, transparent);
   color-scheme: light;
 }
 
@@ -1042,21 +1039,33 @@ input[type='radio'] {
   max-width: min(420px, calc(100vw - 16px));
   max-height: calc(100vh - 16px);
   overflow: auto;
-  padding: 5px;
+  padding: 4px;
   background: var(--popover);
   color: var(--popover-fg);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 30%);
+}
+
+.menu:focus-visible {
+  outline: 0;
+}
+
+/* On menus and dialogs --accent can nearly match --popover: selection is one step stronger there. */
+.menu,
+.popover,
+.dialog {
+  --selected: color-mix(in srgb, var(--accent-fg) 10%, var(--accent));
+  --selected-focus: color-mix(in srgb, var(--accent-fg) 18%, var(--accent));
 }
 
 .menu-item {
   display: flex;
   align-items: center;
   gap: 18px;
-  height: 26px;
+  height: 28px;
   padding: 0 10px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   white-space: nowrap;
   cursor: default;
 }
@@ -1071,30 +1080,24 @@ input[type='radio'] {
   display: inline-flex;
   width: 16px;
   margin-right: -10px;
-  opacity: 0.85;
-}
-
-.menu-item.disabled .menu-icon {
-  opacity: 0.45;
+  color: var(--muted-fg);
 }
 
 .menu-item .shortcut {
   color: var(--muted-fg);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .menu-item.active:not(.disabled) {
-  background: var(--primary);
-  color: var(--primary-fg);
+  background: var(--selected-focus);
 }
 
-.menu-item.active:not(.disabled) .shortcut {
+.menu-item.active:not(.disabled) .menu-icon {
   color: inherit;
 }
 
 .menu-item.disabled {
-  color: var(--muted-fg);
-  opacity: 0.6;
+  opacity: 0.5;
 }
 
 .menu-sep {
@@ -1112,15 +1115,15 @@ input[type='radio'] {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 24px;
+  height: 28px;
   padding: 0 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   white-space: nowrap;
   cursor: default;
 }
 
 .option:hover {
-  background: var(--hover);
+  background: var(--selected);
 }
 
 .option .check {
@@ -1140,29 +1143,32 @@ input[type='radio'] {
 
 .option-group {
   padding: 6px 8px 2px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted-fg);
   font-weight: 600;
 }
 
 .field {
-  height: 26px;
-  padding: 0 8px;
+  height: 30px;
+  padding: 0 10px;
   border: 1px solid var(--input);
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--bg) 70%, var(--muted));
+  border-radius: var(--radius-sm);
+  background: var(--field-bg);
   outline: 0;
 }
 
-.field:focus,
-textarea.field:focus {
+.field:focus {
   border-color: var(--ring);
-  box-shadow: 0 0 0 1px var(--ring);
+  box-shadow: var(--focus-ring);
+}
+
+.field:disabled {
+  opacity: 0.5;
 }
 
 textarea.field {
   height: auto;
-  padding: 6px 8px;
+  padding: 6px 10px;
   resize: vertical;
   user-select: text;
 }
@@ -1174,7 +1180,7 @@ textarea.field {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgb(0 0 0 / 35%);
+  background: rgb(0 0 0 / 50%);
   padding: 12px;
 }
 
@@ -1186,8 +1192,8 @@ textarea.field {
   background: var(--popover);
   color: var(--popover-fg);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 16px 48px rgb(0 0 0 / 45%);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 40%);
 }
 
 .dialog.wide {
@@ -1196,22 +1202,23 @@ textarea.field {
 
 .dialog h2 {
   margin: 0;
-  padding: 12px 16px 6px;
-  font-size: 13px;
+  padding: 16px 16px 4px;
+  font-size: 14px;
   font-weight: 600;
 }
 
 .dialog .content {
-  padding: 6px 16px 12px;
+  padding: 4px 16px 12px;
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   user-select: text;
 }
 
 .dialog .content p {
   margin: 0;
+  color: var(--muted-fg);
   white-space: pre-wrap;
 }
 
@@ -1219,37 +1226,50 @@ textarea.field {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding: 10px 16px 14px;
+  padding: 4px 16px 16px;
 }
 
 .btn {
-  height: 28px;
-  padding: 0 14px;
-  border-radius: 5px;
-  border: 1px solid var(--input);
-  background: transparent;
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--secondary);
+  color: var(--secondary-fg);
+  font-weight: 500;
   cursor: default;
 }
 
 .btn:hover {
-  background: var(--hover);
+  background: color-mix(in srgb, var(--secondary) 80%, transparent);
 }
 
 .btn:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 1px;
+  outline: 0;
+  box-shadow: var(--focus-ring);
 }
 
 .btn.primary {
   background: var(--primary);
-  border-color: var(--primary);
   color: var(--primary-fg);
 }
 
+.btn.primary:hover {
+  background: color-mix(in srgb, var(--primary) 90%, transparent);
+}
+
+/* As Orca's destructive button: white text, the fill softened in the dark theme. */
 .btn.danger {
   background: var(--danger);
-  border-color: var(--danger);
   color: #fff;
+}
+
+.btn.danger:hover {
+  background: color-mix(in srgb, var(--danger) 90%, transparent);
+}
+
+:root:not(.light) .btn.danger {
+  background: color-mix(in srgb, var(--danger) 60%, transparent);
 }
 
 .btn:disabled {
@@ -1262,42 +1282,48 @@ textarea.field {
   gap: 2px 8px;
   align-items: start;
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 .radio:hover {
-  background: var(--hover);
+  background: var(--selected);
 }
 
 .radio input {
-  margin: 3px 0 0;
+  margin: 4px 0 0;
 }
 
 .radio .help {
   grid-column: 2;
   color: var(--muted-fg);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .checkbox {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
+}
+
+input[type='checkbox']:focus-visible,
+input[type='radio']:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
 }
 
 /* Backup offer in a confirmation */
 .backup {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .backup-details {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
-  margin: 0 0 0 22px;
+  margin: 0 0 0 24px;
   padding: 0;
   border: 0;
 }
@@ -1312,12 +1338,12 @@ textarea.field {
 
 .backup-kind {
   display: flex;
-  gap: 14px;
+  gap: 16px;
 }
 
 .backup-kind label {
   display: flex;
-  gap: 5px;
+  gap: 6px;
   align-items: center;
 }
 
@@ -1325,17 +1351,19 @@ textarea.field {
   display: flex;
   gap: 8px;
   padding: 8px 10px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--c2) 16%, transparent);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-sm);
+  background: var(--warning-bg);
 }
 
 .warning .icon {
-  color: var(--c2);
-  margin-top: 1px;
+  color: var(--warning-fg);
+  margin-top: 2px;
 }
 
 .warning.danger {
-  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--popover));
+  background: color-mix(in srgb, var(--danger) 14%, var(--popover));
 }
 
 .warning.danger .icon {
@@ -1345,14 +1373,13 @@ textarea.field {
 .warning .file-list {
   margin: 4px 0;
   padding-left: 16px;
-  font-size: 11.5px;
   overflow-wrap: anywhere;
 }
 
 .error-text {
   color: var(--danger);
   min-height: 1em;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .error-text.pending {
@@ -1362,9 +1389,14 @@ textarea.field {
 /* Interactive rebase */
 .rebase-list {
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   overflow: auto;
   max-height: 320px;
+  padding: 4px;
+}
+
+.rebase-list:focus-visible {
+  outline: 0;
 }
 
 .rebase-row {
@@ -1372,20 +1404,31 @@ textarea.field {
   grid-template-columns: 92px 76px minmax(0, 1fr);
   gap: 8px;
   align-items: center;
-  height: 28px;
-  padding: 0 8px;
+  height: 30px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
   cursor: default;
 }
 
 .rebase-row.selected {
-  background: var(--selection);
+  background: var(--selected);
+}
+
+.rebase-list:focus .rebase-row.selected {
+  background: var(--selected-focus);
 }
 
 .rebase-row select {
-  height: 22px;
+  height: 24px;
   border: 1px solid var(--input);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--popover);
+}
+
+.rebase-row select:focus-visible {
+  outline: 0;
+  border-color: var(--ring);
+  box-shadow: var(--focus-ring);
 }
 
 .rebase-row .subject {
@@ -1413,7 +1456,7 @@ textarea.field {
 .spin {
   width: 14px;
   height: 14px;
-  border: 2px solid color-mix(in srgb, var(--fg) 25%, transparent);
+  border: 2px solid color-mix(in srgb, var(--muted-fg) 35%, transparent);
   border-top-color: var(--fg);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
@@ -1440,11 +1483,12 @@ textarea.field {
   display: flex;
   gap: 8px;
   align-items: center;
-  padding: 6px 12px;
+  padding: 6px 14px;
   border-radius: 999px;
   background: var(--popover);
+  color: var(--popover-fg);
   border: 1px solid var(--border);
-  box-shadow: 0 6px 18px rgb(0 0 0 / 30%);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 30%);
 }
 
 /* ---------- Files tree ---------- */
