@@ -95,31 +95,36 @@ export function createColumn(ids: SectionId[], prefs: SectionPrefs, onChange: ()
     header.addEventListener('click', (event) => {
       const button = (event.target as Element).closest('button')
       if (button && button !== toggle) return
+      // The last open section stays open, as on load: the column is never empty.
+      if (!prefs.collapsed[id] && ids.every((other) => other === id || prefs.collapsed[other])) return
       prefs.collapsed[id] = !prefs.collapsed[id]
       layout()
       onChange()
     })
     const body = h('div', { class: `sec-body ${id}` })
     const splitter = index ? h('div', { class: 'col-splitter' }) : null
-    splitter?.addEventListener('mousedown', (event) => {
+    splitter?.addEventListener('pointerdown', (event) => {
       const above = openAbove(index)
-      if (!above || prefs.collapsed[id]) return
+      if (!above || prefs.collapsed[id] || event.button !== 0) return
       event.preventDefault()
+      // The frame gets no mouseup for a release outside it; captured, the splitter gets every move and the release.
+      splitter.setPointerCapture(event.pointerId)
       const open = ids.filter((other) => !prefs.collapsed[other])
       const px = open.reduce((sum, other) => sum + parts.get(other)!.root.getBoundingClientRect().height, 0)
       const weight = open.reduce((sum, other) => sum + prefs.weights[other], 0)
       const start = prefs.weights
-      const move = (e: MouseEvent) => {
+      const move = (e: PointerEvent) => {
         prefs.weights = resizePair(start, above, id, e.clientY - event.clientY, px / weight)
         layout()
       }
-      const up = () => {
-        removeEventListener('mousemove', move)
-        removeEventListener('mouseup', up)
+      // Capture ends with the release, or when the drag is cancelled.
+      const end = () => {
+        splitter.removeEventListener('pointermove', move)
+        splitter.removeEventListener('lostpointercapture', end)
         onChange()
       }
-      addEventListener('mousemove', move)
-      addEventListener('mouseup', up)
+      splitter.addEventListener('pointermove', move)
+      splitter.addEventListener('lostpointercapture', end)
     })
     const root = h('section', { class: 'col-section', dataset: { section: id } }, header, body)
     element.append(...(splitter ? [splitter, root] : [root]))

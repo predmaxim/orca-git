@@ -1,6 +1,7 @@
 import type { LogFilter, RefsResult } from '../shared/protocol.ts'
 import { h, icon } from './dom.ts'
 import { t } from '../shared/i18n.ts'
+import { dayInput } from './format.ts'
 import { showPopover } from './menu.ts'
 
 export interface FilterHost {
@@ -170,7 +171,7 @@ export function createFilterBar(host: FilterHost) {
           h('span', { class: 'check' }, icon('check')),
           h('span', { class: 'label' }, label)
         )
-      const toInput = (seconds?: number) => (seconds ? new Date(seconds * 1000).toISOString().slice(0, 10) : '')
+      const toInput = (seconds?: number) => (seconds ? dayInput(seconds) : '')
       const since = h('input', { class: 'field', type: 'date', value: toInput(host.filter.since) }) as HTMLInputElement
       const until = h('input', { class: 'field', type: 'date', value: toInput(host.filter.until) }) as HTMLInputElement
       const apply = h(

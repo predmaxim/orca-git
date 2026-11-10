@@ -161,7 +161,7 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { dispo
     title.replaceChildren(
       h('span', { class: `status-letter st-${letter}`, title: statusName(letter) ?? file.status }, letter),
       fileIcon(file.path),
-      h('span', { class: 'path', title: path }, path)
+      h('span', { class: 'path', title: path }, h('bdi', { dir: 'ltr' }, path))
     )
     info.textContent = `${file.from ? shortHash(file.from) : t('diffFromEmpty')}..${shortHash(file.to)}  ${path}`
     counter.textContent = t('diffFileCounter', { index: index + 1, count: files.length })

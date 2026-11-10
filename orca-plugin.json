@@ -58,7 +58,7 @@
       {
         "key": "offerBackup",
         "title": "Offer a backup before risky operations",
-        "description": "Squash, fixup, drop, reword, interactive rebase, rebase onto, reset and deleting an unmerged branch offer to save a backup branch or tag first, in their confirmation.",
+        "description": "Squash, fixup, drop, reword, interactive rebase, rebase onto, reset, restoring a backup, deleting an unmerged branch and leaving a detached HEAD that holds commits on no branch offer to save a backup branch or tag first, in their confirmation.",
         "type": "boolean",
         "default": true
       },

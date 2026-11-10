@@ -5,7 +5,6 @@ type Plural = { one: string; few?: string; many?: string; other: string }
 type Message = string | Plural
 
 export const en = {
-  commitsSelected: { one: '{count} commit selected', other: '{count} commits selected' },
   sectionBranches: 'Branches',
   sectionCommits: 'Commits',
   sectionFiles: 'Files',
@@ -375,12 +374,6 @@ export const en = {
 } satisfies Record<string, Message>
 
 export const ru: Record<keyof typeof en, Message> = {
-  commitsSelected: {
-    one: 'Выбран {count} коммит',
-    few: 'Выбрано {count} коммита',
-    many: 'Выбрано {count} коммитов',
-    other: 'Выбрано {count} коммита'
-  },
   sectionBranches: 'Ветки',
   sectionCommits: 'Коммиты',
   sectionFiles: 'Файлы',

@@ -17,16 +17,20 @@ export function lateResults<R>() {
     end(id: string): void {
       changes.delete(id)
     },
-    /** Its request timed out: `finish` gets the result, at once if it already came. Whether it is still to come. */
-    wait(id: string, finish: (result: R) => void): boolean {
+    /**
+     * Its request timed out: `finish` gets the result, at once if it already came ('now') or when the worker posts it
+     * ('later'). 'lost': a worker restart dropped the change while its request was in flight, so nothing will come.
+     */
+    wait(id: string, finish: (result: R) => void): 'now' | 'later' | 'lost' {
       const change = changes.get(id)
-      if (change && 'result' in change) {
+      if (!change) return 'lost'
+      if ('result' in change) {
         changes.delete(id)
         finish(change.result as R)
-        return false
+        return 'now'
       }
       changes.set(id, { finish })
-      return true
+      return 'later'
     },
     /** The worker posted the result of change `id`; ids of other panels are not here. */
     done(id: string, result: R): void {

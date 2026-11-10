@@ -34,12 +34,12 @@ const stored = (() => {
     return {}
   }
 })()
+// Only the known fields, checked: a broken value must not stop the panel, and old keys are not saved back.
 const prefs: Prefs = {
-  regex: false,
-  matchCase: false,
-  collapsed: ['tags'],
-  picked: {},
-  ...stored,
+  regex: stored?.regex === true,
+  matchCase: stored?.matchCase === true,
+  collapsed: Array.isArray(stored?.collapsed) ? stored.collapsed.filter((id: unknown) => typeof id === 'string') : ['tags'],
+  picked: stored?.picked && typeof stored.picked === 'object' && !Array.isArray(stored.picked) ? stored.picked : {},
   sections: normalizeSections(stored?.sections)
 }
 const savePrefs = () => localStorage.setItem(PREFS_KEY, JSON.stringify(prefs))
@@ -254,7 +254,7 @@ function renderEmpty(): void {
           h(
             'button',
             { class: 'choice', title: choice.path, onclick: () => pick(choice) },
-            h('span', { class: 'choice-path' }, choice.path),
+            h('span', { class: 'choice-path' }, h('bdi', { dir: 'ltr' }, choice.path)),
             choice.branch ? h('span', { class: 'choice-branch' }, choice.branch) : ''
           )
         )
@@ -429,12 +429,19 @@ async function loadPage(): Promise<void> {
   renderRows()
 }
 
+let refsToken = 0
 async function loadRefs(): Promise<void> {
   if (!repo) return
+  const root = repo.root
+  const token = ++refsToken
+  // A newer load, or a switch to another repository, makes an answer stale: its HEAD is not the shown repository's.
   try {
-    refs = await api.refs(repo.root)
-    repo.head = refs.head
+    const next = await api.refs(root)
+    if (token !== refsToken || repo?.root !== root) return
+    refs = next
+    repo.head = next.head
   } catch (error) {
+    if (token !== refsToken || repo?.root !== root) return
     refs = null
     showBanner(t('refsFailed', { error: errorMessage(error) }), 'error')
   }
@@ -443,11 +450,22 @@ async function loadRefs(): Promise<void> {
 }
 
 let refreshing: Promise<void> | null = null
+let refreshNext: Promise<void> | null = null
+/** Reloads the shown repository. Asked for while a reload runs, it runs once more after it: that one may have read a change half done. */
 async function refreshAll(): Promise<void> {
-  if (refreshing) return refreshing
+  if (refreshing) {
+    refreshNext ??= refreshing.catch(() => undefined).then(() => {
+      refreshNext = null
+      return refreshAll()
+    })
+    return refreshNext
+  }
   refreshing = (async () => {
     if (!repo) return start()
-    const result = await api.resolve(repo.root).catch((error) => ({ ok: false as const, reason: errorMessage(error) }))
+    const root = repo.root
+    const result = await api.resolve(root).catch((error) => ({ ok: false as const, reason: errorMessage(error) }))
+    // A workspace switch replaced the repository meanwhile: this answer is about the one it left.
+    if (repo?.root !== root) return
     if (!result.ok) {
       loadError = result.reason
       renderEmpty()
@@ -490,13 +508,17 @@ function setRepo(next: RepoInfo): void {
   filterReload = reloadLog(same)
 }
 
+/** Counts start() calls: a quick second switch can be answered before the first. */
+let startGen = 0
 async function start(): Promise<void> {
+  const mine = ++startGen
   try {
     let result: RepoResult = await api.resolve()
     if (!result.ok && result.choices?.length) {
       const saved = prefs.picked[choiceKey(result.choices)]
       if (saved && result.choices.some((c) => c.id === saved)) result = await api.resolve(undefined, saved)
     }
+    if (mine !== startGen) return
     choices = !result.ok ? (result.choices ?? []) : []
     if (result.ok) setRepo(result.repo)
     else {
@@ -512,6 +534,7 @@ async function start(): Promise<void> {
       updateDetails()
     }
   } catch (error) {
+    if (mine !== startGen) return
     loadError = errorMessage(error)
     renderEmpty()
   }
@@ -884,6 +907,8 @@ let detailsKey = ''
 const detailsCache = new Map<string, Promise<CommitDetails>>()
 /** The selection changed while the details section was collapsed: render it when it opens. */
 let detailsStale = false
+/** Reloads the drawn list in place: for a refresh that leaves the selection as it was. */
+let reloadDetails = () => {}
 function updateDetails(): void {
   const hashes = selectedHashes()
   column.section('commits').setSummary(selected.size ? t('selectedCount', { count: selected.size }) : '')
@@ -895,13 +920,12 @@ function updateDetails(): void {
     renderPlaceholder(detailsPane, repo ? t('detailsPlaceholder') : '')
     return
   }
-  if (hashes.join() !== detailsKey) {
-    detailsKey = hashes.join()
-    expanded.clear()
-    if (hashes.length === 1) expanded.add(hashes[0])
-  }
+  if (hashes.join() === detailsKey) return reloadDetails()
+  detailsKey = hashes.join()
+  expanded.clear()
+  if (hashes.length === 1) expanded.add(hashes[0])
   const root = repo.root
-  renderCommitList(
+  reloadDetails = renderCommitList(
     detailsPane,
     hashes.map((hash) => rows[indexByHash.get(hash)!]).filter(Boolean),
     {
@@ -935,6 +959,8 @@ interface Scope {
   root: string
   /** Null: no commit yet. Undefined: no HEAD was seen, so an action on the current branch is refused. */
   head?: string | null
+  /** `head` is the one the worker reported leaving: the shown HEAD can lag behind it until the refresh lands, so only the worker checks it. */
+  reported?: boolean
 }
 
 const scopeOf = (info: RepoInfo): Scope => ({ root: info.root, head: info.head.hash })
@@ -952,9 +978,13 @@ function unchanged(scope: Scope, onHead = false): boolean {
 /** This panel's changes, by the request id the worker echoes in `action.done`. */
 const late = lateResults<BranchActionResult>()
 
-/** After Orca stopped waiting for change `id` (it gives up after 120 s): `finish` shows its result once it comes. */
-function awaitLate(id: string, finish: (result: BranchActionResult) => void): void {
-  if (late.wait(id, finish)) showBanner(t('stillRunning'), 'info', [], true)
+/** After Orca stopped waiting for change `id` (it gives up after 120 s): `finish` shows its result once it comes. Whether it is still to come. */
+function awaitLate(id: string, finish: (result: BranchActionResult) => void): boolean {
+  const state = late.wait(id, finish)
+  if (state === 'later') showBanner(t('stillRunning'), 'info', [], true)
+  // The worker restarted while the request was in flight: the result is never posted.
+  else if (state === 'lost') showBanner(t('workerRestarted'), 'error')
+  return state === 'later'
 }
 
 /** `text`, naming the repository at `root` when it is not the one shown: a late result can come after a switch. */
@@ -968,7 +998,7 @@ function about(root: string, text: string): string {
  */
 async function act(scope: Scope, action: ActionRequest | BranchAction | BackupDelete, progress: string, backup?: BackupRequest): Promise<BranchActionResult | null> {
   const onHead = ON_HEAD.has(action.kind) || (action.kind === 'branch' && action.checkout)
-  if (!unchanged(scope, onHead)) return null
+  if (!unchanged(scope, onHead && !scope.reported)) return null
   const root = scope.root
   // Always for an action on HEAD: the worker refuses one that comes without it.
   const guard = { ...(onHead ? { expectHead: scope.head } : {}), ...(backup ? { backup } : {}) }
@@ -981,7 +1011,7 @@ async function act(scope: Scope, action: ActionRequest | BranchAction | BackupDe
   } catch (error) {
     // Orca stopped waiting, git did not: no failure to report. The worker's action.done brings the result.
     if (timedOut(error)) {
-      awaitLate(id, (ended) => void report(root, action, ended, backup))
+      awaitLate(id, (ended) => void report(root, action, ended, backup, true))
       return null
     }
     result = { ok: false, message: errorMessage(error) }
@@ -992,8 +1022,11 @@ async function act(scope: Scope, action: ActionRequest | BranchAction | BackupDe
   return report(root, action, result, backup)
 }
 
-/** Shows how `action` on `root` ended, with Undo and the backup it made, and refreshes the panel. */
-async function report(root: string, action: ActionRequest | BranchAction | BackupDelete, result: BranchActionResult, backup?: BackupRequest): Promise<BranchActionResult> {
+/**
+ * Shows how `action` on `root` ended, with Undo and the backup it made, and refreshes the panel. `afterTimeout`: the flow that
+ * would ask to force a delete or to leave commits has ended, so such a refusal shows as a failure.
+ */
+async function report(root: string, action: ActionRequest | BranchAction | BackupDelete, result: BranchActionResult, backup?: BackupRequest, afterTimeout = false): Promise<BranchActionResult> {
   // A late result can come after a switch to another repository: then it is named, and this one's filter and buttons stay.
   const here = root === repo?.root
   // The worker reports a backup it made even when the action then failed.
@@ -1010,10 +1043,10 @@ async function report(root: string, action: ActionRequest | BranchAction | Backu
     const previous = result.previousHead
     // The Undo stays bound to this repository and, through the worker, to the HEAD this action left.
     const undo = here && previous && result.head && UNDOABLE.has(action.kind)
-      ? [{ label: t('undo'), run: () => void act({ root, head: result.head }, { kind: 'reset', hash: previous, mode: 'keep' }, t('progUndoing')).then((r) => r?.ok && showBanner(t('restoredHead', { hash: shortHash(previous) }), 'success')) }]
+      ? [{ label: t('undo'), run: () => void act({ root, head: result.head, reported: true }, { kind: 'reset', hash: previous, mode: 'keep' }, t('progUndoing')).then((r) => r?.ok && showBanner(t('restoredHead', { hash: shortHash(previous) }), 'success')) }]
       : []
     showBanner(text, result.warning ? 'info' : 'success', [...undo, ...show], result.warning || Boolean(result.gitWarnings?.length))
-  } else if (!result.needsForce && !result.leaves) showBanner(text, 'error', show)
+  } else if (afterTimeout || (!result.needsForce && !result.leaves)) showBanner(text, 'error', show)
   await refreshAll()
   return result
 }
@@ -1356,18 +1389,24 @@ fetchButton.addEventListener('click', async () => {
   const show = (result: ActionResult) =>
     showBanner(about(root, [result.message, ...(result.gitWarnings ?? [])].join('\n')), result.ok ? 'success' : 'error', [], Boolean(result.gitWarnings?.length))
   fetchButton.disabled = true
+  let waiting = false
   try {
     const result = await api.fetch(root, id)
     late.end(id)
     show(result)
   } catch (error) {
-    if (timedOut(error)) awaitLate(id, show)
-    else {
+    // git still runs after Orca's timeout: the button stays off until its result comes, as a second fetch would be refused.
+    if (timedOut(error)) {
+      waiting = awaitLate(id, (result) => {
+        fetchButton.disabled = false
+        show(result)
+      })
+    } else {
       late.end(id)
       showBanner(errorMessage(error), 'error')
     }
   } finally {
-    fetchButton.disabled = false
+    if (!waiting) fetchButton.disabled = false
   }
 })
 async function openDiff(root: string, index: number): Promise<void> {
@@ -1395,6 +1434,8 @@ orca.plugin.on('action.done', ({ id, result }: { id: string; result: BranchActio
 // What the worker before this one ran is never posted: stop saying git is still running.
 orca.plugin.on('worker.started', () => {
   if (late.restart()) showBanner(t('workerRestarted'), 'error')
+  // A late fetch it kept the button off for is never posted either.
+  fetchButton.disabled = false
 })
 
 orca.plugin.on('repo.changed', ({ root }: { root: string }) => {

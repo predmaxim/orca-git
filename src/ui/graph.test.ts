@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { computeGraph, graphSvg } from './graph.ts'
-import { groupByPrefix, reachableFrom, refLabels, relativeDate } from './format.ts'
+import { dayInput, groupByPrefix, reachableFrom, refLabels, relativeDate } from './format.ts'
 import { changedRange, changeStarts, splitRows } from './diffmodel.ts'
 
 const row = (hash: string, ...parents: string[]) => ({ hash, parents })
@@ -79,4 +79,17 @@ test('groupByPrefix nests branches by their prefix', () => {
   assert.deepEqual(shape(tree), [{ feature: [{ 'feature/x': ['y'] }] }, { fix: ['ABC-1', 'ABC-2'] }, 'main', 'release-candidate'])
   const remote = groupByPrefix([ref('origin/a/b')], 'origin')
   assert.deepEqual(shape(remote), [{ a: ['b'] }])
+})
+
+test('dayInput shows the day the Date filter picked, east of UTC too', () => {
+  const env = process.env
+  const zone = env.TZ
+  env.TZ = 'Europe/Moscow'
+  try {
+    // Apply reads the input as local midnight; reopening the filter must show the same day.
+    assert.equal(dayInput(new Date('2026-11-05T00:00:00').getTime() / 1000), '2026-11-05')
+  } finally {
+    if (zone === undefined) delete env.TZ
+    else env.TZ = zone
+  }
 })
