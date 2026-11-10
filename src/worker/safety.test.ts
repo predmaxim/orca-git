@@ -290,6 +290,29 @@ test('merge and rebase onto take the full name of a branch, never a ref its shor
   }
 })
 
+test('a merge commit names the branch by its short name, or by its full ref when the short one means another ref', async () => {
+  const cases: [string, (w: World) => void, string][] = [
+    ['refs/heads/topic', nothing, "Merge branch 'topic'"],
+    ['refs/remotes/origin/topic', (w) => {
+      sh(w.root, 'remote', 'add', 'origin', join(w.root, 'nowhere.git'))
+      sh(w.root, 'update-ref', 'refs/remotes/origin/topic', w.t2)
+    }, "Merge remote-tracking branch 'origin/topic'"],
+    ['refs/heads/heads/evil', (w) => {
+      sh(w.root, 'branch', 'heads/evil', w.t2)
+      sh(w.root, 'branch', 'evil', w.c1)
+    }, "Merge branch 'refs/heads/heads/evil'"]
+  ]
+  for (const [name, prepare, subject] of cases) {
+    const w = world()
+    commit(w.root, 'a.txt', 'topic\n', 'match topic')
+    prepare(w)
+    const result = await runBranchAction(createGit(w.root), { kind: 'merge', name })
+    assert.equal(result.ok, true, `${name}: ${result.message}`)
+    assert.equal(sh(w.root, 'log', '-1', '--format=%s'), subject, name)
+    assert.equal(sh(w.root, 'rev-parse', 'HEAD^2'), w.t2, name)
+  }
+})
+
 test('branch actions refuse hostile names before git runs', async () => {
   const w = world()
   sh(w.root, 'branch', 'old')

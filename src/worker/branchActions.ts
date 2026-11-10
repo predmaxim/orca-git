@@ -80,7 +80,10 @@ async function integrate(git: Git, kind: 'merge' | 'rebase', target: string): Pr
   // The next merge would overwrite (or apply on top) changes an earlier one left under MERGE_AUTOSTASH.
   if (kind === 'merge' && (await git.run(['rev-parse', '-q', '--verify', 'MERGE_AUTOSTASH'])).ok) throw new Error(t('mergeAutostashLeft'))
   const previousHead = (await readHead(git)).hash ?? undefined
-  const args = kind === 'merge' ? ['merge', '--no-edit', '--autostash', name] : ['rebase', '--autostash', name]
+  // The merge commit's message names what it merged, for good: the short name when git reads it as exactly this ref.
+  const short = shortName(name)
+  const exact = kind === 'merge' && !short.startsWith('-') && (await git.run(['rev-parse', '--verify', '-q', '--symbolic-full-name', '--end-of-options', short])).stdout.trim() === name
+  const args = kind === 'merge' ? ['merge', '--no-edit', '--autostash', exact ? short : name] : ['rebase', '--autostash', name]
   const result = await git.run(args, { timeoutMs: NETWORK_TIMEOUT_MS })
   if (!result.ok) {
     let kept: string | null = null
