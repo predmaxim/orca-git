@@ -498,28 +498,64 @@ test('rewritten messages keep lines that start with #', async () => {
   assert.match(sh(w.root, 'log', '-1', '--format=%B'), /^#12 is fixed by this$/m)
 })
 
-test('a merge git stops before it starts gives the local changes back', async () => {
-  const w = world()
-  commit(w.root, 'a.txt', 'topic\n', 'match topic')
-  writeFileSync(join(w.root, 'b.txt'), 'local b\n')
-  writeFileSync(join(w.root, 'c.txt'), 'staged c\n')
-  sh(w.root, 'add', 'c.txt')
-  // No committer identity: git has already stashed the changes when it finds out.
-  sh(w.root, 'config', 'user.useConfigOnly', 'true')
-  sh(w.root, 'config', '--unset', 'user.name')
-  sh(w.root, 'config', '--unset', 'user.email')
-  const before = snapshot(w.root)
+/** Runs `run` with no committer identity in `root` (as on a fresh machine), then puts the test identity back. */
+async function withoutIdentity<T>(root: string, run: () => Promise<T> | T): Promise<T> {
+  sh(root, 'config', 'user.useConfigOnly', 'true')
+  sh(root, 'config', '--unset', 'user.name')
+  sh(root, 'config', '--unset', 'user.email')
   const keys = ['GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM', 'EMAIL', 'GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL']
   const saved = keys.map((key) => process.env[key])
   keys.forEach((key) => delete process.env[key])
   Object.assign(process.env, { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' })
   try {
-    const result = await runBranchAction(createGit(w.root), { kind: 'merge', name: 'refs/heads/topic' })
-    assert.equal(result.ok, false, result.message)
+    return await run()
   } finally {
     keys.forEach((key, i) => (saved[i] === undefined ? delete process.env[key] : (process.env[key] = saved[i])))
+    sh(root, 'config', 'user.name', 'Tester')
+    sh(root, 'config', 'user.email', 'tester@example.com')
   }
+}
+
+/** World where merging topic needs a merge commit (and so an identity) and conflicts with nothing; b.txt edited, c.txt staged. */
+function mergeable(): World {
+  const w = world()
+  commit(w.root, 'a.txt', 'topic\n', 'match topic')
+  writeFileSync(join(w.root, 'b.txt'), 'local b\n')
+  writeFileSync(join(w.root, 'c.txt'), 'staged c\n')
+  sh(w.root, 'add', 'c.txt')
+  return w
+}
+
+test('a merge git stops before it starts gives the local changes back', async () => {
+  const w = mergeable()
+  // No committer identity: git has already stashed the changes when it finds out.
+  const before = snapshot(w.root)
+  const result = await withoutIdentity(w.root, () => runBranchAction(createGit(w.root), { kind: 'merge', name: 'refs/heads/topic' }))
+  assert.equal(result.ok, false, result.message)
   assert.deepEqual(snapshot(w.root), before)
+  // When git cannot store the autostash in the stash list, it drops it anyway: the worker applies it by its hash.
+  const locked = mergeable()
+  const lockedBefore = snapshot(locked.root)
+  writeFileSync(join(locked.root, '.git', 'refs', 'stash.lock'), '')
+  const stuck = await withoutIdentity(locked.root, () => runBranchAction(createGit(locked.root), { kind: 'merge', name: 'refs/heads/topic' }))
+  rmSync(join(locked.root, '.git', 'refs', 'stash.lock'))
+  assert.equal(stuck.ok, false)
+  assert.doesNotMatch(stuck.message, /git stash list/)
+  assert.deepEqual(snapshot(locked.root), lockedBefore)
+})
+
+test('a merge refuses while an earlier merge left local changes under MERGE_AUTOSTASH', async () => {
+  const w = mergeable()
+  // A merge in a terminal that died after stashing: its changes are only under MERGE_AUTOSTASH.
+  await withoutIdentity(w.root, () => terminal(w.root, ['merge', '--no-edit', '--autostash', 'topic']))
+  const left = sh(w.root, 'rev-parse', 'MERGE_AUTOSTASH')
+  writeFileSync(join(w.root, 'b.txt'), 'newer b\n')
+  const before = snapshot(w.root)
+  const result = await runBranchAction(createGit(w.root), { kind: 'merge', name: 'refs/heads/topic' })
+  assert.equal(result.ok, false, result.message)
+  assert.match(result.message, /MERGE_AUTOSTASH/)
+  assert.deepEqual(snapshot(w.root), before)
+  assert.equal(sh(w.root, 'rev-parse', 'MERGE_AUTOSTASH'), left)
 })
 
 test('Undo after an action refuses once HEAD or the files it would reset have moved on', async () => {

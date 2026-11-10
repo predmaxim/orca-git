@@ -74,15 +74,17 @@ async function integrate(git: Git, kind: 'merge' | 'rebase', target: string): Pr
   const busy = await operationRefusal(git)
   if (busy) throw new Error(busy)
   const name = await assertTarget(git, target)
+  // The next merge would overwrite (or apply on top) changes an earlier one left under MERGE_AUTOSTASH.
+  if (kind === 'merge' && (await git.run(['rev-parse', '-q', '--verify', 'MERGE_AUTOSTASH'])).ok) throw new Error(t('mergeAutostashLeft'))
   const previousHead = (await readHead(git)).hash ?? undefined
   const args = kind === 'merge' ? ['merge', '--no-edit', '--autostash', name] : ['rebase', '--autostash', name]
   const result = await git.run(args, { timeoutMs: NETWORK_TIMEOUT_MS })
   if (!result.ok) {
-    let kept = false
+    let kept: string | null = null
     if (await operationInProgress(git)) await git.run([kind, '--abort'])
     else if (kind === 'merge') kept = await returnAutostash(git)
     const reason = lastLines(result.stderr || result.stdout, 4)
-    throw new Error(`${t(kind === 'merge' ? 'mergeFailed' : 'rebaseFailed')}${kept ? ` ${t('changesInStash')}` : ''}${reason ? `\n${reason}` : ''}`)
+    throw new Error(`${t(kind === 'merge' ? 'mergeFailed' : 'rebaseFailed')}${kept ? ` ${t('changesInCommit', { hash: kept })}` : ''}${reason ? `\n${reason}` : ''}`)
   }
   const message = t(kind === 'merge' ? 'merged' : 'rebased', { name: shortName(name) })
   if (await autostashConflict(git)) return { ok: true, warning: true, message: `${message} ${t('autostashConflict')}` }
@@ -91,15 +93,17 @@ async function integrate(git: Git, kind: 'merge' | 'rebase', target: string): Pr
 
 /**
  * Gives back the local changes of a merge git stopped after stashing them but before it began (no committer
- * identity): they are left under MERGE_AUTOSTASH, which `merge --quit` saves to the stash list. True when they stay there.
+ * identity): they are left under MERGE_AUTOSTASH. `merge --quit` saves that to the stash list, but drops the ref
+ * even when it cannot (git 2.56), so the changes are applied by their hash then. Returns it when they could not be.
  */
-async function returnAutostash(git: Git): Promise<boolean> {
+async function returnAutostash(git: Git): Promise<string | null> {
   const autostash = (await git.run(['rev-parse', '-q', '--verify', 'MERGE_AUTOSTASH'])).stdout.trim()
-  if (!autostash) return false
+  if (!autostash) return null
   await git.run(['merge', '--quit'])
   // Pop only the entry --quit just saved, never one of the user's own.
-  const top = (await git.run(['rev-parse', '-q', '--verify', 'refs/stash'])).stdout.trim()
-  return !(top === autostash && (await git.run(['stash', 'pop', '--index'])).ok)
+  const listed = (await git.run(['rev-parse', '-q', '--verify', 'refs/stash'])).stdout.trim() === autostash
+  const back = await git.run(listed ? ['stash', 'pop', '--index'] : ['stash', 'apply', '--index', autostash])
+  return back.ok ? null : autostash
 }
 
 /** `git fetch --all` without pruning; never throws. */
