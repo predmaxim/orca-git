@@ -146,8 +146,7 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { dispo
       h('span', { class: 'sep' }),
       title,
       h('div', { class: 'spacer' }),
-      splitButton,
-      unifiedButton,
+      h('div', { class: 'seg' }, splitButton, unifiedButton),
       wholeButton
     ),
     info,

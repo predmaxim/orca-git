@@ -1551,26 +1551,29 @@ input[type='radio']:focus-visible {
   font-size: 12px;
 }
 
-/* ---------- Diff viewer ---------- */
+/* ---------- Diff tab ---------- */
 
+/* An editor tab: Orca paints its editors with the background, not the card. */
 .diff-view {
-  --add-bg: color-mix(in srgb, var(--c1) 14%, var(--bg));
-  --add-word: color-mix(in srgb, var(--c1) 34%, var(--bg));
-  --del-bg: color-mix(in srgb, var(--c4) 14%, var(--bg));
-  --del-word: color-mix(in srgb, var(--c4) 34%, var(--bg));
+  --bg: var(--orca-background);
+  --fg: var(--orca-foreground);
+  /* WebStorm fills a changed line lighter when it marks the changed words: 40% of the color over the editor. */
+  --add-line: color-mix(in srgb, var(--diff-add) 40%, var(--bg));
+  --del-line: color-mix(in srgb, var(--diff-del) 40%, var(--bg));
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg);
+  color: var(--fg);
 }
 
 .diff-header {
   display: flex;
   align-items: center;
-  gap: 2px;
-  min-height: 36px;
-  padding: 4px 8px;
+  gap: 4px;
+  min-height: 40px;
+  padding: 6px 8px;
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
 }
@@ -1586,13 +1589,38 @@ input[type='radio']:focus-visible {
   background: var(--border);
 }
 
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+}
+
+.seg .tool {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--radius-xs);
+}
+
+.seg .tool:hover {
+  background: transparent;
+  color: var(--fg);
+}
+
+.seg .tool.on {
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 10%);
+}
+
 .diff-info {
-  padding: 2px 10px;
+  padding: 3px 12px;
   border-bottom: 1px solid var(--border);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .diff-title {
@@ -1612,27 +1640,6 @@ input[type='radio']:focus-visible {
   text-align: left;
 }
 
-.diff-title .status-letter {
-  font-weight: 700;
-}
-
-.status-letter.st-A {
-  color: var(--c1);
-}
-
-.status-letter.st-D {
-  color: var(--c4);
-}
-
-.status-letter.st-M {
-  color: var(--c0);
-}
-
-.status-letter.st-R,
-.status-letter.st-C {
-  color: var(--c5);
-}
-
 .diff-body {
   flex: 1;
   overflow: auto;
@@ -1649,7 +1656,7 @@ input[type='radio']:focus-visible {
 }
 
 .diff-lines {
-  font: 12px/1.5 'JetBrains Mono', 'Cascadia Code', Consolas, ui-monospace, monospace;
+  font: 13px/1.5 var(--font-code);
   tab-size: 4;
   min-width: min-content;
 }
@@ -1670,17 +1677,15 @@ input[type='radio']:focus-visible {
   padding: 0 6px;
   text-align: right;
   color: var(--muted-fg);
-  opacity: 0.8;
   user-select: none;
-  background: color-mix(in srgb, var(--fg) 3%, var(--bg));
 }
 
 .diff-lines .d-num.add {
-  background: var(--add-bg);
+  background: var(--add-line);
 }
 
 .diff-lines .d-num.del {
-  background: var(--del-bg);
+  background: var(--del-line);
 }
 
 .diff-lines .d-code {
@@ -1694,11 +1699,19 @@ input[type='radio']:focus-visible {
 }
 
 .diff-lines .d-code.add {
-  background: var(--add-bg);
+  background: var(--diff-add);
 }
 
 .diff-lines .d-code.del {
-  background: var(--del-bg);
+  background: var(--diff-del);
+}
+
+.diff-lines .d-code.add:has(.word) {
+  background: var(--add-line);
+}
+
+.diff-lines .d-code.del:has(.word) {
+  background: var(--del-line);
 }
 
 .diff-lines .d-code.d-empty {
@@ -1706,19 +1719,19 @@ input[type='radio']:focus-visible {
 }
 
 .diff-lines .add .word {
-  background: var(--add-word);
+  background: var(--diff-add);
   border-radius: 2px;
 }
 
 .diff-lines .del .word {
-  background: var(--del-word);
+  background: var(--diff-del);
   border-radius: 2px;
 }
 
 .diff-lines .d-hunk {
   padding: 2px 10px;
   color: var(--muted-fg);
-  background: color-mix(in srgb, var(--c0) 9%, var(--bg));
+  background: var(--muted);
   border-block: 1px solid var(--border);
   user-select: none;
 }
