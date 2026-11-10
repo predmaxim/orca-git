@@ -701,7 +701,7 @@ function branchEntries(ref: MenuRef): MenuEntry[] | null {
     if (!current) {
       entries.push(
         // The worker takes the full ref: a short name can mean another ref (heads/x, tags/x, a tag named like the branch).
-        { label: t('branchMerge'), key: 'branchMerge', icon: 'branch', disabled: Boolean(operation), hint: hintBusy, run: () => void act(scope, { kind: 'merge', name: ref.full, tip: ref.hash }, t('branchMerging', { name: ref.name })) },
+        { label: t('branchMerge'), key: 'branchMerge', icon: 'branch', disabled: Boolean(operation), hint: hintBusy, run: () => void merge(scope, ref) },
         { label: t('branchRebase'), key: 'branchRebase', icon: 'rebase', disabled: Boolean(operation), hint: hintBusy, run: () => void rebaseOnto(scope, ref) }
       )
     }
@@ -1096,9 +1096,8 @@ async function offerBackup(root: string, branch: string | null, target: string |
 /** A backup of the current branch at the HEAD `scope` saw. */
 const offerHeadBackup = (scope: Scope) => offerBackup(scope.root, repo?.head.branch ?? null, scope.head)
 
-/** Confirms a rewrite of the current branch with the pushed warning and the backup offer; no dialog when there is neither. */
+/** Confirms a rewrite of the current branch, with the pushed warning and the backup offer when they apply. */
 function confirmRewrite(title: string, pushed: string[], ok: string, backup?: BackupBlock): Promise<boolean> {
-  if (!pushed.length && !backup) return Promise.resolve(true)
   return confirm(title, [t('rewriteConfirm', { name: repo?.head.branch ?? 'HEAD' }), pushed.length ? pushedWarning(pushed) : null], ok, pushed.length > 0, backup)
 }
 
@@ -1118,9 +1117,6 @@ async function checked(scope: Scope, kind: RewriteKind, hashes: string[]) {
     done()
   }
 }
-
-const confirmPushed = (pushed: string[], what: string) =>
-  pushed.length ? confirm(t('pushedTitle'), pushedWarning(pushed), what, true) : Promise.resolve(true)
 
 async function squash(scope: Scope, hashes: string[]): Promise<void> {
   const check = await checked(scope, 'squash', hashes)
@@ -1169,7 +1165,31 @@ async function rebaseFrom(scope: Scope, hash: string): Promise<void> {
 
 async function undoCommit(scope: Scope, hash: string): Promise<void> {
   const check = await checked(scope, 'undo', [hash])
-  if (check && (await confirmPushed(check.pushed, t('btnUndoCommit')))) await act(scope, { kind: 'undo', hash }, t('progUndoingCommit'))
+  if (!check) return
+  const text = [t('undoCommitConfirm', { name: repo?.head.branch ?? 'HEAD' }), check.pushed.length ? pushedWarning(check.pushed) : null]
+  if (await confirm(t('undoCommitTitle'), text, t('btnUndoCommit'), check.pushed.length > 0)) await act(scope, { kind: 'undo', hash }, t('progUndoingCommit'))
+}
+
+// Cherry-Pick, Revert and Merge add commits to the current branch, so a stray letter must not run them: they ask first.
+async function cherryPick(scope: Scope, hashes: string[]): Promise<void> {
+  const name = repo?.head.branch ?? 'HEAD'
+  if (await confirm(t('cherryPickTitle', { count: hashes.length, name }), t('cherryPickConfirm', { name }), t('btnCherryPick'))) {
+    await act(scope, { kind: 'cherryPick', hashes }, t('progCherryPick'))
+  }
+}
+
+async function revert(scope: Scope, hashes: string[]): Promise<void> {
+  const name = repo?.head.branch ?? 'HEAD'
+  if (await confirm(t('revertTitle', { count: hashes.length, name }), t('revertConfirm', { name }), t('btnRevert'))) {
+    await act(scope, { kind: 'revert', hashes }, t('progReverting'))
+  }
+}
+
+async function merge(scope: Scope, ref: BranchRef): Promise<void> {
+  const current = repo?.head.branch ?? 'HEAD'
+  if (await confirm(t('mergeTitle', { name: ref.name, current }), t('mergeConfirm', { name: ref.name, current }), t('btnMerge'))) {
+    await act(scope, { kind: 'merge', name: ref.full, tip: ref.hash }, t('branchMerging', { name: ref.name }))
+  }
 }
 
 /**
@@ -1330,7 +1350,7 @@ function commitEntries(): MenuEntry[] | null {
       icon: 'cherry',
       disabled: Boolean(operation) || (!isFiltered() && hashes.some((hash) => reachable.has(hash))) || merges,
       hint: hintBusy ?? (merges ? t('hintCherryMerge') : t('hintInCurrent')),
-      run: () => void act(scope, { kind: 'cherryPick', hashes }, t('progCherryPick'))
+      run: () => void cherryPick(scope, hashes)
     },
     {
       label: t('cmCreatePatch'),
@@ -1372,7 +1392,7 @@ function commitEntries(): MenuEntry[] | null {
       icon: 'revert',
       disabled: Boolean(operation) || merges,
       hint: hintBusy ?? t('hintRevertMerge'),
-      run: () => void act(scope, { kind: 'revert', hashes }, t('progReverting'))
+      run: () => void revert(scope, hashes)
     },
     {
       label: t('cmUndoCommit'),

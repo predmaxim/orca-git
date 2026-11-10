@@ -65,6 +65,8 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   opens the menu of what is under the cursor (on a folder row Space opens or closes it). A letter
   whose item is greyed out says why, as the menu's tooltip does; one the menu leaves out says it does
   not apply.
+  Every letter that changes the repository asks first: Cherry-Pick, Revert, Merge, Undo Commit, Fixup,
+  Drop and Rebase onto get a confirmation (also from the menu), the others open their own dialog.
   - Anywhere in the panel: `1` `2` `3` `4` go to Branches, Commits, Files and Details (a folded
     section opens first); `0` brings up the Diff tab as it was left (or, if the repository has none
     yet, opens the current file of the selection); `Shift+Z` folds or unfolds the current section;
