@@ -199,6 +199,7 @@ export interface ActionGuard {
 export type BranchAction =
   | { kind: 'rename'; name: string; newName: string }
   | { kind: 'delete'; name: string; force: boolean }
+  /** `name`: the full ref, refs/heads/… or refs/remotes/… (a short name can mean another ref). */
   | { kind: 'merge'; name: string }
   | { kind: 'rebaseOnto'; name: string }
 
@@ -236,6 +237,7 @@ declare module 'orca' {
     /** Whether `name` can become a new backup branch or tag; read-only. */
     'backup.check': { input: { root: string; kind: 'branch' | 'tag'; name: string }; output: { ok: true } | { ok: false; reason: string } }
     /** Remote branches holding commits that rebasing the current branch onto `name` would rewrite. */
+    /** `name`: the full ref, as for `rebaseOnto`. */
     'branch.check': { input: { root: string; name: string }; output: { pushed: string[] } }
     'repo.fetch': { input: { root: string }; output: ActionResult }
     /** Shows the state in the Diff tab of the workspace that holds `root`, opening the tab if needed. */

@@ -41,14 +41,21 @@ async function perform(git: Git, action: BranchAction): Promise<BranchActionResu
   }
 }
 
-/** `target` trimmed, once git confirms it names a commit. */
+/**
+ * `target`, once it is the full name of an existing local or remote branch at a commit. A short name can mean
+ * another ref: heads/x is branch x, tags/x tag x, and a tag wins over a branch of the same name.
+ */
 async function assertTarget(git: Git, target: unknown): Promise<string> {
-  const name = typeof target === 'string' ? target.trim() : ''
-  if (!name || name.startsWith('-') || !(await git.run(['rev-parse', '--verify', '-q', '--end-of-options', `${name}^{commit}`])).ok) {
+  const name = typeof target === 'string' ? target : ''
+  const exact = /^refs\/(heads|remotes)\//.test(name) && (await git.run(['show-ref', '--verify', '--quiet', name])).ok
+  if (!exact || !(await git.run(['rev-parse', '--verify', '-q', '--end-of-options', `${name}^{commit}`])).ok) {
     throw new Error(t('notBranchOrCommit', { name }))
   }
   return name
 }
+
+/** A full branch name as the panel shows it. */
+const shortName = (name: string) => name.replace(/^refs\/(heads|remotes)\//, '')
 
 /** Remote branches that already hold commits a rebase of HEAD onto `target` would rewrite. */
 export async function checkRebaseOnto(git: Git, target: string): Promise<{ pushed: string[] }> {
@@ -77,7 +84,7 @@ async function integrate(git: Git, kind: 'merge' | 'rebase', target: string): Pr
     const reason = lastLines(result.stderr || result.stdout, 4)
     throw new Error(`${t(kind === 'merge' ? 'mergeFailed' : 'rebaseFailed')}${kept ? ` ${t('changesInStash')}` : ''}${reason ? `\n${reason}` : ''}`)
   }
-  const message = t(kind === 'merge' ? 'merged' : 'rebased', { name })
+  const message = t(kind === 'merge' ? 'merged' : 'rebased', { name: shortName(name) })
   if (await autostashConflict(git)) return { ok: true, warning: true, message: `${message} ${t('autostashConflict')}` }
   return { ok: true, message, ...(previousHead ? { previousHead } : {}) }
 }

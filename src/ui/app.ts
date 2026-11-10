@@ -653,8 +653,9 @@ function branchMenu(event: MouseEvent, ref: BranchRef & { kind: 'local' | 'remot
     }
     if (!current) {
       entries.push(
-        { label: t('branchMerge'), icon: 'branch', run: () => void act(scope, { kind: 'merge', name: ref.name }, t('branchMerging', { name: ref.name })) },
-        { label: t('branchRebase'), icon: 'rebase', run: () => void rebaseOnto(scope, ref.name) }
+        // The worker takes the full ref: a short name can mean another ref (heads/x, tags/x, a tag named like the branch).
+        { label: t('branchMerge'), icon: 'branch', run: () => void act(scope, { kind: 'merge', name: ref.full }, t('branchMerging', { name: ref.name })) },
+        { label: t('branchRebase'), icon: 'rebase', run: () => void rebaseOnto(scope, ref) }
       )
     }
   }
@@ -1113,11 +1114,12 @@ async function deleteBranch(scope: Scope, name: string, hash: string): Promise<v
   }
 }
 
-async function rebaseOnto(scope: Scope, name: string): Promise<void> {
+async function rebaseOnto(scope: Scope, ref: BranchRef): Promise<void> {
+  const name = ref.name
   const done = busy(t('checking'))
   let pushed: string[]
   try {
-    pushed = (await api.branchCheck(scope.root, name)).pushed
+    pushed = (await api.branchCheck(scope.root, ref.full)).pushed
   } catch (error) {
     showBanner(errorMessage(error), 'error')
     return
@@ -1126,7 +1128,7 @@ async function rebaseOnto(scope: Scope, name: string): Promise<void> {
   }
   const backup = await offerHeadBackup(scope)
   if (await confirmRewrite(t('rebaseOntoTitle', { name: repo?.head.branch ?? 'HEAD', target: name }), pushed, t('btnRebase'), backup)) {
-    await act(scope, { kind: 'rebaseOnto', name }, t('branchRebasing', { name }), backup?.value())
+    await act(scope, { kind: 'rebaseOnto', name: ref.full }, t('branchRebasing', { name }), backup?.value())
   }
 }
 
