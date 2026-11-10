@@ -660,4 +660,10 @@ test('create patch saves only inside the repository, outside its .git, and never
   assert.equal(readFileSync(join(w.root, '.git', 'config'), 'utf8'), config)
   const saved = await createPatch(git, w.root, [w.c2], join(w.root, 'patches', 'c2.patch'))
   assert.ok(saved.ok && saved.path === join(w.root, 'patches', 'c2.patch'), JSON.stringify(saved))
+  // A file where a folder is needed, and a folder where the file would go: a reason, never a failed request.
+  for (const [path, overwrite] of [['a.txt/x.patch', false], ['a.txt/x.patch', true], ['patches', false], ['patches', true]] as const) {
+    const result = await createPatch(git, w.root, [w.c2], path, overwrite).catch((error: Error) => ({ ok: false as const, reason: `threw ${error.message}`, exists: undefined }))
+    assert.ok(!result.ok && !result.reason.startsWith('threw') && !result.exists, `${path}: ${JSON.stringify(result)}`)
+  }
+  assert.equal(readFileSync(join(w.root, 'a.txt'), 'utf8'), 'main\n')
 })
