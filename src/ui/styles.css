@@ -1540,21 +1540,10 @@ input[type='radio']:focus-visible {
 }
 
 .file-icon {
-  display: inline-flex;
   flex: none;
   width: 16px;
   height: 16px;
-}
-
-.file-icon .fi {
-  width: 16px;
-  height: 16px;
-}
-
-html.dark .fi-light,
-html.light .fi-dark,
-html:not(.dark):not(.light) .fi-dark {
-  display: none;
+  background: center / 16px 16px no-repeat;
 }
 
 .ft-row .name {

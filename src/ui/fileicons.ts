@@ -2,7 +2,7 @@
 import { h } from './dom.ts'
 import { ICON_SVG } from './fileicons-data.ts'
 
-const BY_NAME: Record<string, string> = {
+export const BY_NAME: Record<string, string> = {
   dockerfile: 'docker',
   'docker-compose.yml': 'docker',
   'docker-compose.yaml': 'docker',
@@ -31,7 +31,7 @@ const BY_NAME: Record<string, string> = {
   '.prettierrc': 'config'
 }
 
-const BY_EXT: Record<string, string> = {
+export const BY_EXT: Record<string, string> = {
   ts: 'typeScript', tsx: 'typeScript', mts: 'typeScript', cts: 'typeScript',
   js: 'javaScript', jsx: 'javaScript', mjs: 'javaScript', cjs: 'javaScript',
   json: 'json', jsonc: 'json', json5: 'json',
@@ -60,25 +60,33 @@ const BY_EXT: Record<string, string> = {
   bin: 'binaryData', exe: 'binaryData', dll: 'binaryData', so: 'binaryData', wasm: 'binaryData', pdf: 'binaryData'
 }
 
+const own = (map: Record<string, string>, key: string): string | undefined => (Object.hasOwn(map, key) ? map[key] : undefined)
+
 /** The icon name for a file path: the whole name first (`Dockerfile`, `.gitignore`), then the extension, else `unknown`. */
 export function fileIconName(path: string): string {
   const name = path.slice(path.lastIndexOf('/') + 1).toLowerCase()
-  const byName = BY_NAME[name]
+  const byName = own(BY_NAME, name)
   if (byName) return byName
   const dot = name.lastIndexOf('.')
   // A leading dot is a dotfile, not an extension: `.bashrc` has none, `.d.ts` does.
-  return (dot > 0 ? BY_EXT[name.slice(dot + 1)] : undefined) ?? 'unknown'
+  return (dot > 0 ? own(BY_EXT, name.slice(dot + 1)) : undefined) ?? 'unknown'
 }
 
-const url = (name: string, dark: boolean): string => {
-  const svg = (dark ? ICON_SVG[`${name}_dark`] : undefined) ?? ICON_SVG[name] ?? ICON_SVG.unknown
-  return `data:image/svg+xml,${encodeURIComponent(svg)}`
-}
+const dataUrl = (svg: string): string => `url("data:image/svg+xml,${encodeURIComponent(svg)}")`
 
-// Both themes are drawn and the `light`/`dark` class on <html> picks one (styles.css), so a theme switch needs no redraw.
+// One <span> per row; its icon is a class from one shared stylesheet, written once per icon name, so rows carry no URLs.
+// `html.dark` swaps in the dark variant, so a theme switch needs no redraw.
+let sheet: HTMLStyleElement | undefined
+const written = new Set<string>()
 function themed(name: string): HTMLElement {
-  const img = (cls: string, dark: boolean) => h('img', { class: `fi ${cls}`, src: url(name, dark), alt: '', draggable: false })
-  return h('span', { class: 'file-icon', 'aria-hidden': 'true' }, img('fi-light', false), img('fi-dark', true))
+  if (!Object.hasOwn(ICON_SVG, name)) name = 'unknown'
+  if (!written.has(name)) {
+    written.add(name)
+    sheet ??= document.head.appendChild(document.createElement('style'))
+    const dark = Object.hasOwn(ICON_SVG, `${name}_dark`) ? `html.dark .fi-${name}{background-image:${dataUrl(ICON_SVG[`${name}_dark`])}}` : ''
+    sheet.append(`.fi-${name}{background-image:${dataUrl(ICON_SVG[name])}}${dark}`)
+  }
+  return h('span', { class: `file-icon fi-${name}`, 'aria-hidden': 'true' })
 }
 
 export const fileIcon = (path: string): HTMLElement => themed(fileIconName(path))

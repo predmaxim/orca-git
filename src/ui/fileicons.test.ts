@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { fileIconName } from './fileicons.ts'
+import { BY_EXT, BY_NAME, fileIconName } from './fileicons.ts'
 import { ICON_SVG } from './fileicons-data.ts'
 
 test('file icons are picked by name, then extension, else unknown', () => {
@@ -13,11 +13,9 @@ test('file icons are picked by name, then extension, else unknown', () => {
   assert.equal(fileIconName('docs.v2/Makefile'), 'unknown')
   assert.equal(fileIconName('.bashrc'), 'unknown')
   assert.equal(fileIconName('notes.zzz'), 'unknown')
+  for (const path of ['constructor', '__proto__', 'x.toString', 'x.constructor', 'toString']) assert.equal(fileIconName(path), 'unknown', path)
 })
 
 test('every mapped icon is vendored', () => {
-  for (const path of ['a.ts', 'a.md', 'a.png', 'a.zip', 'a.exe', 'a.tf', 'Jenkinsfile', 'a.cs', 'a.swift']) {
-    assert.ok(ICON_SVG[fileIconName(path)], path)
-  }
-  assert.ok(ICON_SVG.folder && ICON_SVG.folder_dark)
+  for (const name of [...Object.values(BY_NAME), ...Object.values(BY_EXT), 'unknown', 'folder']) assert.ok(Object.hasOwn(ICON_SVG, name), name)
 })
