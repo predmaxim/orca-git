@@ -584,3 +584,15 @@ test('restoring to a backup refuses when it would overwrite local changes', …)
 - Обе темы: проверить снимками в светлой и тёмной (если окно Орки на экране и `--theme` не применяется — сказать об этом), только на демо-репозитории `/tmp/git-demo`; сайдбар показывает фокусный воркспейс пользователя — его не снимать, если там не демо.
 - Без новых тестов на CSS; полный прогон тестов после правок (ничего не сломано), `orca plugin check`.
 - Commit: `git commit -m "Style the panel and the Diff tab like Orca"` (можно несколькими коммитами по областям).
+
+### Task 18: Иконки файлов как в WebStorm
+
+Добавлена 2026-11-10 по решению пользователя: из WebStorm берём только иконки файлов; выделение, цвета и формы остаются «как Орка» (Task 17).
+
+- Источник: `JetBrains/intellij-community`, `platform/icons/src/expui/fileTypes/*.svg` (66 типов, у каждого вариант `_dark.svg`; список проверен через `gh api`) и иконки папок New UI оттуда же (`expui/nodes`, найти точные имена). Открытые части репозитория — под Apache 2.0 (`LICENSE.txt`): положить рядом `LICENSE`/`NOTICE` и упомянуть в README в разделе стороннего кода.
+- Вендорить только нужные SVG в `src/vendor/jetbrains-icons/` байт в байт; размер записать в README.
+- Сопоставление по расширению и имени файла (`Dockerfile`, `.gitignore`, `package.json` и т. п.) в одном модуле (`src/ui/fileicons.ts`) с тестом на сопоставление; неизвестное — `unknown`/`text`.
+- Светлая и тёмная тема — по классу `light`/`dark` на `<html>`.
+- Где: дерево файлов (файлы и папки), шапка вкладки «Diff», строки файлов в описании коммита, если они есть.
+- Проверка: снимок вкладки «Diff» на демо-репозитории, стенд для дерева в светлой и тёмной теме; полный прогон тестов, `orca plugin check`.
+- Commit: `git commit -m "Show WebStorm's file icons in the file tree and the Diff tab"`.
