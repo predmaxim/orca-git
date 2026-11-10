@@ -126,8 +126,8 @@ column.section('commits').body.append(filterRow, logPane)
 const filesSection = column.section('files')
 const filesPane = filesSection.body
 filesSection.header.append(
-  h('button', { class: 'tool', title: withKey(t('expandAll'), 'expandAll'), 'aria-label': t('expandAll'), onclick: () => setAllFolders(true) }, icon('chevronDown')),
-  h('button', { class: 'tool', title: withKey(t('collapseAll'), 'collapseAll'), 'aria-label': t('collapseAll'), onclick: () => setAllFolders(false) }, icon('chevronRight'))
+  h('button', { class: 'tool', title: withKey(t('expandAll'), 'folders'), 'aria-label': t('expandAll'), onclick: () => setAllFolders(true) }, icon('chevronDown')),
+  h('button', { class: 'tool', title: withKey(t('collapseAll'), 'folders'), 'aria-label': t('collapseAll'), onclick: () => setAllFolders(false) }, icon('chevronRight'))
 )
 renderFilesNote(t('filesPlaceholder'))
 const detailsPane = column.section('details').body
@@ -1493,18 +1493,14 @@ mountPanelKeys({
     fetch: () => fetchButton.click(),
     help: showKeys,
     diff: () => void goToDiff(),
-    filterBranch: () => filterBar.elements[0].click(),
-    filterUser: () => filterBar.elements[1].click(),
-    filterDate: () => filterBar.elements[2].click(),
-    filterPaths: () => filterBar.elements[3].click(),
-    clearBranch: filterBar.clear[0],
-    clearUser: filterBar.clear[1],
-    clearDate: filterBar.clear[2],
-    clearPaths: filterBar.clear[3],
+    // A filter's key opens it; pressed again once it is set, it clears it.
+    filterBranch: () => (filter.branches?.length ? filterBar.clear[0]() : filterBar.elements[0].click()),
+    filterUser: () => (filter.users?.length ? filterBar.clear[1]() : filterBar.elements[1].click()),
+    filterDate: () => (filter.since || filter.until ? filterBar.clear[2]() : filterBar.elements[2].click()),
+    filterPaths: () => (filter.paths?.length ? filterBar.clear[3]() : filterBar.elements[3].click()),
     regex: () => regexToggle.click(),
     matchCase: () => caseToggle.click(),
-    expandAll: () => setAllFolders(true),
-    collapseAll: () => setAllFolders(false)
+    folders: () => setAllFolders(!dirPaths(fileTree).every((path) => openFolders.has(path)))
   }
 })
 

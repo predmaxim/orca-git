@@ -130,8 +130,8 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { dispo
   const arrow = (label: string, tip: string, run: () => void) => h('button', { class: 'tool', title: tip, 'aria-label': tip, onclick: run }, label)
   const prevFile = arrow('←', t('diffPrevFile'), () => go(index - 1))
   const nextFile = arrow('→', t('diffNextFile'), () => go(index + 1))
-  const splitButton = h('button', { class: 'tool', title: withKey(t('diffSplitTip'), 'split'), onclick: () => setMode('split') }, t('diffSplit'))
-  const unifiedButton = h('button', { class: 'tool', title: withKey(t('diffUnifiedTip'), 'unified'), onclick: () => setMode('unified') }, t('diffUnified'))
+  const splitButton = h('button', { class: 'tool', title: withKey(t('diffSplitTip'), 'layout'), onclick: () => setMode('split') }, t('diffSplit'))
+  const unifiedButton = h('button', { class: 'tool', title: withKey(t('diffUnifiedTip'), 'layout'), onclick: () => setMode('unified') }, t('diffUnified'))
   const wholeButton = h('button', { class: 'tool', title: withKey(t('diffWholeFileTip'), 'wholeFile'), onclick: () => setWhole(!wholeFile) }, t('diffWholeFile'))
   const view = h(
     'div',
@@ -243,6 +243,8 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { dispo
 
   function onKey(event: KeyboardEvent): void {
     const target = event.target as HTMLElement | null
+    // A menu or popover (.layer), a dialog (.overlay) or the busy spinner owns the keys, as in the panel.
+    if (document.querySelector('.busy, .overlay, .layer')) return
     // Leave typing and open dialogs or menus alone; the file tree and commit list still get the shortcuts.
     if (event.defaultPrevented || target?.closest?.('input, textarea, select, [contenteditable], .overlay, .menu') || target?.isContentEditable) return
     const plain = !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
@@ -251,7 +253,7 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { dispo
     else if (event.key === 'F7') jump(event.shiftKey ? -1 : 1)
     else {
       const key = findKey(event, ['diff'])?.id
-      if (key === 'split' || key === 'unified') setMode(key)
+      if (key === 'layout') setMode(mode === 'split' ? 'unified' : 'split')
       else if (key === 'wholeFile') setWhole(!wholeFile)
       else return
     }

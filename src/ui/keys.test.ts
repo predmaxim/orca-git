@@ -22,19 +22,22 @@ test('no two keys share a code and Shift in one scope', () => {
   }
 })
 
-test('an area key never shadows a key that works anywhere', () => {
+test('no area key shadows a key that works anywhere', () => {
   const anywhere = new Set(KEYS.filter((k) => k.scope === 'anywhere').map(chord))
-  for (const k of KEYS.filter((k) => k.scope === 'commits' || k.scope === 'files')) {
+  for (const k of KEYS.filter((k) => k.scope !== 'anywhere')) {
     assert.ok(!anywhere.has(chord(k)), `${k.id} takes ${chord(k)} from the whole panel`)
   }
 })
 
 test('findKey matches the physical key and Shift', () => {
-  assert.equal(findKey(press('KeyU'), ['anywhere', 'commits'])?.id, 'filterUser')
-  assert.equal(findKey(press('KeyU'), ['anywhere', 'files']), null)
+  assert.equal(findKey(press('KeyU', { shiftKey: true }), ['anywhere', 'commits'])?.id, 'filterUser')
+  assert.equal(findKey(press('KeyU'), ['anywhere', 'commits']), null)
+  assert.equal(findKey(press('KeyU', { shiftKey: true }), ['anywhere', 'files']), null)
   assert.equal(findKey(press('Slash', { shiftKey: true }), ['anywhere'])?.id, 'help')
   assert.equal(findKey(press('KeyF', { shiftKey: true }), ['anywhere'])?.id, 'fetch')
-  assert.equal(findKey(press('KeyF'), ['anywhere'])?.id, 'fold')
+  assert.equal(findKey(press('KeyZ', { shiftKey: true }), ['anywhere'])?.id, 'fold')
+  assert.equal(findKey(press('KeyE', { shiftKey: true }), ['anywhere', 'files'])?.id, 'folders')
+  assert.equal(findKey(press('KeyS', { shiftKey: true }), ['diff'])?.id, 'layout')
 })
 
 test('modifiers turn every key off', () => {
@@ -50,5 +53,15 @@ test('every label is a message', () => {
 })
 
 test('withKey adds the key to a tooltip', () => {
-  assert.equal(withKey('User', 'filterUser'), 'User (u)')
+  assert.equal(withKey('User', 'filterUser'), 'User (Shift+U)')
+})
+
+test('a letter without Shift acts on a thing, and every other letter takes Shift', () => {
+  for (const k of KEYS.filter((k) => k.code.startsWith('Key'))) {
+    assert.notEqual(Boolean(k.menu), Boolean(k.shift), `${k.id}: ${chord(k)}`)
+  }
+})
+
+test('labels print without parameters', () => {
+  for (const k of KEYS) assert.ok(!t(k.label).includes('{'), k.id)
 })

@@ -18,23 +18,23 @@ export type KeyId =
   | 'filterUser'
   | 'filterDate'
   | 'filterPaths'
-  | 'clearBranch'
-  | 'clearUser'
-  | 'clearDate'
-  | 'clearPaths'
   | 'regex'
   | 'matchCase'
-  | 'expandAll'
-  | 'collapseAll'
-  | 'split'
-  | 'unified'
+  | 'folders'
+  | 'layout'
   | 'wholeFile'
 
-/** `code` is the physical key (`event.code`), so a letter works in any keyboard layout. */
+/**
+ * `code` is the physical key (`event.code`), so a letter works in any keyboard layout. The rule: a letter without
+ * Shift acts on the thing under the cursor (`menu`: it runs that thing's menu item); a letter with Shift acts on the
+ * panel or the area, and pressed again undoes it.
+ */
 export interface KeyBinding {
   id: KeyId
   code: string
   shift?: true
+  /** Runs the item with this key in the menu of the commits or branch under the cursor. */
+  menu?: true
   scope: KeyScope
   label: MessageKey
   shown: string
@@ -46,26 +46,20 @@ export const KEYS: readonly KeyBinding[] = [
   { id: 'area3', code: 'Digit3', scope: 'anywhere', label: 'sectionFiles', shown: '3' },
   { id: 'area4', code: 'Digit4', scope: 'anywhere', label: 'sectionDetails', shown: '4' },
   { id: 'diff', code: 'Digit0', scope: 'anywhere', label: 'keyDiffTab', shown: '0' },
-  { id: 'fold', code: 'KeyF', scope: 'anywhere', label: 'keyFold', shown: 'f' },
   { id: 'search', code: 'Slash', scope: 'anywhere', label: 'keySearch', shown: '/' },
-  { id: 'refresh', code: 'KeyR', scope: 'anywhere', label: 'refresh', shown: 'r' },
-  { id: 'fetch', code: 'KeyF', shift: true, scope: 'anywhere', label: 'fetch', shown: 'Shift+F' },
   { id: 'help', code: 'Slash', shift: true, scope: 'anywhere', label: 'keyHelp', shown: '?' },
-  { id: 'filterBranch', code: 'KeyB', scope: 'commits', label: 'filterBranch', shown: 'b' },
-  { id: 'filterUser', code: 'KeyU', scope: 'commits', label: 'filterUser', shown: 'u' },
-  { id: 'filterDate', code: 'KeyD', scope: 'commits', label: 'filterDate', shown: 'd' },
-  { id: 'filterPaths', code: 'KeyP', scope: 'commits', label: 'filterPaths', shown: 'p' },
-  { id: 'clearBranch', code: 'KeyB', shift: true, scope: 'commits', label: 'keyClearBranch', shown: 'Shift+B' },
-  { id: 'clearUser', code: 'KeyU', shift: true, scope: 'commits', label: 'keyClearUser', shown: 'Shift+U' },
-  { id: 'clearDate', code: 'KeyD', shift: true, scope: 'commits', label: 'keyClearDate', shown: 'Shift+D' },
-  { id: 'clearPaths', code: 'KeyP', shift: true, scope: 'commits', label: 'keyClearPaths', shown: 'Shift+P' },
-  { id: 'regex', code: 'Period', scope: 'commits', label: 'regexTip', shown: '.' },
-  { id: 'matchCase', code: 'KeyC', scope: 'commits', label: 'matchCaseTip', shown: 'c' },
-  { id: 'expandAll', code: 'KeyE', scope: 'files', label: 'expandAll', shown: 'e' },
-  { id: 'collapseAll', code: 'KeyC', scope: 'files', label: 'collapseAll', shown: 'c' },
-  { id: 'split', code: 'KeyS', scope: 'diff', label: 'diffSplit', shown: 's' },
-  { id: 'unified', code: 'KeyU', scope: 'diff', label: 'diffUnified', shown: 'u' },
-  { id: 'wholeFile', code: 'KeyW', scope: 'diff', label: 'diffWholeFile', shown: 'w' }
+  { id: 'fold', code: 'KeyZ', shift: true, scope: 'anywhere', label: 'keyFold', shown: 'Shift+Z' },
+  { id: 'refresh', code: 'KeyR', shift: true, scope: 'anywhere', label: 'refresh', shown: 'Shift+R' },
+  { id: 'fetch', code: 'KeyF', shift: true, scope: 'anywhere', label: 'fetch', shown: 'Shift+F' },
+  { id: 'filterBranch', code: 'KeyB', shift: true, scope: 'commits', label: 'keyFilterBranch', shown: 'Shift+B' },
+  { id: 'filterUser', code: 'KeyU', shift: true, scope: 'commits', label: 'keyFilterUser', shown: 'Shift+U' },
+  { id: 'filterDate', code: 'KeyD', shift: true, scope: 'commits', label: 'keyFilterDate', shown: 'Shift+D' },
+  { id: 'filterPaths', code: 'KeyP', shift: true, scope: 'commits', label: 'keyFilterPaths', shown: 'Shift+P' },
+  { id: 'regex', code: 'KeyX', shift: true, scope: 'commits', label: 'regexTip', shown: 'Shift+X' },
+  { id: 'matchCase', code: 'KeyC', shift: true, scope: 'commits', label: 'matchCaseTip', shown: 'Shift+C' },
+  { id: 'folders', code: 'KeyE', shift: true, scope: 'files', label: 'keyFolders', shown: 'Shift+E' },
+  { id: 'layout', code: 'KeyS', shift: true, scope: 'diff', label: 'keyLayout', shown: 'Shift+S' },
+  { id: 'wholeFile', code: 'KeyW', shift: true, scope: 'diff', label: 'diffWholeFile', shown: 'Shift+W' }
 ]
 
 /** The first binding in one of `scopes` for this key; none while Ctrl, Alt or Meta is held. */

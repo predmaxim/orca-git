@@ -49,11 +49,11 @@ function optionKeys(root: HTMLElement): HTMLElement {
   return root
 }
 
-function filterButton(name: string, key: KeyId, clearKey: KeyId, onOpen: (button: HTMLElement) => void, onClear: () => void) {
+function filterButton(name: string, key: KeyId, onOpen: (button: HTMLElement) => void, onClear: () => void) {
   const label = h('span', null, name)
   const clear = h('span', {
     class: 'clear',
-    title: withKey(t('filterClearTip', { name: name.toLowerCase() }), clearKey),
+    title: withKey(t('filterClearTip', { name: name.toLowerCase() }), key),
     onclick: (event: MouseEvent) => {
       event.stopPropagation()
       onClear()
@@ -143,7 +143,6 @@ export function createFilterBar(host: FilterHost) {
   const branch = filterButton(
     t('filterBranch'),
     'filterBranch',
-    'clearBranch',
     (anchor) => {
       const refs = host.refs
       if (!refs) return
@@ -171,7 +170,6 @@ export function createFilterBar(host: FilterHost) {
   const user = filterButton(
     t('filterUser'),
     'filterUser',
-    'clearUser',
     (anchor) => {
       const refs = host.refs
       if (!refs) return
@@ -194,7 +192,6 @@ export function createFilterBar(host: FilterHost) {
   const date = filterButton(
     t('filterDate'),
     'filterDate',
-    'clearDate',
     (anchor) => {
       const now = Math.floor(Date.now() / 1000)
       const preset = (label: string, days: number) =>
@@ -249,7 +246,6 @@ export function createFilterBar(host: FilterHost) {
   const paths = filterButton(
     t('filterPaths'),
     'filterPaths',
-    'clearPaths',
     (anchor) => {
       const area = h('textarea', { class: 'field mono', rows: 5, spellcheck: false, placeholder: t('pathsPlaceholder') }) as HTMLTextAreaElement
       area.value = (host.filter.paths ?? []).join('\n')
