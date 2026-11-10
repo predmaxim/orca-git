@@ -69,8 +69,8 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   names git would expand, like `@{-1}`, and names under `refs/` (git would read `refs/heads/main` as
   `main`); checkout takes only a branch name or a full commit hash.
 - While a rebase, merge, cherry-pick or revert started elsewhere (a terminal) is stopped, the worker
-  refuses every action that moves HEAD or touches the work tree; a new branch without checkout and a
-  new tag still work. A cherry-pick or revert that left only its todo list (`.git/sequencer`) is named
+  refuses every action that moves HEAD or touches the work tree, and the menus disable them; a new
+  branch without checkout and a new tag still work. A cherry-pick or revert that left only its todo list (`.git/sequencer`) is named
   as such, with `git cherry-pick --quit` (or `git revert --quit`) as the way out.
 - Every git command the worker runs, where its input comes from and how it is checked is listed in
   [docs/git-safety.md](docs/git-safety.md).
