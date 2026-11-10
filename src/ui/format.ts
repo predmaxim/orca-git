@@ -22,6 +22,12 @@ export function relativeDate(seconds: number, now = Date.now()): string {
   return `${date.toLocaleDateString(getLocale(), { year: 'numeric', month: 'numeric', day: 'numeric' })}, ${hhmm(date)}`
 }
 
+/** The local day of `seconds` as a date input's value (YYYY-MM-DD): the Date filter reads it back as local midnight. */
+export function dayInput(seconds: number): string {
+  const date = new Date(seconds * 1000)
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
 export function fullDate(seconds: number): string {
   return new Date(seconds * 1000).toLocaleString(getLocale(), { dateStyle: 'medium', timeStyle: 'short' })
 }
