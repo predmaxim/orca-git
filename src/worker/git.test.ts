@@ -266,6 +266,20 @@ test('a git in the repository never runs, even with . or an empty entry on PATH'
   assert.equal(existsSync(marker), false)
 })
 
+test('an inherited GIT_DIR or config from the environment never reaches git', async () => {
+  const { root } = repo(1)
+  const other = repo(2)
+  const inherited = { GIT_DIR: join(other.root, '.git'), GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'user.name', GIT_CONFIG_VALUE_0: 'Intruder' }
+  Object.assign(process.env, inherited)
+  try {
+    const git = createGit(root)
+    assert.equal((await git.out(['log', '--format=%s'])).trim(), 'c1')
+    assert.equal((await git.out(['config', 'user.name'])).trim(), 'Tester')
+  } finally {
+    for (const key of Object.keys(inherited)) delete process.env[key]
+  }
+})
+
 test('a bare git name is looked up only in absolute PATH entries; a relative path is refused', { skip: process.platform === 'win32' }, () => {
   const base = mkdtempSync(join(tmpdir(), 'git-path-'))
   dirs.push(base)

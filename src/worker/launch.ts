@@ -1,4 +1,6 @@
+import { execFileSync } from 'node:child_process'
 import { accessSync, constants, statSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { posix, win32 } from 'node:path'
 import { t } from '../shared/i18n.ts'
 
@@ -39,4 +41,28 @@ export function resolveGit(setting: string, env: Record<string, string | undefin
   const found = gitCandidates(setting, env, platform).find(runnable)
   if (!found) throw new Error(t('gitNotOnPath', { name: setting }))
   return found
+}
+
+/** Per git executable, the variables that point it at another repository (`git rev-parse --local-env-vars`). */
+const localVars = new Map<string, Set<string>>()
+
+/**
+ * The worker's environment without what would send git to another repository or add config to every call: the
+ * variables `git rev-parse --local-env-vars` lists (GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, GIT_CONFIG_COUNT…) and
+ * GIT_CONFIG_KEY_<n> / GIT_CONFIG_VALUE_<n>. Asked once per executable, outside any repository.
+ */
+export function gitEnv(git: string) {
+  let drop = localVars.get(git)
+  if (!drop) {
+    const bare = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^GIT_/i.test(key)))
+    try {
+      drop = new Set(execFileSync(git, ['rev-parse', '--local-env-vars'], { cwd: tmpdir(), env: bare, encoding: 'utf8', timeout: 10_000, windowsHide: true }).split(/\r?\n/).filter(Boolean))
+    } catch (error) {
+      throw new Error(t('gitProbeFailed', { path: git, error: error instanceof Error ? error.message : String(error) }))
+    }
+    localVars.set(git, drop)
+  }
+  const keep = drop
+  // Upper case: Windows reads variable names in any case.
+  return Object.fromEntries(Object.entries(process.env).filter(([key]) => !keep.has(key.toUpperCase()) && !/^GIT_CONFIG_(KEY|VALUE)_\d+$/i.test(key)))
 }
