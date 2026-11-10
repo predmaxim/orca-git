@@ -95,6 +95,8 @@ export function createColumn(ids: SectionId[], prefs: SectionPrefs, onChange: ()
     header.addEventListener('click', (event) => {
       const button = (event.target as Element).closest('button')
       if (button && button !== toggle) return
+      // The last open section stays open, as on load: the column is never empty.
+      if (!prefs.collapsed[id] && ids.every((other) => other === id || prefs.collapsed[other])) return
       prefs.collapsed[id] = !prefs.collapsed[id]
       layout()
       onChange()
