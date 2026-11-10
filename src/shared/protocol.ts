@@ -230,7 +230,7 @@ export interface BranchActionResult extends ActionResult {
 }
 
 export type PatchResult =
-  | { ok: true; name: string; size: number; text?: string; tooLarge?: boolean; path?: string }
+  | { ok: true; name: string; size: number; text?: string; tooLarge?: boolean; notUtf8?: boolean; path?: string }
   | { ok: false; reason: string; exists?: boolean }
 
 /** What the Diff tab of a repository shows: the files of the selection a file was opened from. */

@@ -1,7 +1,7 @@
 import { closeSync, constants, lstatSync, mkdirSync, openSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { PatchResult } from '../shared/protocol.ts'
-import type { Git } from './git.ts'
+import { lastLines, type Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
 
 const { O_WRONLY, O_CREAT, O_TRUNC, O_NOFOLLOW = 0, O_NONBLOCK = 0 } = constants
@@ -16,8 +16,11 @@ const slug = (subject: string) =>
     .replace(/^-+|-+$/g, '')
     .slice(0, 60) || 'commit'
 
-/** `git format-patch` output for `hashes`, oldest first, as one mbox. */
-export async function formatPatch(git: Git, hashes: string[]): Promise<{ text: string; name: string }> {
+/**
+ * `git format-patch` output for `hashes`, oldest first, as one mbox: the bytes git wrote (file content need not be UTF-8)
+ * and, when they are UTF-8, the text.
+ */
+export async function formatPatch(git: Git, hashes: string[]): Promise<{ bytes: Uint8Array; text: string | null; name: string }> {
   if (!Array.isArray(hashes) || !hashes.length) throw new Error(t('selectAtLeastOne'))
   if (!hashes.every((hash) => typeof hash === 'string' && /^[0-9a-f]{40}$/.test(hash))) throw new Error(t('invalidCommit'))
   const order = (await git.out(['rev-list', '--no-walk', '--topo-order', '--reverse', '--parents', ...new Set(hashes), '--']))
@@ -25,17 +28,32 @@ export async function formatPatch(git: Git, hashes: string[]): Promise<{ text: s
     .split('\n')
     .map((line) => line.split(' '))
   if (order.some((ids) => ids.length > 2)) throw new Error(t('mergeNoPatch'))
-  const parts: string[] = []
-  for (const [hash] of order) parts.push(await git.out(['format-patch', '--stdout', '--encoding=UTF-8', '--binary', '--no-signature', '-1', hash, '--']))
+  const parts: Uint8Array[] = []
+  for (const [hash] of order) {
+    // --encoding=UTF-8: messages in UTF-8 whatever i18n.logOutputEncoding says; file content stays as it is.
+    const result = await git.run(['format-patch', '--stdout', '--encoding=UTF-8', '--binary', '--no-signature', '-1', hash, '--'], { bytes: true })
+    if (!result.ok || !result.bytes) throw new Error(lastLines(result.stderr) || t('gitCommandFailed', { command: 'format-patch' }))
+    parts.push(result.bytes)
+  }
+  const bytes = new Uint8Array(parts.reduce((total, part) => total + part.length, 0))
+  parts.reduce((at, part) => (bytes.set(part, at), at + part.length), 0)
+  let text: string | null = null
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  } catch {
+    // Not UTF-8: only the bytes keep the patch applicable.
+  }
   const subject = order.length === 1 ? (await git.out(['log', '-1', '--encoding=UTF-8', '--format=%s', order[0][0], '--'])).trim() : ''
-  return { text: parts.join(''), name: order.length === 1 ? `${slug(subject)}.patch` : `${order.length}-commits.patch` }
+  return { bytes, text, name: order.length === 1 ? `${slug(subject)}.patch` : `${order.length}-commits.patch` }
 }
 
 /** Returns the patch text, or writes it to `path` (relative to `root`) when one is given. */
 export async function createPatch(git: Git, root: string, hashes: string[], path?: string, overwrite = false): Promise<PatchResult> {
-  const { text, name } = await formatPatch(git, hashes)
+  const { bytes, text, name } = await formatPatch(git, hashes)
+  const size = bytes.length
   if (!path) {
-    return text.length > MAX_PATCH_TEXT ? { ok: true, name, size: text.length, tooLarge: true } : { ok: true, name, size: text.length, text }
+    if (text === null) return { ok: true, name, size, notUtf8: true }
+    return text.length > MAX_PATCH_TEXT ? { ok: true, name, size, tooLarge: true } : { ok: true, name, size, text }
   }
   if (typeof path !== 'string' || !path.trim()) return { ok: false, reason: t('enterFilePath') }
   const target = resolve(root, path.trim())
@@ -59,7 +77,7 @@ export async function createPatch(git: Git, root: string, hashes: string[], path
     // O_NONBLOCK: a FIFO swapped in since the check fails with ENXIO instead of blocking the worker.
     const fd = openSync(target, overwrite ? O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_NONBLOCK : 'wx')
     try {
-      writeFileSync(fd, text)
+      writeFileSync(fd, bytes)
     } finally {
       closeSync(fd)
     }
@@ -68,5 +86,5 @@ export async function createPatch(git: Git, root: string, hashes: string[], path
     if (error?.code === 'ELOOP') return refused('patchPathRefused')
     return error?.code === 'ENOTDIR' ? refused('patchPathNotFolder') : refused('patchSaveFailed', String(error?.code ?? error))
   }
-  return { ok: true, name, size: text.length, path: target }
+  return { ok: true, name, size, path: target }
 }

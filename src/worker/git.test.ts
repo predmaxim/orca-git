@@ -234,6 +234,22 @@ test('a log output encoding other than UTF-8 neither garbles nor hides text, and
   assert.equal(sh(root, 'log', '-1', '--encoding=UTF-8', '--format=%B'), 'Новое сообщение')
 })
 
+test('create patch keeps file content that is not UTF-8 byte for byte, and offers no clipboard text for it', async () => {
+  const { root, hashes } = repo(1)
+  writeFileSync(join(root, 'legacy.txt'), Uint8Array.from('caf\xe9 line\nna\xefve\n', (c) => c.charCodeAt(0)))
+  sh(root, 'add', '.')
+  sh(root, 'commit', '-qm', 'latin1')
+  const git = createGit(root)
+  const head = sh(root, 'rev-parse', 'HEAD')
+  const preview = await createPatch(git, root, [head])
+  assert.deepEqual(preview.ok && [preview.text, preview.notUtf8], [undefined, true])
+  const saved = await createPatch(git, root, [head], 'latin1.patch')
+  const path = saved.ok ? saved.path : undefined
+  assert.ok(path, JSON.stringify(saved))
+  sh(root, 'reset', '-q', '--hard', hashes[0])
+  sh(root, 'apply', '--check', path!)
+})
+
 test('the empty-commit stop is spelled for the git version: stop from 2.45, ask before or when unknown', () => {
   const cases: Array<[string, string]> = [
     ['git version 2.56.0', '--empty=stop'],

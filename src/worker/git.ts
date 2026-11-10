@@ -6,11 +6,15 @@ export interface GitResult {
   code: number | null
   stdout: string
   stderr: string
+  /** stdout as git wrote it, with `bytes: true`. */
+  bytes?: Uint8Array
 }
 
 export interface GitOptions {
   env?: Record<string, string>
   timeoutMs?: number
+  /** Also keep stdout as bytes (`GitResult.bytes`): output that need not be UTF-8, such as a patch. */
+  bytes?: boolean
 }
 
 export interface Git {
@@ -42,11 +46,14 @@ export function createGit(root: string, gitPath = 'git'): Git {
           env: { ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C', ...options.env },
           maxBuffer: 64 * 1024 * 1024,
           timeout: options.timeoutMs ?? 60_000,
-          windowsHide: true
+          windowsHide: true,
+          encoding: options.bytes ? 'buffer' : 'utf8'
         },
         (error, stdout, stderr) => {
           const code = error ? (typeof (error as any).code === 'number' ? (error as any).code : null) : 0
-          resolve({ ok: !error, code, stdout: String(stdout), stderr: String(stderr || (error && !stderr ? error.message : '')) })
+          // String() of a Buffer decodes it as UTF-8, as execFile does for 'utf8'.
+          const err = String(stderr)
+          resolve({ ok: !error, code, stdout: String(stdout), stderr: err || (error ? error.message : ''), ...(options.bytes ? { bytes: stdout } : {}) })
         }
       )
     })
