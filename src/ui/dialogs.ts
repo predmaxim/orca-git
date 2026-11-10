@@ -115,7 +115,8 @@ export function dialog<T>(options: DialogOptions<T>): Promise<T | null> {
 
 const cancel = <T>(): Button<T> => ({ label: t('cancel'), value: null as T })
 
-const messageOf = (failure: unknown) => (failure instanceof Error ? failure.message : String(failure))
+// Never empty: an empty problem would close the dialog as if the check passed.
+const messageOf = (failure: unknown) => (failure instanceof Error ? failure.message : String(failure)) || t('checkFailed')
 
 export function pushedWarning(pushed: string[]): HTMLElement {
   const list = pushed.slice(0, 4).join(', ') + (pushed.length > 4 ? t('pushedMore', { count: pushed.length - 4 }) : '')
