@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir, userInfo } from 'node:os'
 import { join } from 'node:path'
-import { assert, mockHost, mountWorker, test } from 'orca/testing'
+import { assert, hostError, mockHost, mountWorker, test } from 'orca/testing'
 import * as main from './main.ts'
 import { matchWorkspace } from './repo.ts'
 
@@ -25,7 +25,7 @@ function fixture(): string {
 /** What the worker posts when it starts, so a panel drops what it waited for from the one before. */
 const started = { event: 'worker.started', payload: {} }
 
-function host(root: string, settings: Record<string, string> = {}) {
+function host(root: string, settings: Record<string, string> = {}, results: Record<string, unknown> = {}) {
   return mockHost({
     settings,
     results: {
@@ -37,7 +37,8 @@ function host(root: string, settings: Record<string, string> = {}) {
         ],
         truncated: false
       },
-      'editor.open': { opened: true }
+      'editor.open': { opened: true },
+      ...results
     }
   })
 }
@@ -205,6 +206,21 @@ test('opening a file shows it in the Diff tab of the workspace that holds its re
     assert.deepEqual(worker.posts.at(-1), { event: 'diff.show', payload: { root } })
     assert.deepEqual(await worker.request('diff.state', { root }), state)
     assert.equal(await worker.request('diff.state', { root: tmpdir() }), null)
+    await worker.deactivate()
+  } finally {
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
+})
+
+test('a Diff tab that fails to open leaves no state for a later one to show', async () => {
+  const root = fixture()
+  try {
+    const failing = () => {
+      throw hostError('action_failed', 'no editor')
+    }
+    const worker = await mountWorker(main, { host: host(root, {}, { 'editor.open': failing }) })
+    await assert.rejects(worker.request('diff.open', diffState(root)))
+    assert.equal(await worker.request('diff.state', { root }), null)
     await worker.deactivate()
   } finally {
     rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })

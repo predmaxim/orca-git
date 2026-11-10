@@ -149,8 +149,16 @@ async function openDiff(input: any): Promise<{ ok: boolean; reason?: string }> {
   const refused = claimAnchor(anchor, root, `${JSON.stringify({ root, workspaceId: workspace.id }, null, 2)}\n`)
   if (refused) return { ok: false, reason: refused }
   await exclude(git, root, DIFF_ANCHOR)
+  const previous = diffStates.get(root)
   diffStates.set(root, { root, files: input.files, index: input.index })
-  await orcaApi.host.call('editor.open', { workspaceId: workspace.id, path: DIFF_ANCHOR })
+  try {
+    await orcaApi.host.call('editor.open', { workspaceId: workspace.id, path: DIFF_ANCHOR })
+  } catch (error) {
+    // No tab opened: a later one must not show these files.
+    if (previous) diffStates.set(root, previous)
+    else diffStates.delete(root)
+    throw error
+  }
   // An open tab reads the new state on this event; a new one reads it when it starts.
   orcaApi.panels.post('diff.show', { root })
   return { ok: true }
