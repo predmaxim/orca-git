@@ -1,8 +1,10 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { closeSync, constants, lstatSync, mkdirSync, openSync, writeFileSync } from 'node:fs'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { PatchResult } from '../shared/protocol.ts'
 import type { Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
+
+const { O_WRONLY, O_CREAT, O_TRUNC, O_NOFOLLOW = 0, O_NONBLOCK = 0 } = constants
 
 /** Frame responses are capped at 1 MiB; bigger patches can only be saved. */
 export const MAX_PATCH_TEXT = 900_000
@@ -37,8 +39,34 @@ export async function createPatch(git: Git, root: string, hashes: string[], path
   }
   if (typeof path !== 'string' || !path.trim()) return { ok: false, reason: t('enterFilePath') }
   const target = resolve(root, path.trim())
-  if (existsSync(target) && !overwrite) return { ok: false, exists: true, reason: t('fileExists', { path: target }) }
-  mkdirSync(dirname(target), { recursive: true })
-  writeFileSync(target, text)
+  const inside: string = relative(root, target)
+  const parts = inside.split(sep)
+  const refused = (key: 'patchPathRefused' | 'patchPathFolder' | 'patchPathNotFile' | 'patchPathNotFolder' | 'patchSaveFailed', code = '') => ({ ok: false as const, reason: t(key, { path: target, code }) })
+  const exists = { ok: false as const, exists: true, reason: t('fileExists', { path: target }) }
+  // Inside the work tree and outside any .git.
+  if (path.includes('\0') || !inside || parts[0] === '..' || isAbsolute(inside) || parts.some((part) => part.toLowerCase() === '.git')) return refused('patchPathRefused')
+  try {
+    // Through no link a repository could carry that leads elsewhere, and never onto a folder.
+    const stats = parts.map((_, i) => lstatSync(join(root, ...parts.slice(0, i + 1)), { throwIfNoEntry: false }))
+    if (stats.some((stat) => stat?.isSymbolicLink())) return refused('patchPathRefused')
+    const last = stats.at(-1)
+    if (last?.isDirectory()) return refused('patchPathFolder')
+    // A FIFO would block the worker on open; a device or socket is no place for a patch either.
+    if (last && !last.isFile()) return refused('patchPathNotFile')
+    if (last && !overwrite) return exists
+    mkdirSync(dirname(target), { recursive: true })
+    // Neither replaces a link made since the check: wx never opens an existing path, O_NOFOLLOW never follows one.
+    // O_NONBLOCK: a FIFO swapped in since the check fails with ENXIO instead of blocking the worker.
+    const fd = openSync(target, overwrite ? O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_NONBLOCK : 'wx')
+    try {
+      writeFileSync(fd, text)
+    } finally {
+      closeSync(fd)
+    }
+  } catch (error: any) {
+    if (error?.code === 'EEXIST') return exists
+    if (error?.code === 'ELOOP') return refused('patchPathRefused')
+    return error?.code === 'ENOTDIR' ? refused('patchPathNotFolder') : refused('patchSaveFailed', String(error?.code ?? error))
+  }
   return { ok: true, name, size: text.length, path: target }
 }

@@ -57,7 +57,8 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
 - **Multi-select**: click, Ctrl/⌘-click, Shift-click, arrows, Page Up/Down, Home/End, Ctrl+A.
 - **Right-click menu** with icons (or Shift+F10):
   - Copy Revision Number (Ctrl+C), Cherry-Pick, Create Patch… (`git format-patch` of the selection,
-    oldest first, saved to a file or copied to the clipboard)
+    oldest first, copied to the clipboard or saved to a file inside the repository only: a path
+    outside it (such as `~/Downloads`), inside `.git` or through a link is refused)
   - Checkout Revision, checkout a branch at that commit, check out a remote branch as local
   - Reset Current Branch to Here… (soft / mixed / hard / keep), Revert Commits, Undo Commit
   - Edit Commit Message…, Fixup, Squash Commits…, Drop Commits, Interactively Rebase from Here…
@@ -70,8 +71,16 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
 - An action runs in the repository its menu was opened on. If the workspace switches to another
   repository while a dialog is open (or, for an action on the current branch, HEAD moves), nothing
   runs and a banner says so. The worker checks HEAD once more right before it runs such an action, and
-  Undo runs only while HEAD is still where the action left it. New branch and rename refuse names git
-  would expand, like `@{-1}`.
+  Undo runs only while HEAD is still where the action left it. New branch, rename and checkout
+  refuse names git would expand, like `@{-1}`, and names under `refs/`; checkout takes only a branch
+  (`git switch`) or a full commit hash, and merge and rebase onto take the branch's full ref.
+- While a rebase, merge, cherry-pick or revert started elsewhere (a terminal) is stopped, the worker
+  refuses every action that moves HEAD or touches the work tree, and the menus disable them; a new
+  branch without checkout and a new tag still work. A cherry-pick or revert that left only its todo
+  list (`.git/sequencer`) is named as such, with `git cherry-pick --quit` (or `git revert --quit`) as
+  the way out.
+- Every git command the worker runs, where its input comes from and how it is checked is listed in
+  [docs/git-safety.md](docs/git-safety.md).
 - **Refresh** re-reads the log and branches; **Fetch** runs `git fetch --all` (without `--prune`) and
   reports the result in the banner. It never asks for a password: it works through the SSH agent and
   git's credential helpers.
@@ -118,8 +127,12 @@ orca plugin shot local.git-log --editor <repo>/.orca-git-log.gitdiff   # the Dif
 
 Squash, fixup, drop, reword and the interactive rebase dialog all run `git rebase -i --autostash`
 with a generated todo list (`GIT_SEQUENCE_EDITOR`) and messages written to a file, so no editor ever
-opens. The selection must be a run of non-merge commits on the current branch. If the rebase stops on
-a conflict it is aborted, and the branch is left exactly as it was.
+opens; a message keeps its lines that start with `#`. The selection must be a run of non-merge
+commits on the current branch. If the rebase stops on a conflict it is aborted, and the branch is
+left exactly as it was. If the uncommitted changes do not apply cleanly to the rewritten branch, git
+keeps them in the stash: the banner says so and offers no Undo. Git gives the changes back without
+their staging (new files stay added), and the banner says that too; merge and rebase onto work the
+same way.
 
 ## Backups before risky operations
 

@@ -3,17 +3,22 @@ import { lastLines, type Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
 import { readHead } from './log.ts'
 import {
+  autostashConflict,
+  noteUnstaged,
   operationInProgress,
+  operationRefusal,
   planFor,
   pushedTo,
   rangeHashes,
   readFirstParentHistory,
   runRebase,
   selectRange,
+  todoOnly,
   type HistoryEntry
 } from './rebase.ts'
 
 const HASH = /^[0-9a-f]{40}$/
+const REWRITES = new Set<string>(['squash', 'fixup', 'drop', 'reword', 'rebase'])
 
 function assertHashes(hashes: unknown): string[] {
   if (!Array.isArray(hashes) || !hashes.length || !hashes.every((h) => typeof h === 'string' && HASH.test(h))) {
@@ -26,7 +31,8 @@ export async function assertName(git: Git, name: string, kind: 'branch' | 'tag')
   const trimmed = name.trim()
   const args = kind === 'branch' ? ['check-ref-format', '--branch', trimmed] : ['check-ref-format', `refs/tags/${trimmed}`]
   // --branch expands @{-1} and @{u} to the branch they name: refuse "@{" and any name git does not keep as is.
-  const result = trimmed && !trimmed.startsWith('-') && !trimmed.includes('@{') ? await git.run(args) : null
+  // Under refs/ too: branch refs/heads/main is stored as refs/heads/refs/heads/main, yet git reads the name as main.
+  const result = trimmed && !trimmed.startsWith('-') && !trimmed.includes('@{') && !trimmed.startsWith('refs/') ? await git.run(args) : null
   if (!result?.ok || (kind === 'branch' && result.stdout.trim() !== trimmed)) throw new Error(t(kind === 'branch' ? 'invalidBranchName' : 'invalidTagName', { name: trimmed }))
   return trimmed
 }
@@ -40,10 +46,16 @@ export async function oldestFirst(git: Git, hashes: string[]): Promise<string[]>
 }
 
 async function sequencer(git: Git, verb: 'cherry-pick' | 'revert', args: string[]): Promise<void> {
+  const start = (await readHead(git)).hash
   const result = await git.run([verb, ...args], { timeoutMs: 120_000 })
   if (!result.ok) {
     const reason = lastLines(result.stderr || result.stdout, 4)
-    if ((await operationInProgress(git)) === verb) await git.run([verb, '--abort'])
+    if ((await operationInProgress(git)) === verb) {
+      // A conflict, or commits already made, need --abort. Refused before the first commit (local changes in the way),
+      // only the todo list is left: --quit drops it, where --abort would also reset staged changes.
+      const started = !(await todoOnly(git, verb)) || (await readHead(git)).hash !== start
+      await git.run([verb, started ? '--abort' : '--quit'])
+    }
     throw new Error(`${t(verb === 'revert' ? 'revertFailed' : 'cherryPickFailed')}${reason ? `\n${reason}` : ''}`)
   }
 }
@@ -56,8 +68,8 @@ function messagesOf(history: HistoryEntry[]): Map<string, string> {
 export async function checkRewrite(git: Git, kind: RewriteKind, hashes: string[]): Promise<CheckResult> {
   try {
     assertHashes(hashes)
-    const operation = await operationInProgress(git)
-    if (operation) return { ok: false, reason: t('opInProgress', { operation }) }
+    const busy = await operationRefusal(git)
+    if (busy) return { ok: false, reason: busy }
     const head = await readHead(git)
     if (!head.hash) return { ok: false, reason: t('repoNoCommits') }
     const history = await readFirstParentHistory(git)
@@ -80,8 +92,6 @@ export async function checkRewrite(git: Git, kind: RewriteKind, hashes: string[]
 }
 
 async function rewrite(git: Git, action: Extract<ActionRequest, { kind: 'squash' | 'fixup' | 'drop' | 'reword' | 'rebase' }>): Promise<string> {
-  const operation = await operationInProgress(git)
-  if (operation) throw new Error(t('opInProgress', { operation }))
   const history = await readFirstParentHistory(git)
   const messages = messagesOf(history)
   if (action.kind === 'rebase') {
@@ -113,9 +123,15 @@ async function rewrite(git: Git, action: Extract<ActionRequest, { kind: 'squash'
 }
 
 export async function runAction(git: Git, action: ActionRequest): Promise<ActionResult> {
+  return REWRITES.has(action?.kind) ? noteUnstaged(git, () => attempt(git, action)) : attempt(git, action)
+}
+
+async function attempt(git: Git, action: ActionRequest): Promise<ActionResult> {
   const previousHead = (await readHead(git)).hash ?? undefined
   try {
     const message = await perform(git, action)
+    // A rewrite runs with --autostash; with its conflicts in the tree, Undo's reset --keep would refuse anyway.
+    if (REWRITES.has(action.kind) && (await autostashConflict(git))) return { ok: true, warning: true, message: `${message} ${t('autostashConflict')}` }
     return { ok: true, message, ...(previousHead ? { previousHead } : {}) }
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : String(error) }
@@ -123,12 +139,30 @@ export async function runAction(git: Git, action: ActionRequest): Promise<Action
 }
 
 async function perform(git: Git, action: ActionRequest): Promise<string> {
+  // A rebase, merge, cherry-pick or revert stopped in a terminal: only adding a ref leaves HEAD, the index and the files alone.
+  if (action.kind !== 'tag' && !(action.kind === 'branch' && !action.checkout)) {
+    const busy = await operationRefusal(git)
+    if (busy) throw new Error(busy)
+  }
   switch (action.kind) {
     case 'checkout': {
-      const target = action.target?.trim()
-      if (!target || target.startsWith('-')) throw new Error(t('invalidCheckoutTarget'))
-      if (HASH.test(target)) await git.out(['checkout', '--detach', target, '--'])
-      else await git.out(['checkout', target, '--'])
+      const target = typeof action.target === 'string' ? action.target.trim() : ''
+      if (action.track !== undefined) {
+        // A new local branch tracking exactly the remote branch clicked: switch's own guess refuses a name several
+        // remotes have, and follows checkout.defaultRemote rather than the click.
+        const track = action.track
+        if (typeof track !== 'string' || !track.startsWith('refs/remotes/') || !(await git.run(['show-ref', '--verify', '--quiet', track])).ok) {
+          throw new Error(t('notBranchOrCommit', { name: String(track) }))
+        }
+        const name = await assertName(git, target, 'branch')
+        // git branch checks the tracking before it writes; `switch --create --track` would update the index and files
+        // first, then fail on a ref no remote's fetch refspec maps and leave the remote branch staged on HEAD.
+        await git.out(['branch', '--track', name, track])
+        const switched = await git.run(['switch', '--end-of-options', name])
+        if (!switched.ok) throw new Error(`${t('branchMadeNotSwitched', { name, upstream: track.slice(13) })}\n${lastLines(switched.stderr || switched.stdout, 4)}`)
+      } else if (HASH.test(target)) await git.out(['checkout', '--detach', target, '--'])
+      // Anything else must be a local branch: git switch refuses a tag, a remote branch, the stash or a revision.
+      else await git.out(['switch', '--end-of-options', await assertName(git, target, 'branch')])
       return t('checkedOut', { target: HASH.test(target) ? target.slice(0, 8) : target })
     }
     case 'branch': {

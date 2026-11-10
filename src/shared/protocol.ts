@@ -7,6 +7,8 @@ export interface RepoInfo {
   head: { branch: string | null; hash: string | null }
   /** A sequencer operation left in progress (by a terminal, say); rewrites are refused while set. */
   operation: 'rebase' | 'merge' | 'cherry-pick' | 'revert' | null
+  /** The cherry-pick or revert left only its todo list (.git/sequencer): `--quit` is the way out. */
+  todoOnly: boolean
 }
 
 /** A local workspace the focused context could be, when several share its name and branch. */
@@ -135,7 +137,8 @@ export interface PlanItem {
 export type RewriteKind = 'squash' | 'fixup' | 'drop' | 'reword' | 'rebase' | 'undo'
 
 export type ActionRequest =
-  | { kind: 'checkout'; target: string }
+  /** `track`: a remote branch (full ref) to make `target` from, as a new local branch tracking it. */
+  | { kind: 'checkout'; target: string; track?: string }
   | { kind: 'branch'; hash: string; name: string; checkout: boolean }
   | { kind: 'tag'; hash: string; name: string }
   | { kind: 'cherryPick'; hashes: string[] }
@@ -169,6 +172,8 @@ export interface ActionResult {
   stash?: string
   /** HEAD after an action sent with `expectHead` or a backup ran, for its Undo to expect. */
   head?: string
+  /** It ran, but left something for the user to sort out (the message says what); no undo. */
+  warning?: boolean
 }
 
 /** A branch or tag the worker creates at `target` (40 hex) before a risky action; never overwrites a ref. */
@@ -209,14 +214,13 @@ export interface ActionGuard {
 export type BranchAction =
   | { kind: 'rename'; name: string; newName: string }
   | { kind: 'delete'; name: string; force: boolean }
+  /** `name`: the full ref, refs/heads/… or refs/remotes/… (a short name can mean another ref). */
   | { kind: 'merge'; name: string }
   | { kind: 'rebaseOnto'; name: string }
 
 export interface BranchActionResult extends ActionResult {
   /** The branch is not fully merged; deleting it needs force. */
   needsForce?: boolean
-  /** It ran, but left something for the user to sort out (the message says what); no undo. */
-  warning?: boolean
 }
 
 export type PatchResult =
@@ -250,6 +254,7 @@ declare module 'orca' {
     /** What a hard reset to `target` would lose: uncommitted tracked changes, untracked files it overwrites; read-only. */
     'reset.check': { input: { root: string; target: string }; output: ResetCheck }
     /** Remote branches holding commits that rebasing the current branch onto `name` would rewrite. */
+    /** `name`: the full ref, as for `rebaseOnto`. */
     'branch.check': { input: { root: string; name: string }; output: { pushed: string[] } }
     'repo.fetch': { input: { root: string }; output: ActionResult }
     /** Shows the state in the Diff tab of the workspace that holds `root`, opening the tab if needed. */

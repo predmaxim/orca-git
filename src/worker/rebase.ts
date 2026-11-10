@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { PlanItem, RangeCommit, RewriteKind } from '../shared/protocol.ts'
@@ -111,7 +111,8 @@ export function buildTodo(
     if (final === undefined) final = group.reword
     if (final !== undefined) {
       if (!final.trim()) throw new Error(t('commitMessageEmpty'))
-      lines.push(`exec ${shQuote(gitBin)} commit --amend --allow-empty --no-verify --cleanup=strip -F ${shQuote(writeMessage(final))}`)
+      // As `git commit -F` cleans up: a line that starts with # (an issue number) is part of the message, not a comment.
+      lines.push(`exec ${shQuote(gitBin)} commit --amend --allow-empty --no-verify --cleanup=whitespace -F ${shQuote(writeMessage(final))}`)
     }
     group = null
   }
@@ -163,7 +164,45 @@ export async function operationInProgress(git: Git): Promise<'rebase' | 'merge' 
     ['REVERT_HEAD', 'revert']
   ]
   for (const [name, kind] of checks) if (existsSync(await gitPath(git, name))) return kind
+  // A cherry-pick or revert of several commits keeps its todo list here, also once a stop was committed by hand.
+  const todo = join(await gitPath(git, 'sequencer'), 'todo')
+  if (existsSync(todo)) return readFileSync(todo, 'utf8').startsWith('revert') ? 'revert' : 'cherry-pick'
   return null
+}
+
+/** A cherry-pick or revert of several commits that left only its todo list (.git/sequencer): no commit is stopped on. */
+export async function todoOnly(git: Git, operation: string | null): Promise<boolean> {
+  return (operation === 'cherry-pick' || operation === 'revert') && !existsSync(await gitPath(git, operation === 'revert' ? 'REVERT_HEAD' : 'CHERRY_PICK_HEAD'))
+}
+
+/** Why an action that moves HEAD must not run now, or null. A lone todo list gets `--quit` as the way out: `--abort` resets staged changes. */
+export async function operationRefusal(git: Git): Promise<string | null> {
+  const operation = await operationInProgress(git)
+  if (!operation) return null
+  return t((await todoOnly(git, operation)) ? 'opTodoLeft' : 'opInProgress', { operation })
+}
+
+/** Files staged against HEAD. */
+async function stagedFiles(git: Git): Promise<string[]> {
+  const result = await git.run(['diff', '--cached', '--name-only', '-z', '--'])
+  return result.ok ? result.stdout.split('\0').filter(Boolean) : []
+}
+
+/**
+ * Runs `run`, an operation with --autostash, and says so in its message when files staged before are staged no
+ * more: git puts the stash back without the staging (new files stay added), whether the operation ran or was aborted.
+ */
+export async function noteUnstaged<R extends { message: string }>(git: Git, run: () => Promise<R>): Promise<R> {
+  const before = await stagedFiles(git)
+  const result = await run()
+  if (!before.length) return result
+  const after = new Set(await stagedFiles(git))
+  return before.some((file) => !after.has(file)) ? { ...result, message: `${result.message} ${t('stagingLost')}` } : result
+}
+
+/** git exits 0 when the autostash does not apply cleanly: the changes stay in the stash and the tree has conflicts. */
+export async function autostashConflict(git: Git): Promise<boolean> {
+  return Boolean((await git.run(['diff', '--name-only', '--diff-filter=U', '--'])).stdout.trim())
 }
 
 /** Remote branches that already contain `hash`: rewriting it then needs a force push. */

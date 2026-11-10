@@ -75,7 +75,7 @@ test('action.run and branch.run check the HEAD the dialog showed and make the ba
     const name = 'backup/main-20261110-1432'
     const stale = await worker.request('action.run', { root, action: { kind: 'drop', hashes: [head] }, expectHead: parent, backup: { kind: 'branch', name, target: parent } })
     assert.equal(stale.ok, false)
-    const stuck = await worker.request('branch.run', { root, action: { kind: 'rebaseOnto', name: 'main' }, expectHead: parent })
+    const stuck = await worker.request('branch.run', { root, action: { kind: 'rebaseOnto', name: 'refs/heads/main' }, expectHead: parent })
     assert.equal(stuck.ok, false)
     // A stash goes only with a hard reset.
     const stashed = await worker.request('action.run', { root, action: { kind: 'drop', hashes: [head] }, expectHead: head, backup: { kind: 'branch', name, target: head, stash: true } })
