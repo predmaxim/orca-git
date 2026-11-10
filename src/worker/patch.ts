@@ -41,7 +41,7 @@ export async function createPatch(git: Git, root: string, hashes: string[], path
   const target = resolve(root, path.trim())
   const inside: string = relative(root, target)
   const parts = inside.split(sep)
-  const refused = (key: 'patchPathRefused' | 'patchPathFolder' | 'patchPathNotFolder' | 'patchSaveFailed', code = '') => ({ ok: false as const, reason: t(key, { path: target, code }) })
+  const refused = (key: 'patchPathRefused' | 'patchPathFolder' | 'patchPathNotFile' | 'patchPathNotFolder' | 'patchSaveFailed', code = '') => ({ ok: false as const, reason: t(key, { path: target, code }) })
   const exists = { ok: false as const, exists: true, reason: t('fileExists', { path: target }) }
   // Inside the work tree and outside any .git.
   if (path.includes('\0') || !inside || parts[0] === '..' || isAbsolute(inside) || parts.some((part) => part.toLowerCase() === '.git')) return refused('patchPathRefused')
@@ -49,8 +49,11 @@ export async function createPatch(git: Git, root: string, hashes: string[], path
     // Through no link a repository could carry that leads elsewhere, and never onto a folder.
     const stats = parts.map((_, i) => lstatSync(join(root, ...parts.slice(0, i + 1)), { throwIfNoEntry: false }))
     if (stats.some((stat) => stat?.isSymbolicLink())) return refused('patchPathRefused')
-    if (stats.at(-1)?.isDirectory()) return refused('patchPathFolder')
-    if (stats.at(-1) && !overwrite) return exists
+    const last = stats.at(-1)
+    if (last?.isDirectory()) return refused('patchPathFolder')
+    // A FIFO would block the worker on open; a device or socket is no place for a patch either.
+    if (last && !last.isFile()) return refused('patchPathNotFile')
+    if (last && !overwrite) return exists
     mkdirSync(dirname(target), { recursive: true })
     // Neither replaces a link made since the check: wx never opens an existing path, O_NOFOLLOW never follows one.
     const fd = openSync(target, overwrite ? O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW : 'wx')

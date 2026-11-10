@@ -832,3 +832,16 @@ test('create patch saves only inside the repository, outside its .git, and never
   }
   assert.equal(readFileSync(join(w.root, 'a.txt'), 'utf8'), 'main\n')
 })
+
+test('create patch refuses a FIFO or another file that is not a regular one, without blocking', async () => {
+  const w = world()
+  try {
+    execFileSync('mkfifo', [join(w.root, 'pipe.patch')])
+  } catch {
+    return // no mkfifo on this platform
+  }
+  for (const overwrite of [true, false]) {
+    const result = await createPatch(createGit(w.root), w.root, [w.c2], 'pipe.patch', overwrite)
+    assert.ok(!result.ok && !result.exists, JSON.stringify(result))
+  }
+})
