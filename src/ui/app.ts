@@ -948,6 +948,19 @@ function unchanged(scope: Scope, onHead = false): boolean {
   return false
 }
 
+/** The change this panel stopped waiting for (Orca gives up after 120 s); the worker's `action.done` for its root ends it. */
+let waiting: { root: string; finish: (result: BranchActionResult) => void } | null = null
+/** The last `action.done` of each root and when it came: a request can time out just after its change ended. */
+const lastDone = new Map<string, { at: number; result: BranchActionResult }>()
+
+/** Calls `finish` with the result of the change to `root` sent at `since`: now if it has ended, else once it does. */
+function lateResult(root: string, since: number, finish: (result: BranchActionResult) => void): void {
+  const done = lastDone.get(root)
+  if (done && done.at >= since) return finish(done.result)
+  waiting = { root, finish }
+  showBanner(t('stillRunning'), 'info', [], true)
+}
+
 /**
  * Runs `action` on the repository of `scope`. The worker refuses an action on the current branch when HEAD
  * is no longer the one `scope` saw, and makes `backup` before anything else.
@@ -958,20 +971,26 @@ async function act(scope: Scope, action: ActionRequest | BranchAction | BackupDe
   const root = scope.root
   const guard = { ...(onHead && scope.head ? { expectHead: scope.head } : {}), ...(backup ? { backup } : {}) }
   const done = busy(progress)
+  const since = Date.now()
   let result: BranchActionResult
   try {
     if (action.kind === 'deleteBackup') result = await api.deleteBackup(root, action)
     else result = BRANCH_KINDS.has(action.kind) ? await api.branch(root, action as BranchAction, guard) : await api.run(root, action as ActionRequest, guard)
   } catch (error) {
-    // Orca stopped waiting, git did not: no failure to report yet. The worker posts repo.changed when it ends.
+    // Orca stopped waiting, git did not: no failure to report. The worker's action.done brings the result.
     if (timedOut(error)) {
-      showBanner(t('stillRunning'), 'info')
+      lateResult(root, since, (late) => void report(root, action, late, backup))
       return null
     }
     result = { ok: false, message: errorMessage(error) }
   } finally {
     done()
   }
+  return report(root, action, result, backup)
+}
+
+/** Shows how `action` on `root` ended, with Undo and the backup it made, and refreshes the panel. */
+async function report(root: string, action: ActionRequest | BranchAction | BackupDelete, result: BranchActionResult, backup?: BackupRequest): Promise<BranchActionResult> {
   // The worker reports a backup it made even when the action then failed.
   const made = backup && result.backup ? `refs/${backup.kind === 'tag' ? 'tags' : 'heads'}/${result.backup}` : null
   const show = made ? [{ label: t('showBackup'), run: () => reveal(made) }] : []
@@ -1311,12 +1330,14 @@ function commitMenu(x: number, y: number): void {
 refreshButton.addEventListener('click', () => void refreshAll())
 fetchButton.addEventListener('click', async () => {
   if (!repo) return
+  const root = repo.root
+  const since = Date.now()
+  const show = (result: ActionResult) => showBanner(result.message, result.ok ? 'success' : 'error')
   fetchButton.disabled = true
   try {
-    const result = await api.fetch(repo.root)
-    showBanner(result.message, result.ok ? 'success' : 'error')
+    show(await api.fetch(root))
   } catch (error) {
-    if (timedOut(error)) showBanner(t('stillRunning'), 'info')
+    if (timedOut(error)) lateResult(root, since, show)
     else showBanner(errorMessage(error), 'error')
   } finally {
     fetchButton.disabled = false
@@ -1340,6 +1361,14 @@ orca.plugin.on('diff.current', ({ root, path }: { root: string; path: string }) 
   for (const dir of dirPaths(fileTree)) if (path.startsWith(`${dir}/`)) openFolders.add(dir)
   drawFiles()
   filesPane.querySelector('.ft-row.current')?.scrollIntoView({ block: 'nearest' })
+})
+
+orca.plugin.on('action.done', ({ root, result }: { root: string; result: BranchActionResult }) => {
+  lastDone.set(root, { at: Date.now(), result })
+  if (waiting?.root !== root) return
+  const { finish } = waiting
+  waiting = null
+  finish(result)
 })
 
 orca.plugin.on('repo.changed', ({ root }: { root: string }) => {

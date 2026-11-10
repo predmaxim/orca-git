@@ -271,6 +271,8 @@ declare module 'orca' {
   }
   interface PluginPanelEvents {
     'repo.changed': { root: string }
+    /** A change to `root` ended; a panel that stopped waiting for it shows `result`. */
+    'action.done': { root: string; result: BranchActionResult }
     /** The Diff tab of `root` has a new state to show. */
     'diff.show': { root: string }
     /** The file the Diff tab of `root` now shows, for the sidebar to highlight. */

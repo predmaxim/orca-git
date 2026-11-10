@@ -57,7 +57,8 @@ test('resolves the focused workspace, pages the log and runs an action', async (
     const run = await worker.request('action.run', { root, action: { kind: 'drop', hashes: [middle.hash] } })
     assert.equal(run.ok, true, run.message)
     assert.equal(run.previousHead, newest.hash)
-    assert.deepEqual(worker.posts.at(-1), { event: 'repo.changed', payload: { root } })
+    // A panel that stopped waiting gets the result from the last post.
+    assert.deepEqual(worker.posts.slice(-2), [{ event: 'repo.changed', payload: { root } }, { event: 'action.done', payload: { root, result: run } }])
 
     await assert.rejects(worker.request('log.page', { root: tmpdir(), filter: {}, skip: 0 }))
     assert.deepEqual(worker.refusals, [])

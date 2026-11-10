@@ -23,15 +23,23 @@ const diffStates = new Map<string, DiffTabState>()
 /** Roots with a request running that changes the repository. */
 const changing = new Set<string>()
 
-/** Runs `change` on `root` (as `gitFor` accepted it) unless another change to it is running: that one is refused, not queued. */
-async function exclusive<T>(root: string, change: () => Promise<T>): Promise<T | ActionResult> {
+/**
+ * Runs `change` on `root` (as `gitFor` accepted it) unless another change to it is running: that one is refused, not
+ * queued. The result is also posted as `action.done`, for a panel that stopped waiting (Orca gives up after 120 s).
+ */
+async function exclusive<T extends ActionResult>(root: string, change: () => Promise<T>): Promise<T | ActionResult> {
   if (changing.has(root)) return { ok: false, message: t('repoBusy') }
   changing.add(root)
+  let result: T | ActionResult
   try {
-    return await change()
+    result = await change()
+  } catch (error) {
+    result = { ok: false, message: error instanceof Error ? error.message : String(error) }
   } finally {
     changing.delete(root)
   }
+  orcaApi.panels.post('action.done', { root, result })
+  return result
 }
 
 async function setting<T>(key: string, fallback: T): Promise<T> {
