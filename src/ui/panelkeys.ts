@@ -50,7 +50,8 @@ export function mountPanelKeys(host: PanelKeysHost): void {
   }
 
   document.addEventListener('keydown', (event) => {
-    if (event.defaultPrevented || document.querySelector('.busy')) return
+    // A menu or popover (.layer), a dialog (.overlay) or the busy spinner owns the keys, even once focus fell to body.
+    if (event.defaultPrevented || document.querySelector('.busy, .overlay, .layer')) return
     const id = current
     const search = id ? host.areas[id].search : undefined
     // Esc with text is the field's own: it clears it and prevents the key.

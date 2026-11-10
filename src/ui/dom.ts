@@ -51,9 +51,11 @@ export function mountTree(container: HTMLElement, rows: HTMLElement[], depths: n
     }
   }, ...rows)
   const kept = key === undefined ? undefined : rows.find((row) => row.dataset.key === key)
-  tabStop(kept ?? rows[0])
+  // The focused row is gone (its folder closed): focus moves to the deepest folder still drawn above it, else the first row.
+  const heir = key === undefined || kept ? kept : (rows.filter((row) => key.startsWith(`${row.dataset.key}/`)).pop() ?? rows[0])
+  tabStop(heir ?? rows[0])
   container.replaceChildren(tree)
-  kept?.focus()
+  heir?.focus()
 }
 
 /** An inline SVG icon from the set below. */
