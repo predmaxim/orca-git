@@ -137,7 +137,8 @@ keeps them all.
   also save them to the stash (`git stash create`, then `git stash store`; the work tree is not
   touched). The hard reset is still confirmed, and both dialogs list the untracked files it would
   overwrite, ignored ones included: files at a path the target tracks and HEAD does not (or inside a
-  folder at such a path), and files named like a folder the target needs. The stash does not keep
+  folder at such a path), the same inside a nested repository of their own (git does not list those,
+  so the plugin looks on disk), and files named like a folder the target needs. The stash does not keep
   them. A file created after the dialog opened is not listed.
 - The banner names the backup and offers Undo and **Show Backup**, which opens its folder in the branch
   tree.
