@@ -252,15 +252,19 @@ test('squash and reword todo lines amend with the configured git executable', ()
   assert.ok(todo.includes(`exec '/opt/my git/bin/git' commit --amend`), todo)
 })
 
-test('a git in the repository never runs, even with . or an empty entry on PATH', { skip: process.platform === 'win32' }, async () => {
-  const { root } = repo(1)
+test('a git or cp in the repository never runs, even with . or an empty entry on PATH', { skip: process.platform === 'win32' }, async () => {
+  const { root, hashes } = repo(2)
   const marker = join(root, '.git', 'decoy-ran')
-  writeFileSync(join(root, 'git'), `#!/bin/sh\ntouch '${marker}'\n`, { mode: 0o755 })
+  // git itself, and cp, which a rewrite's sequence editor runs by name.
+  for (const name of ['git', 'cp']) writeFileSync(join(root, name), `#!/bin/sh\ntouch '${marker}'\nexit 1\n`, { mode: 0o755 })
   const path = process.env.PATH
   process.env.PATH = `.::${path}`
   try {
-    const result = await createGit(root).run(['rev-parse', '--show-toplevel'])
+    const git = createGit(root)
+    const result = await git.run(['rev-parse', '--show-toplevel'])
     assert.equal(result.ok, true, result.stderr)
+    const reworded = await runAction(git, { kind: 'reword', hash: hashes[1], message: 'second' })
+    assert.equal(reworded.ok, true, reworded.message)
   } finally {
     process.env.PATH = path
   }

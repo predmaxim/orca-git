@@ -115,7 +115,8 @@ settings). The plugin runs as a `trusted-worker`: it starts `git` with your user
 starts git by its full path: a bare name is looked up only in the absolute folders of `PATH`, never
 in the repository or through an empty or `.` entry, and a relative **Git executable** is refused, so
 a `git` or `git.exe` inside a cloned repository never runs. Variables such as `GIT_DIR` that
-would point git at another repository are removed from its environment.
+would point git at another repository are removed from its environment, and its `PATH` keeps
+only absolute folders, so nothing git starts by name (`cp`, `ssh`, `gpg`) comes from the repository.
 
 ### Develop
 

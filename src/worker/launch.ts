@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { accessSync, constants, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { posix, win32 } from 'node:path'
+import { delimiter, posix, win32 } from 'node:path'
 import { t } from '../shared/i18n.ts'
 
 const unquote = (entry: string, platform: string) => (platform === 'win32' ? entry.replace(/^"(.*)"$/, '$1') : entry)
@@ -59,7 +59,8 @@ const localVars = new Map<string, Set<string>>()
 /**
  * The worker's environment without what would send git to another repository or add config to every call: the
  * variables `git rev-parse --local-env-vars` lists (GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, GIT_CONFIG_COUNT…) and
- * GIT_CONFIG_KEY_<n> / GIT_CONFIG_VALUE_<n>. Asked once per executable, outside any repository.
+ * GIT_CONFIG_KEY_<n> / GIT_CONFIG_VALUE_<n>. Asked once per executable, outside any repository. PATH keeps only its
+ * absolute folders: git finds what it starts by name there too (the rewrite's cp, ssh, gpg, git-lfs).
  */
 export function gitEnv(git: string) {
   let drop = localVars.get(git)
@@ -73,6 +74,13 @@ export function gitEnv(git: string) {
     localVars.set(git, drop)
   }
   const keep = drop
-  // Upper case: Windows reads variable names in any case.
-  return Object.fromEntries(Object.entries(process.env).filter(([key]) => !keep.has(key.toUpperCase()) && !/^GIT_CONFIG_(KEY|VALUE)_\d+$/i.test(key)))
+  // Upper case: Windows reads variable names in any case. An empty PATH would mean the current folder: none then.
+  return Object.fromEntries(
+    Object.entries(process.env).flatMap(([key, value]) => {
+      if (keep.has(key.toUpperCase()) || /^GIT_CONFIG_(KEY|VALUE)_\d+$/i.test(key)) return []
+      if (key.toUpperCase() !== 'PATH') return [[key, value]]
+      const dirs = absoluteEntries(String(value ?? ''), process.platform)
+      return dirs.length ? [[key, dirs.join(delimiter)]] : []
+    })
+  )
 }
