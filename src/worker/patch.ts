@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { existsSync, lstatSync, mkdirSync, writeFileSync } from 'node:fs'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { PatchResult } from '../shared/protocol.ts'
 import type { Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
@@ -37,6 +37,13 @@ export async function createPatch(git: Git, root: string, hashes: string[], path
   }
   if (typeof path !== 'string' || !path.trim()) return { ok: false, reason: t('enterFilePath') }
   const target = resolve(root, path.trim())
+  const inside = relative(root, target)
+  const parts = inside.split(sep)
+  // Inside the work tree, outside any .git, and through no link a repository could carry that leads elsewhere.
+  const linked = () => parts.some((_, i) => lstatSync(join(root, ...parts.slice(0, i + 1)), { throwIfNoEntry: false })?.isSymbolicLink())
+  if (path.includes('\0') || !inside || parts[0] === '..' || isAbsolute(inside) || parts.some((part) => part.toLowerCase() === '.git') || linked()) {
+    return { ok: false, reason: t('patchPathRefused', { path: target }) }
+  }
   if (existsSync(target) && !overwrite) return { ok: false, exists: true, reason: t('fileExists', { path: target }) }
   mkdirSync(dirname(target), { recursive: true })
   writeFileSync(target, text)

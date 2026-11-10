@@ -346,3 +346,30 @@ for (const [state, start] of IN_PROGRESS) {
     assert.deepEqual({ ...snapshot(w.root), refs: before.refs }, before)
   })
 }
+
+// ---------- Create patch: the file goes inside the repository, never through a link ----------
+
+test('create patch saves only inside the repository, outside its .git, and never through a link', async () => {
+  const w = world()
+  const git = createGit(w.root)
+  const outside = tempDir('git-log-safety-outside-')
+  mkdirSync(join(outside, 'dir'))
+  writeFileSync(join(outside, 'victim'), 'precious\n')
+  symlinkSync(join(outside, 'missing'), join(w.root, 'dangling.patch'))
+  symlinkSync(join(outside, 'victim'), join(w.root, 'live.patch'))
+  symlinkSync(join(outside, 'dir'), join(w.root, 'linked'))
+  const config = readFileSync(join(w.root, '.git', 'config'), 'utf8')
+  for (const path of [relative(w.root, join(outside, 'escape.patch')), join(outside, 'abs.patch'), '.git/x.patch', '.git/config', '.GIT/x.patch', 'sub/.git/x.patch', 'dangling.patch', 'live.patch', 'linked/x.patch', 'linked/new/x.patch', 'a\0b.patch']) {
+    for (const overwrite of [false, true]) {
+      const result = await createPatch(git, w.root, [w.c2], path, overwrite).catch((error: Error) => ({ ok: false as const, reason: `threw ${error.message}` }))
+      assert.equal(result.ok, false, `${path}: ${result.ok ? result.path : result.reason}`)
+      assert.ok(!result.ok && !result.reason.startsWith('threw'), `${path}: ${!result.ok && result.reason}`)
+    }
+  }
+  assert.deepEqual(readdirSync(outside).sort(), ['dir', 'victim'])
+  assert.deepEqual(readdirSync(join(outside, 'dir')), [])
+  assert.equal(readFileSync(join(outside, 'victim'), 'utf8'), 'precious\n')
+  assert.equal(readFileSync(join(w.root, '.git', 'config'), 'utf8'), config)
+  const saved = await createPatch(git, w.root, [w.c2], join(w.root, 'patches', 'c2.patch'))
+  assert.ok(saved.ok && saved.path === join(w.root, 'patches', 'c2.patch'), JSON.stringify(saved))
+})

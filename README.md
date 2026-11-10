@@ -51,7 +51,8 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
 - **Multi-select**: click, Ctrl/⌘-click, Shift-click, arrows, Page Up/Down, Home/End, Ctrl+A.
 - **Right-click menu** with icons (or Shift+F10):
   - Copy Revision Number (Ctrl+C), Cherry-Pick, Create Patch… (`git format-patch` of the selection,
-    oldest first, saved to a file or copied to the clipboard)
+    oldest first, saved to a file in the repository, never inside `.git` or through a link, or copied
+    to the clipboard)
   - Checkout Revision, checkout a branch at that commit, check out a remote branch as local
   - Reset Current Branch to Here… (soft / mixed / hard / keep), Revert Commits, Undo Commit
   - Edit Commit Message…, Fixup, Squash Commits…, Drop Commits, Interactively Rebase from Here…
