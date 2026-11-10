@@ -370,7 +370,8 @@ export const en = {
   stillRunning: 'git is still running after 2 minutes. Its result shows here when it finishes; until then other changes to this repository are refused.',
   inRepository: 'In {name}: {text}',
   workerRestarted: 'The plugin\'s worker restarted while git was running, so how that change ended is not known. Check the log or git status.',
-  shallowBoundary: 'This shallow clone\'s history starts at commit {hash}: its parent was never fetched, so git would take it for the first commit, which cuts the branch off its history or deletes files. Fetch the whole history with git fetch --unshallow, then try again.'
+  shallowBoundary: 'This shallow clone\'s history starts at commit {hash}: its parent was never fetched, so git would take it for the first commit, which cuts the branch off its history or deletes files. Fetch the whole history with git fetch --unshallow, then try again.',
+  headMoved: 'HEAD has moved since this action was offered: a commit, checkout or reset was made meanwhile (in a terminal, say). Nothing was done.'
 } satisfies Record<string, Message>
 
 export const ru: Record<keyof typeof en, Message> = {
@@ -746,7 +747,8 @@ export const ru: Record<keyof typeof en, Message> = {
   stillRunning: 'git всё ещё работает спустя 2 минуты. Результат появится здесь, когда он закончит; до тех пор другие изменения этого репозитория не выполняются.',
   inRepository: 'В {name}: {text}',
   workerRestarted: 'Рабочий процесс плагина перезапустился, пока работал git, поэтому неизвестно, чем закончилось изменение. Проверьте журнал или git status.',
-  shallowBoundary: 'История этого неполного клона (shallow clone) начинается с коммита {hash}: его родитель не загружен, и git принял бы его за первый коммит — ветка потеряла бы историю или удалились бы файлы. Загрузите всю историю командой git fetch --unshallow и повторите.'
+  shallowBoundary: 'История этого неполного клона (shallow clone) начинается с коммита {hash}: его родитель не загружен, и git принял бы его за первый коммит — ветка потеряла бы историю или удалились бы файлы. Загрузите всю историю командой git fetch --unshallow и повторите.',
+  headMoved: 'HEAD сдвинулся с тех пор, как было предложено это действие: тем временем сделан коммит, checkout или reset (например, в терминале). Ничего не сделано.'
 }
 
 export type MessageKey = keyof typeof en

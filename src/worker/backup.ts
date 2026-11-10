@@ -336,7 +336,8 @@ export async function runGuarded<R extends ActionResult>(
   try {
     const head = (await readHead(git)).hash
     const expected = expectHead === null ? head === null : typeof expectHead === 'string' && HASH.test(expectHead) && expectHead === head
-    if ((onHead || expectHead !== undefined) && !expected) throw new Error(t('repoChanged'))
+    // Sent with the HEAD it expects (a dialog's, or the one an action left for its Undo button), say that HEAD moved.
+    if ((onHead || expectHead !== undefined) && !expected) throw new Error(t(expectHead === undefined ? 'repoChanged' : 'headMoved'))
     // Every guarded action on HEAD refuses while an operation is stopped: say so before a backup or stash is made for nothing.
     const busy = tip === 'HEAD' ? await operationRefusal(git) : null
     if (busy) throw new Error(busy)
