@@ -450,8 +450,16 @@ async function loadRefs(): Promise<void> {
 }
 
 let refreshing: Promise<void> | null = null
+let refreshNext: Promise<void> | null = null
+/** Reloads the shown repository. Asked for while a reload runs, it runs once more after it: that one may have read a change half done. */
 async function refreshAll(): Promise<void> {
-  if (refreshing) return refreshing
+  if (refreshing) {
+    refreshNext ??= refreshing.catch(() => undefined).then(() => {
+      refreshNext = null
+      return refreshAll()
+    })
+    return refreshNext
+  }
   refreshing = (async () => {
     if (!repo) return start()
     const root = repo.root
@@ -950,6 +958,8 @@ interface Scope {
   root: string
   /** Null: no commit yet. Undefined: no HEAD was seen, so an action on the current branch is refused. */
   head?: string | null
+  /** `head` is the one the worker reported leaving: the shown HEAD can lag behind it until the refresh lands, so only the worker checks it. */
+  reported?: boolean
 }
 
 const scopeOf = (info: RepoInfo): Scope => ({ root: info.root, head: info.head.hash })
@@ -987,7 +997,7 @@ function about(root: string, text: string): string {
  */
 async function act(scope: Scope, action: ActionRequest | BranchAction | BackupDelete, progress: string, backup?: BackupRequest): Promise<BranchActionResult | null> {
   const onHead = ON_HEAD.has(action.kind) || (action.kind === 'branch' && action.checkout)
-  if (!unchanged(scope, onHead)) return null
+  if (!unchanged(scope, onHead && !scope.reported)) return null
   const root = scope.root
   // Always for an action on HEAD: the worker refuses one that comes without it.
   const guard = { ...(onHead ? { expectHead: scope.head } : {}), ...(backup ? { backup } : {}) }
@@ -1032,7 +1042,7 @@ async function report(root: string, action: ActionRequest | BranchAction | Backu
     const previous = result.previousHead
     // The Undo stays bound to this repository and, through the worker, to the HEAD this action left.
     const undo = here && previous && result.head && UNDOABLE.has(action.kind)
-      ? [{ label: t('undo'), run: () => void act({ root, head: result.head }, { kind: 'reset', hash: previous, mode: 'keep' }, t('progUndoing')).then((r) => r?.ok && showBanner(t('restoredHead', { hash: shortHash(previous) }), 'success')) }]
+      ? [{ label: t('undo'), run: () => void act({ root, head: result.head, reported: true }, { kind: 'reset', hash: previous, mode: 'keep' }, t('progUndoing')).then((r) => r?.ok && showBanner(t('restoredHead', { hash: shortHash(previous) }), 'success')) }]
       : []
     showBanner(text, result.warning ? 'info' : 'success', [...undo, ...show], result.warning || Boolean(result.gitWarnings?.length))
   } else if (afterTimeout || (!result.needsForce && !result.leaves)) showBanner(text, 'error', show)
