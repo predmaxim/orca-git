@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { PlanItem, RangeCommit, RewriteKind } from '../shared/protocol.ts'
 import { lastLines, type Git } from './git.ts'
+import { REMOTE_HEAD } from './log.ts'
 import { t } from '../shared/i18n.ts'
 
 export interface HistoryEntry extends RangeCommit {
@@ -242,8 +243,9 @@ export async function autostashConflict(git: Git): Promise<boolean> {
 
 /** Remote branches that already contain `hash`: rewriting it then needs a force push. */
 export async function pushedTo(git: Git, hash: string): Promise<string[]> {
-  const result = await git.run(['for-each-ref', '--contains', hash, '--format=%(refname:short)', 'refs/remotes'])
-  return result.ok ? result.stdout.split(/\r?\n/).filter((name) => name && !name.endsWith('/HEAD')) : []
+  // %(refname): the short name of a remote's HEAD is the remote's own name.
+  const result = await git.run(['for-each-ref', '--contains', hash, '--format=%(refname)', 'refs/remotes'])
+  return result.ok ? result.stdout.split(/\r?\n/).filter((ref) => ref && !REMOTE_HEAD.test(ref)).map((ref) => ref.slice('refs/remotes/'.length)) : []
 }
 
 /** `git version` output as [major, minor], also `2.39.3 (Apple Git-145)` and `2.45.1.windows.1`; null when unreadable. */

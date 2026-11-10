@@ -7,7 +7,7 @@ const HASH = /^[0-9a-f]{40}$/
 export const LOG_FORMAT = ['%H', '%P', '%an', '%ae', '%at', '%cn', '%ct', '%D', '%s'].join('%x00')
 const LOG_FIELDS = 9
 
-const REMOTE_HEAD = /^refs\/remotes\/[^/]+\/HEAD$/
+export const REMOTE_HEAD = /^refs\/remotes\/[^/]+\/HEAD$/
 
 export function parseDecorations(text: string): string[] {
   const refs: string[] = []
@@ -176,7 +176,8 @@ export async function readDetails(git: Git, hash: string): Promise<CommitDetails
   const diff = parentList.length > 1
     ? await git.run(['diff', '--name-status', '-z', '-M', parentList[0], full, '--'])
     : await git.run(['diff-tree', '--no-commit-id', '-r', '-M', '--name-status', '-z', '--root', full, '--'])
-  const containing = await git.run(['for-each-ref', '--contains', full, '--count=50', '--format=%(refname:short)', 'refs/heads', 'refs/remotes'])
+  // %(refname): the short name of a remote's HEAD is the remote's own name.
+  const containing = await git.run(['for-each-ref', '--contains', full, '--count=50', '--format=%(refname)', 'refs/heads', 'refs/remotes'])
   return {
     hash: full,
     parents: parentList,
@@ -189,7 +190,7 @@ export async function readDetails(git: Git, hash: string): Promise<CommitDetails
     message: message.replace(/\s+$/, ''),
     files: diff.ok ? parseNameStatus(diff.stdout) : [],
     branches: containing.ok
-      ? containing.stdout.split(/\r?\n/).filter((name) => name && !name.endsWith('/HEAD'))
+      ? containing.stdout.split(/\r?\n/).filter((ref) => ref && !REMOTE_HEAD.test(ref)).map((ref) => ref.replace(/^refs\/(heads|remotes)\//, ''))
       : []
   }
 }

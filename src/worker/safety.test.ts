@@ -11,6 +11,7 @@ import { createBackup, deleteBackup, runGuarded } from './backup.ts'
 import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
 import { createGit, stdoutOf, type Git } from './git.ts'
 import { createPatch } from './patch.ts'
+import { readDetails } from './log.ts'
 import { emptyOption, readFirstParentHistory } from './rebase.ts'
 import { describeRepo } from './repo.ts'
 
@@ -983,6 +984,8 @@ test('the rewrite checks name the remote branches that already hold the commits'
   const w = world()
   const git = createGit(w.root)
   sh(w.root, 'update-ref', 'refs/remotes/origin/main', w.c2)
+  // A remote's HEAD is no branch of its own: git's short name for it is the remote's name.
+  sh(w.root, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
   const pushed = async (kind: Parameters<typeof checkRewrite>[1], list: string[]) => {
     const check = await checkRewrite(git, kind, list)
     assert.ok(check.ok, `${kind}: ${!check.ok && check.reason}`)
@@ -997,6 +1000,7 @@ test('the rewrite checks name the remote branches that already hold the commits'
   assert.deepEqual(await pushed('drop', [w.c3]), [])
   assert.deepEqual(await pushed('undo', [w.c3]), [])
   assert.deepEqual(await checkRebaseOnto(git, 'refs/heads/topic'), { pushed: ['origin/main'] })
+  assert.deepEqual((await readDetails(git, w.c2)).branches, ['main', 'origin/main'])
   sh(w.root, 'update-ref', 'refs/remotes/origin/main', w.c3)
   assert.deepEqual(await pushed('undo', [w.c3]), ['origin/main'])
   assert.deepEqual(await pushed('drop', [w.c3]), ['origin/main'])
