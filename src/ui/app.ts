@@ -985,7 +985,7 @@ async function act(scope: Scope, action: ActionRequest | BranchAction | BackupDe
   } catch (error) {
     // Orca stopped waiting, git did not: no failure to report. The worker's action.done brings the result.
     if (timedOut(error)) {
-      awaitLate(id, (ended) => void report(root, action, ended, backup))
+      awaitLate(id, (ended) => void report(root, action, ended, backup, true))
       return null
     }
     result = { ok: false, message: errorMessage(error) }
@@ -996,8 +996,11 @@ async function act(scope: Scope, action: ActionRequest | BranchAction | BackupDe
   return report(root, action, result, backup)
 }
 
-/** Shows how `action` on `root` ended, with Undo and the backup it made, and refreshes the panel. */
-async function report(root: string, action: ActionRequest | BranchAction | BackupDelete, result: BranchActionResult, backup?: BackupRequest): Promise<BranchActionResult> {
+/**
+ * Shows how `action` on `root` ended, with Undo and the backup it made, and refreshes the panel. `afterTimeout`: the flow that
+ * would ask to force a delete or to leave commits has ended, so such a refusal shows as a failure.
+ */
+async function report(root: string, action: ActionRequest | BranchAction | BackupDelete, result: BranchActionResult, backup?: BackupRequest, afterTimeout = false): Promise<BranchActionResult> {
   // A late result can come after a switch to another repository: then it is named, and this one's filter and buttons stay.
   const here = root === repo?.root
   // The worker reports a backup it made even when the action then failed.
@@ -1017,7 +1020,7 @@ async function report(root: string, action: ActionRequest | BranchAction | Backu
       ? [{ label: t('undo'), run: () => void act({ root, head: result.head }, { kind: 'reset', hash: previous, mode: 'keep' }, t('progUndoing')).then((r) => r?.ok && showBanner(t('restoredHead', { hash: shortHash(previous) }), 'success')) }]
       : []
     showBanner(text, result.warning ? 'info' : 'success', [...undo, ...show], result.warning || Boolean(result.gitWarnings?.length))
-  } else if (!result.needsForce && !result.leaves) showBanner(text, 'error', show)
+  } else if (afterTimeout || (!result.needsForce && !result.leaves)) showBanner(text, 'error', show)
   await refreshAll()
   return result
 }
