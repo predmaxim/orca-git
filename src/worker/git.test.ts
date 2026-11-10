@@ -12,7 +12,7 @@ import { parseLog, readDetails, readLogPage, readRefs } from './log.ts'
 import { readFileDiff } from './diff.ts'
 import { createPatch } from './patch.ts'
 import { buildTodo, emptyOption } from './rebase.ts'
-import { readSelectionFiles } from './selection.ts'
+import { readRangeDiff, readSelectionFiles } from './selection.ts'
 
 const dirs: string[] = []
 after(() => dirs.forEach((dir) => rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })))
@@ -293,6 +293,10 @@ test('file diff covers modified, renamed, binary and root-commit files with line
   const whole = await readFileDiff(git, sh(root, 'rev-parse', 'HEAD'), 'f1.txt', undefined, true)
   assert.equal(whole.hunks.length, 1)
   assert.equal(whole.hunks[0].lines.length, 10)
+  // color.diff=always from the user's config, which -c color.ui=false does not override: the hunks stay readable.
+  sh(root, 'config', 'color.diff', 'always')
+  assert.deepEqual(await readFileDiff(git, sh(root, 'rev-parse', 'HEAD'), 'f1.txt'), edit)
+  assert.deepEqual((await readRangeDiff(git, hashes[0], sh(root, 'rev-parse', 'HEAD'), 'f1.txt')).hunks, edit.hunks)
 
   sh(root, 'mv', 'f1.txt', 'renamed.txt')
   sh(root, 'commit', '-qm', 'rename')

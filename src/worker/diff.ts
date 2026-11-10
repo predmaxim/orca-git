@@ -52,7 +52,8 @@ export async function readFileDiff(git: Git, hash: string, path: string, oldPath
   if (!path || typeof path !== 'string') throw new Error(t('missingFilePath'))
   const parents = (await git.out(['rev-list', '--parents', '-n1', hash, '--'])).trim().split(' ').slice(1)
   const paths = [...(oldPath && oldPath !== path ? [literal(oldPath)] : []), literal(path)]
-  const options = ['--no-ext-diff', '--no-textconv', '-M', `-U${wholeFile ? 1_000_000 : 3}`]
+  // --no-color: -c color.ui=false does not override a color.diff=always the user set, and coloured lines parse as no hunk.
+  const options = ['--no-color', '--no-ext-diff', '--no-textconv', '-M', `-U${wholeFile ? 1_000_000 : 3}`]
   const args = parents.length
     ? ['diff', ...options, parents[0], hash, '--', ...paths]
     : ['diff-tree', '-p', '--root', '--no-commit-id', ...options, hash, '--', ...paths]
