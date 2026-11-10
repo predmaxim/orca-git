@@ -1,8 +1,10 @@
+import { existsSync } from 'node:fs'
 import type { ActionRequest, ActionResult, CheckResult, RewriteKind } from '../shared/protocol.ts'
 import { lastLines, type Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
 import { readHead } from './log.ts'
 import {
+  gitPath,
   operationInProgress,
   planFor,
   pushedTo,
@@ -40,10 +42,16 @@ export async function oldestFirst(git: Git, hashes: string[]): Promise<string[]>
 }
 
 async function sequencer(git: Git, verb: 'cherry-pick' | 'revert', args: string[]): Promise<void> {
+  const start = (await readHead(git)).hash
   const result = await git.run([verb, ...args], { timeoutMs: 120_000 })
   if (!result.ok) {
     const reason = lastLines(result.stderr || result.stdout, 4)
-    if ((await operationInProgress(git)) === verb) await git.run([verb, '--abort'])
+    if ((await operationInProgress(git)) === verb) {
+      // A conflict, or commits already made, need --abort. Refused before the first commit (local changes in the way),
+      // only the todo list is left: --quit drops it, where --abort would also reset staged changes.
+      const started = existsSync(await gitPath(git, verb === 'revert' ? 'REVERT_HEAD' : 'CHERRY_PICK_HEAD')) || (await readHead(git)).hash !== start
+      await git.run([verb, started ? '--abort' : '--quit'])
+    }
     throw new Error(`${t(verb === 'revert' ? 'revertFailed' : 'cherryPickFailed')}${reason ? `\n${reason}` : ''}`)
   }
 }

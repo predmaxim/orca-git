@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { PlanItem, RangeCommit, RewriteKind } from '../shared/protocol.ts'
@@ -163,6 +163,9 @@ export async function operationInProgress(git: Git): Promise<'rebase' | 'merge' 
     ['REVERT_HEAD', 'revert']
   ]
   for (const [name, kind] of checks) if (existsSync(await gitPath(git, name))) return kind
+  // A cherry-pick or revert of several commits keeps its todo list here, also once a stop was committed by hand.
+  const todo = join(await gitPath(git, 'sequencer'), 'todo')
+  if (existsSync(todo)) return readFileSync(todo, 'utf8').startsWith('revert') ? 'revert' : 'cherry-pick'
   return null
 }
 

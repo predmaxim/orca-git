@@ -131,6 +131,21 @@ const NAMES: unknown[] = ['', '   ', '-x', '--force', 'a b', 'a..b', '@{-1}', 'a
 const hashes = (w: World): unknown[] => ['', 'HEAD', 'main', w.c1.slice(0, 12), `${w.c1}\n`, ` ${w.c1}`, w.c1.toUpperCase(), 'g'.repeat(40), `-${w.c1.slice(1)}`, 42, null]
 const as = <T>(value: unknown) => value as T
 
+// ---------- 3. A failure is aborted and leaves everything as it was ----------
+
+test('a cherry-pick of several commits that git refuses at the first leaves no sequencer behind and keeps staged changes', async () => {
+  for (const verb of ['cherryPick', 'revert'] as const) {
+    const w = world()
+    // Staged changes stop git before the first commit; --abort would reset them with the rest.
+    writeFileSync(join(w.root, 'b.txt'), 'staged b\n')
+    sh(w.root, 'add', 'b.txt')
+    const before = snapshot(w.root)
+    const result = await runAction(createGit(w.root), as({ kind: verb, hashes: verb === 'revert' ? [w.c2, w.c3] : [w.t1, w.t2] }))
+    assert.equal(result.ok, false, verb)
+    assert.deepEqual(snapshot(w.root), before, verb)
+  }
+})
+
 // ---------- 4. Local changes are never lost ----------
 
 /** Every operation on a fresh world with a local edit to b.txt and an untracked notes.txt. */
@@ -189,6 +204,11 @@ const IN_PROGRESS: [string, (w: World) => void][] = [
   ['revert with a resolved conflict', (w) => {
     terminal(w.root, ['revert', '--no-edit', w.c1])
     resolve(w)
+  }],
+  ['cherry-pick of two commits, the first committed by hand', (w) => {
+    terminal(w.root, ['cherry-pick', w.t1, w.t2])
+    resolve(w)
+    terminal(w.root, ['commit', '--no-edit'])
   }]
 ]
 
