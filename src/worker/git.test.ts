@@ -44,7 +44,7 @@ test('squash folds the selected commits into the oldest with the new message', a
   const { root, hashes } = repo(4)
   const git = createGit(root)
   const result = await runAction(git, { kind: 'squash', hashes: [hashes[3], hashes[1]], message: 'squashed\n\nall of it' })
-  assert.equal(result.ok, true, result.message)
+  assert.deepEqual([result.ok, result.warning], [true, undefined], result.message)
   assert.deepEqual(subjects(root), ['c3', 'squashed', 'c1'])
   assert.equal(sh(root, 'log', '-1', '--skip=1', '--format=%B'), 'squashed\n\nall of it')
   assert.deepEqual(files(root), ['f1.txt', 'f2.txt', 'f3.txt', 'f4.txt'])
@@ -62,7 +62,7 @@ test('drop removes commits and keeps the rest', async () => {
 test('fixup of one commit folds it into its parent and keeps the parent message', async () => {
   const { root, hashes } = repo(3)
   const result = await runAction(createGit(root), { kind: 'fixup', hashes: [hashes[2]] })
-  assert.equal(result.ok, true, result.message)
+  assert.deepEqual([result.ok, result.warning], [true, undefined], result.message)
   assert.deepEqual(subjects(root), ['c2', 'c1'])
   assert.deepEqual(files(root), ['f1.txt', 'f2.txt', 'f3.txt'])
 })
@@ -70,7 +70,7 @@ test('fixup of one commit folds it into its parent and keeps the parent message'
 test('reword changes one message, including the root commit', async () => {
   const { root, hashes } = repo(2)
   const result = await runAction(createGit(root), { kind: 'reword', hash: hashes[0], message: 'first!' })
-  assert.equal(result.ok, true, result.message)
+  assert.deepEqual([result.ok, result.warning], [true, undefined], result.message)
   assert.deepEqual(subjects(root), ['c2', 'first!'])
 })
 
@@ -84,7 +84,7 @@ test('interactive rebase reorders, squashes with combined message and drops', as
       { hash: hashes[2], action: 'drop' }
     ]
   })
-  assert.equal(result.ok, true, result.message)
+  assert.deepEqual([result.ok, result.warning], [true, undefined], result.message)
   assert.deepEqual(subjects(root), ['c2', 'c1'])
   assert.equal(sh(root, 'log', '-1', '--format=%B'), 'c2\n\nbody 2\n\nc4\n\nbody 4')
   assert.deepEqual(files(root), ['f1.txt', 'f2.txt', 'f4.txt'])

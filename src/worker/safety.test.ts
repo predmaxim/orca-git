@@ -452,6 +452,20 @@ test('a conflict or a refusal by git aborts the operation and leaves everything 
     runAction(git, { kind: 'rebase', plan: [{ hash: w.c3, action: 'pick' }, { hash: w.c2, action: 'pick' }] })
   , /aborted/)
   await failsCleanly('reword to a message git refuses', dirty, (git, w) => runAction(git, { kind: 'reword', hash: w.c2, message: 'a\0b' }), /aborted/)
+  // A commit that becomes empty (it undoes a dropped one) stops the rewrite: dropped, it would let the next amend or fixup
+  // land on the commit below the range, and the result would no longer be what was asked.
+  const undoC3 = (w: World) => {
+    commit(w.root, 'a.txt', '1\n', 'undo c3')
+    commit(w.root, 'd.txt', 'd\n', 'c5')
+  }
+  const back = (w: World, n: number) => sh(w.root, 'rev-parse', `HEAD~${n}`)
+  await failsCleanly('drop that empties a later commit', undoC3, (git, w) => runAction(git, { kind: 'drop', hashes: [w.c3] }), /aborted/)
+  await failsCleanly('interactive rebase that rewords a commit it empties', undoC3, (git, w) =>
+    runAction(git, { kind: 'rebase', plan: [{ hash: w.c3, action: 'drop' }, { hash: back(w, 1), action: 'reword', message: 'new' }, { hash: back(w, 0), action: 'pick' }] })
+  , /aborted/)
+  await failsCleanly('interactive rebase that squashes into a commit it empties', undoC3, (git, w) =>
+    runAction(git, { kind: 'rebase', plan: [{ hash: w.c3, action: 'drop' }, { hash: back(w, 1), action: 'pick' }, { hash: back(w, 0), action: 'squash' }] })
+  , /aborted/)
   // Merge and rebase onto: a refusing hook, an untracked file in the way or unrelated histories are aborted with local changes back.
   await failsCleanly('merge refused by a pre-merge-commit hook', (w) => {
     matchTopic(w)
@@ -571,6 +585,18 @@ test('a history rewrite whose local changes cannot be re-applied says so and off
   assert.equal(result.previousHead, undefined)
   assert.match(sh(w.root, 'stash', 'list'), /autostash/)
   assert.match(sh(w.root, 'stash', 'show', '-p', 'stash@{0}'), /\+local c/)
+})
+
+test('a rewrite that ends without the planned commits on its base is reported, and Undo is offered', async () => {
+  // A git that drops an emptied commit after all: the result is checked, not trusted.
+  const w = world()
+  commit(w.root, 'a.txt', '1\n', 'undo c3')
+  const real = createGit(w.root)
+  const git: Git = { ...real, run: (args, options) => real.run(args.map((arg) => (arg === '--empty=stop' ? '--empty=drop' : arg)), options) }
+  const before = sh(w.root, 'rev-parse', 'HEAD')
+  const result = await runAction(git, { kind: 'drop', hashes: [w.c3] })
+  assert.deepEqual([result.ok, result.warning, result.previousHead], [true, true, before], result.message)
+  assert.match(result.message, /does not hold the planned commits/)
 })
 
 test('text in a commit message cannot add a commit to a rewrite', async () => {

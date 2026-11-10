@@ -172,7 +172,7 @@ export interface ActionResult {
   stash?: string
   /** HEAD after an action sent with `expectHead` or a backup ran, for its Undo to expect. */
   head?: string
-  /** It ran, but left something for the user to sort out (the message says what); no undo. */
+  /** It ran, but left something for the user to sort out (the message says what); Undo only with `previousHead`. */
   warning?: boolean
 }
 

@@ -218,8 +218,11 @@ export async function pushedTo(git: Git, hash: string): Promise<string[]> {
   return result.ok ? result.stdout.split(/\r?\n/).filter((name) => name && !name.endsWith('/HEAD')) : []
 }
 
-/** Runs `git rebase -i` with `todo` as the whole todo list; aborts and throws on any failure. */
-export async function runRebase(git: Git, base: string | null, plan: PlanItem[], messages: Map<string, string>): Promise<void> {
+/**
+ * Runs `git rebase -i` with `todo` as the whole todo list; aborts and throws on any failure. Resolves to whether the
+ * branch then holds the planned number of commits right on top of `base`.
+ */
+export async function runRebase(git: Git, base: string | null, plan: PlanItem[], messages: Map<string, string>): Promise<boolean> {
   const dir = mkdtempSync(join(tmpdir(), 'orca-git-log-'))
   try {
     let count = 0
@@ -236,7 +239,8 @@ export async function runRebase(git: Git, base: string | null, plan: PlanItem[],
         '-c', 'rebase.updateRefs=false',
         '-c', 'rebase.missingCommitsCheck=ignore',
         '-c', 'advice.waitingForEditor=false',
-        'rebase', '-i', '--autostash', '--no-autosquash', '--empty=drop',
+        // A commit that becomes empty stops the rebase (then aborted): dropped, the next amend or fixup would rewrite the commit below it.
+        'rebase', '-i', '--autostash', '--no-autosquash', '--empty=stop',
         base ?? '--root'
       ],
       {
@@ -249,6 +253,10 @@ export async function runRebase(git: Git, base: string | null, plan: PlanItem[],
       if ((await operationInProgress(git)) === 'rebase') await git.run(['rebase', '--abort'])
       throw new Error(`${t('rebaseFailed')}${reason ? `\n${reason}` : ''}`)
     }
+    const kept = plan.filter((item) => item.action === 'pick' || item.action === 'reword').length
+    // A failure here reads as an empty chain: the rewrite already ran, so it is reported with Undo, not as failed.
+    const chain = (await git.run(['rev-list', '--first-parent', `--max-count=${kept + 1}`, 'HEAD', '--'])).stdout.split('\n').filter(Boolean)
+    return chain.length === kept + (base ? 1 : 0) && (chain[kept] ?? null) === base
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

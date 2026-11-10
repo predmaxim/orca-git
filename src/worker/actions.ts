@@ -91,9 +91,15 @@ export async function checkRewrite(git: Git, kind: RewriteKind, hashes: string[]
   }
 }
 
-async function rewrite(git: Git, action: Extract<ActionRequest, { kind: 'squash' | 'fixup' | 'drop' | 'reword' | 'rebase' }>): Promise<string> {
+/** A message for an action that ran but did not end as planned: the result says so and keeps Undo. */
+interface Warned {
+  warning: string
+}
+
+async function rewrite(git: Git, action: Extract<ActionRequest, { kind: 'squash' | 'fixup' | 'drop' | 'reword' | 'rebase' }>): Promise<string | Warned> {
   const history = await readFirstParentHistory(git)
   const messages = messagesOf(history)
+  const offBase = { warning: t('rewriteOffBase') }
   if (action.kind === 'rebase') {
     const hashes = assertHashes(action.plan?.map((item) => item.hash))
     const range = selectRange(history, hashes)
@@ -101,14 +107,13 @@ async function rewrite(git: Git, action: Extract<ActionRequest, { kind: 'squash'
     if (hashes.length !== expected.size || !hashes.every((h) => expected.has(h))) {
       throw new Error(t('rebaseBranchChanged'))
     }
-    await runRebase(git, range.base, action.plan, messages)
-    return t('rebaseFinished')
+    return (await runRebase(git, range.base, action.plan, messages)) ? t('rebaseFinished') : offBase
   }
   const hashes = assertHashes(action.kind === 'reword' ? [action.hash] : action.hashes)
   const range = selectRange(history, rangeHashes(action.kind, hashes, history))
   const message = action.kind === 'squash' || action.kind === 'reword' ? action.message : undefined
   if ((action.kind === 'squash' || action.kind === 'reword') && !message?.trim()) throw new Error(t('commitMessageEmpty'))
-  await runRebase(git, range.base, planFor(action.kind, range, hashes, message), messages)
+  if (!(await runRebase(git, range.base, planFor(action.kind, range, hashes, message), messages))) return offBase
   const n = hashes.length
   switch (action.kind) {
     case 'squash':
@@ -129,16 +134,17 @@ export async function runAction(git: Git, action: ActionRequest): Promise<Action
 async function attempt(git: Git, action: ActionRequest): Promise<ActionResult> {
   const previousHead = (await readHead(git)).hash ?? undefined
   try {
-    const message = await perform(git, action)
+    const done = await perform(git, action)
+    const message = typeof done === 'string' ? done : done.warning
     // A rewrite runs with --autostash; with its conflicts in the tree, Undo's reset --keep would refuse anyway.
     if (REWRITES.has(action.kind) && (await autostashConflict(git))) return { ok: true, warning: true, message: `${message} ${t('autostashConflict')}` }
-    return { ok: true, message, ...(previousHead ? { previousHead } : {}) }
+    return { ok: true, message, ...(typeof done === 'string' ? {} : { warning: true }), ...(previousHead ? { previousHead } : {}) }
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : String(error) }
   }
 }
 
-async function perform(git: Git, action: ActionRequest): Promise<string> {
+async function perform(git: Git, action: ActionRequest): Promise<string | Warned> {
   // A rebase, merge, cherry-pick or revert stopped in a terminal: only adding a ref leaves HEAD, the index and the files alone.
   if (action.kind !== 'tag' && !(action.kind === 'branch' && !action.checkout)) {
     const busy = await operationRefusal(git)

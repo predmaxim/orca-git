@@ -129,11 +129,15 @@ Squash, fixup, drop, reword and the interactive rebase dialog all run `git rebas
 with a generated todo list (`GIT_SEQUENCE_EDITOR`) and messages written to a file, so no editor ever
 opens; a message keeps its lines that start with `#`. The selection must be a run of non-merge
 commits on the current branch. If the rebase stops on a conflict it is aborted, and the branch is
-left exactly as it was. The history is read with NUL between fields and must be one unbroken
-first-parent chain, so text in a commit message cannot add a commit to a rewrite. If the uncommitted
-changes do not apply cleanly to the rewritten branch, git keeps them in the stash: the banner says so
-and offers no Undo. Git gives the changes back without their staging (new files stay added), and the
-banner says that too; merge and rebase onto work the same way.
+left exactly as it was. The same happens when a commit becomes empty on the way (it only undoes a
+commit you drop, say), which git would otherwise drop silently, folding the next squash or message
+edit into the commit below the selection: drop or keep both commits instead. Once git finishes, the
+worker checks that the branch holds the planned commits right on top of the commit below the
+selection; if not, the banner says so and offers Undo. The history is read with NUL between fields
+and must be one unbroken first-parent chain, so text in a commit message cannot add a commit to a
+rewrite. If the uncommitted changes do not apply cleanly to the rewritten branch, git keeps them in
+the stash: the banner says so and offers no Undo. Git gives the changes back without their staging
+(new files stay added), and the banner says that too; merge and rebase onto work the same way.
 
 ## Backups before risky operations
 
