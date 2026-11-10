@@ -115,8 +115,10 @@ installed too, turn it off so the two do not both show: `orca plugin disable ema
 
 Requires Orca 1.4.248 or later and git 2.31 or later on the `PATH` (or set **Git executable** in the
 plugin settings): git 2.30 does not know `rev-parse --path-format`, which the plugin uses to find a
-rebase or merge in progress. The plugin runs as a `trusted-worker`: it starts `git` with your user
-account.
+rebase or merge in progress. With older git the panel still shows the log and diffs, but refuses
+every action that changes the repository, backups included, and says which version it found; if
+`git version` cannot be read, nothing is refused. The plugin runs as a `trusted-worker`: it starts
+`git` with your user account.
 
 ### Develop
 

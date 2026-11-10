@@ -22,8 +22,9 @@ function fixture(): string {
   return root
 }
 
-function host(root: string) {
+function host(root: string, settings: Record<string, string> = {}) {
   return mockHost({
+    settings,
     results: {
       'workspace.readContext': { branch: 'main', displayName: 'demo', terminals: [] },
       'workspace.list': {
@@ -94,6 +95,33 @@ test('action.run and branch.run check the HEAD the dialog showed and make the ba
     await worker.deactivate()
   } finally {
     rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
+})
+
+test('with git older than 2.31 the panel reads the repository but changes nothing, not even a backup', async () => {
+  const root = fixture()
+  const bin = mkdtempSync(join(tmpdir(), 'git-log-old-git-'))
+  try {
+    // git 2.30 as far as its version goes: it cannot tell the panel about a rebase or merge in progress.
+    const gitPath = join(bin, 'git')
+    writeFileSync(gitPath, '#!/bin/sh\nfor a; do last=$a; done\nif [ "$last" = version ]; then echo "git version 2.30.6"; exit 0; fi\nexec git "$@"\n')
+    chmodSync(gitPath, 0o755)
+    const worker = await mountWorker(main, { host: host(root, { gitPath }) })
+    const head = sh(root, 'rev-parse', 'HEAD')
+    const page = await worker.request('log.page', { root, filter: {}, skip: 0, limit: 5 })
+    assert.equal(page.commits.length, 3)
+    const backup = { kind: 'branch' as const, name: 'backup/main-old-git', target: head }
+    const drop = await worker.request('action.run', { root, action: { kind: 'drop', hashes: [head] }, backup })
+    assert.equal(drop.ok, false)
+    assert.match(drop.message, /git 2\.30\.6 is too old .* git 2\.31 or later/)
+    const rename = await worker.request('branch.run', { root, action: { kind: 'rename', name: 'main', newName: 'other' } })
+    assert.equal(rename.ok, false)
+    assert.equal(sh(root, 'rev-parse', 'HEAD'), head)
+    assert.equal(sh(root, 'for-each-ref', '--format=%(refname)'), 'refs/heads/main')
+    await worker.deactivate()
+  } finally {
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+    rmSync(bin, { recursive: true, force: true })
   }
 })
 

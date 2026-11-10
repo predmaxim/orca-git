@@ -220,10 +220,28 @@ export async function pushedTo(git: Git, hash: string): Promise<string[]> {
   return result.ok ? result.stdout.split(/\r?\n/).filter((name) => name && !name.endsWith('/HEAD')) : []
 }
 
+/** `git version` output as [major, minor], also `2.39.3 (Apple Git-145)` and `2.45.1.windows.1`; null when unreadable. */
+function versionOf(text: string): [number, number] | null {
+  const match = /^git version (\d+)\.(\d+)/.exec(text.trim())
+  return match ? [Number(match[1]), Number(match[2])] : null
+}
+
+const atLeast = (version: [number, number] | null, major: number, minor: number) =>
+  version !== null && (version[0] > major || (version[0] === major && version[1] >= minor))
+
 /** git's spelling of "stop at a commit that becomes empty": `stop` from 2.45 on; before, or when the version is unknown, `ask`, its older (since deprecated) name. */
 export function emptyOption(version: string): '--empty=stop' | '--empty=ask' {
-  const [, major, minor] = /^git version (\d+)\.(\d+)/.exec(version.trim()) ?? []
-  return Number(major) > 2 || (Number(major) === 2 && Number(minor) >= 45) ? '--empty=stop' : '--empty=ask'
+  return atLeast(versionOf(version), 2, 45) ? '--empty=stop' : '--empty=ask'
+}
+
+/**
+ * Why the panel must not change the repository with this git: before 2.31 git does not know `rev-parse --path-format`,
+ * so a rebase or merge in progress would go unseen. Null when it is new enough, or when its version cannot be read.
+ */
+export async function gitTooOld(git: Git): Promise<string | null> {
+  const text = (await git.run(['version'])).stdout.trim()
+  const version = versionOf(text)
+  return version && !atLeast(version, 2, 31) ? t('gitTooOld', { found: text.replace(/^git version /, ''), required: '2.31' }) : null
 }
 
 /** git's last lines of `text`, without its advice on going on with a rebase or merge the worker has already aborted. */
