@@ -141,14 +141,16 @@ class LeavesCommits extends Error {
 
 /**
  * Refuses to move HEAD away from commits only a detached HEAD holds, unless the request says `leave: true` (the
- * panel asks first and offers a backup): git only warns, and they are then kept by nothing but the HEAD reflog.
+ * panel asks first and offers a backup): git only warns, and then no branch, tag or remote branch keeps them.
+ * `commit`: the 40-hex commit HEAD moves to, which keeps them too; a branch or remote branch target is among the refs.
  */
-async function guardLeaving(git: Git, leave: unknown): Promise<void> {
+async function guardLeaving(git: Git, leave: unknown, commit?: string): Promise<void> {
   if (leave === true) return
   const head = await readHead(git)
   if (head.branch || !head.hash) return
-  // Read-only. Only branches, tags and remote branches keep a commit here (not the stash); `--`: a file may be named HEAD.
-  const commits = (await git.out(['rev-list', 'HEAD', '--not', '--branches', '--tags', '--remotes', '--'])).split('\n').filter(Boolean)
+  // Read-only. Only the target, branches, tags and remote branches keep a commit here (not the stash); `--`: a file may be named HEAD.
+  const keep = commit ? [`${commit}^{commit}`] : []
+  const commits = (await git.out(['rev-list', 'HEAD', '--not', ...keep, '--branches', '--tags', '--remotes', '--'])).split('\n').filter(Boolean)
   if (commits.length) throw new LeavesCommits(commits)
 }
 
@@ -173,7 +175,10 @@ async function perform(git: Git, action: ActionRequest): Promise<string> {
   }
   switch (action.kind) {
     case 'checkout': {
-      await guardLeaving(git, action.leave)
+      // A commit only when the request says so, never guessed from the text: a branch can be named like a hash.
+      const commit = action.track === undefined && action.detach === true
+      if (commit && (typeof action.target !== 'string' || !HASH.test(action.target))) throw new Error(t('invalidCommit'))
+      await guardLeaving(git, action.leave, commit ? action.target : undefined)
       const target = typeof action.target === 'string' ? action.target.trim() : ''
       if (action.track !== undefined) {
         // A new local branch tracking exactly the remote branch clicked: switch's own guess refuses a name several
@@ -188,20 +193,18 @@ async function perform(git: Git, action: ActionRequest): Promise<string> {
         await git.out(['branch', '--track', name, track])
         const switched = await git.run(['switch', '--end-of-options', name])
         if (!switched.ok) throw new Error(`${t('branchMadeNotSwitched', { name, upstream: track.slice(13) })}\n${lastLines(switched.stderr || switched.stdout, 4)}`)
-      } else if (action.detach === true) {
-        // A commit only when the request says so, never guessed from the text: a branch can be named like a hash.
-        if (typeof action.target !== 'string' || !HASH.test(action.target)) throw new Error(t('invalidCommit'))
+      } else if (commit) {
         // <hash>^{commit}: git checkout reads a bare 40-hex argument as a branch of that name first.
         await git.out(['checkout', '--detach', `${action.target}^{commit}`, '--'])
       }
       // Anything else must be a local branch: git switch refuses a tag, a remote branch, the stash or a revision.
       else await git.out(['switch', '--end-of-options', await assertName(git, target, 'branch')])
-      return t('checkedOut', { target: action.detach === true ? target.slice(0, 8) : target })
+      return t('checkedOut', { target: commit ? target.slice(0, 8) : target })
     }
     case 'branch': {
       const [hash] = assertHashes([action.hash])
       const name = await assertName(git, action.name, 'branch')
-      if (action.checkout) await guardLeaving(git, action.leave)
+      if (action.checkout) await guardLeaving(git, action.leave, hash)
       // <hash>^{commit}: git checkout -b and git branch read a bare 40-hex start as a branch of that name first.
       await git.out(action.checkout ? ['checkout', '-b', name, `${hash}^{commit}`, '--'] : ['branch', name, `${hash}^{commit}`])
       return t(action.checkout ? 'createdCheckedOut' : 'createdBranch', { name })

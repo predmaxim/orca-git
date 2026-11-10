@@ -333,8 +333,8 @@ export const en = {
   notFullyMerged: '{name} is not fully merged.',
   branchMoved: 'Branch {name} has moved since it was shown. Nothing was done.',
   leavesCommits: {
-    one: 'HEAD holds {count} commit that no branch, tag or remote branch holds. Moving HEAD away leaves it behind: only the HEAD reflog keeps it, until git expires it (after 30 days by default).',
-    other: 'HEAD holds {count} commits that no branch, tag or remote branch holds. Moving HEAD away leaves them behind: only the HEAD reflog keeps them, until git expires them (after 30 days by default).'
+    one: 'HEAD holds {count} commit that no branch, tag or remote branch keeps. Moving HEAD away leaves it behind.',
+    other: 'HEAD holds {count} commits that no branch, tag or remote branch keeps. Moving HEAD away leaves them behind.'
   },
   leaveTitle: 'Commits on No Branch',
   btnContinue: 'Continue',
@@ -690,10 +690,10 @@ export const ru: Record<keyof typeof en, Message> = {
   notFullyMerged: 'Ветка {name} слита не полностью.',
   branchMoved: 'Ветка {name} сдвинулась с тех пор, как была показана. Ничего не сделано.',
   leavesCommits: {
-    one: 'В истории HEAD есть {count} коммит, которого нет ни в одной ветке, теге или удалённой ветке. Если перейти отсюда, его будет хранить только журнал HEAD (reflog), пока git его не удалит (по умолчанию через 30 дней).',
-    few: 'В истории HEAD есть {count} коммита, которых нет ни в одной ветке, теге или удалённой ветке. Если перейти отсюда, их будет хранить только журнал HEAD (reflog), пока git их не удалит (по умолчанию через 30 дней).',
-    many: 'В истории HEAD есть {count} коммитов, которых нет ни в одной ветке, теге или удалённой ветке. Если перейти отсюда, их будет хранить только журнал HEAD (reflog), пока git их не удалит (по умолчанию через 30 дней).',
-    other: 'В истории HEAD есть {count} коммита, которых нет ни в одной ветке, теге или удалённой ветке. Если перейти отсюда, их будет хранить только журнал HEAD (reflog), пока git их не удалит (по умолчанию через 30 дней).'
+    one: 'В истории HEAD есть {count} коммит, которого нет ни в одной ветке, теге или удалённой ветке. Если перейти отсюда, он останется позади.',
+    few: 'В истории HEAD есть {count} коммита, которых нет ни в одной ветке, теге или удалённой ветке. Если перейти отсюда, они останутся позади.',
+    many: 'В истории HEAD есть {count} коммитов, которых нет ни в одной ветке, теге или удалённой ветке. Если перейти отсюда, они останутся позади.',
+    other: 'В истории HEAD есть {count} коммита, которых нет ни в одной ветке, теге или удалённой ветке. Если перейти отсюда, они останутся позади.'
   },
   leaveTitle: 'Коммиты вне веток',
   btnContinue: 'Продолжить',

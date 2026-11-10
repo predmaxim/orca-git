@@ -764,6 +764,23 @@ test('moving HEAD away from commits on no branch asks first, and git\'s warning 
   assert.match(left.gitWarnings?.join('\n') ?? '', /^Warning: you are leaving 1 commit behind, not connected to any of your branches/)
 })
 
+test('a checkout or a new branch whose target keeps the commits of a detached HEAD asks nothing', async () => {
+  const w = world()
+  sh(w.root, 'checkout', '-q', '--detach', w.c3)
+  const lost = commit(w.root, 'd.txt', 'd\n', 'on a detached HEAD')
+  const later = commit(w.root, 'e.txt', 'e\n', 'later, on no branch either')
+  sh(w.root, 'checkout', '-q', '--detach', lost)
+  const git = createGit(w.root)
+  // A later commit holds them: nothing is left behind.
+  const moved = await runAction(git, { kind: 'checkout', target: later, detach: true })
+  assert.equal(moved.ok, true, moved.message)
+  // The rescue: a branch at the detached commit itself, checked out.
+  const rescued = await runAction(git, { kind: 'branch', hash: later, name: 'rescue', checkout: true })
+  assert.equal(rescued.ok, true, rescued.message)
+  assert.equal(sh(w.root, 'rev-parse', 'refs/heads/rescue'), later)
+  assert.equal(sh(w.root, 'branch', '--show-current'), 'rescue')
+})
+
 test('force delete, merge and rebase onto run only while the branch is at the commit the menu showed', async () => {
   const w = world()
   // The menu showed topic at t1; it has moved to t2 since (a fetch into it, a terminal). Without a tip nothing is checked.
