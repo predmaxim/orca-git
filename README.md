@@ -143,9 +143,13 @@ keeps them all.
   also save them to the stash (`git stash create`, then `git stash store`; the work tree is not
   touched). The hard reset is still confirmed, and both dialogs list the untracked files it would
   overwrite, ignored ones included: files at a path the target tracks and HEAD does not (or inside a
-  folder at such a path), the same inside a nested repository of their own (git does not list those,
-  so the plugin looks on disk), and files named like a folder the target needs. The stash does not keep
-  them. A file created after the dialog opened is not listed.
+  folder at such a path), files named like a folder the target needs, and the same inside a nested
+  repository of their own. Git does not list those, so the plugin checks each folder on disk without
+  following links: a file or link standing where the target needs a folder is listed by its own path.
+  The stash does not keep them. A nested repository the reset deletes whole (the target has a file at
+  its path or at a folder holding it) is listed apart, first and in bold: its own history goes with
+  it, and neither the backup nor the stash keeps it. A file created after the dialog opened is not
+  listed.
 - The banner names the backup and offers Undo and **Show Backup**, which opens its folder in the branch
   tree.
 - Backup branches sit in the `backup/` folder of the branch tree, backup tags among the tags. Their menu
