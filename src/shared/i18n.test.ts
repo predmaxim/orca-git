@@ -27,14 +27,14 @@ test('t substitutes params and falls back to English', () => {
 test('Russian plurals pick one, few and many', () => {
   setLocale('ru')
   try {
-    assert.equal(t('commitsSelected', { count: 1 }), 'Выбран 1 коммит')
-    assert.equal(t('commitsSelected', { count: 3 }), 'Выбрано 3 коммита')
-    assert.equal(t('commitsSelected', { count: 5 }), 'Выбрано 5 коммитов')
-    assert.equal(t('commitsSelected', { count: 21 }), 'Выбран 21 коммит')
+    assert.equal(t('commitsCount', { count: 1 }), '1 коммит')
+    assert.equal(t('commitsCount', { count: 3 }), '3 коммита')
+    assert.equal(t('commitsCount', { count: 5 }), '5 коммитов')
+    assert.equal(t('commitsCount', { count: 21 }), '21 коммит')
   } finally {
     setLocale('en')
   }
-  assert.equal(t('commitsSelected', { count: 2 }), '2 commits selected')
+  assert.equal(t('commitsCount', { count: 2 }), '2 commits')
 })
 
 test('every English key has a Russian translation', () => {
