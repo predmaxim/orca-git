@@ -64,11 +64,17 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   - Anywhere in the panel: `1` `2` `3` `4` go to Branches, Commits, Files and Details (a folded
     section opens first); `0` brings up the Diff tab as it was left (or, if the repository has none
     yet, opens the current file of the selection); `f` folds or unfolds the current section; `/`
-    searches it (Branches and Commits have a search field); `r` Refresh; `Shift+F` Fetch.
-  - Commits: `b` `u` `d` `p` open the Branch, User, Date and Paths filters (Esc closes one and
-    returns to its button); `.` regex, `c` match case.
+    searches it (Branches and Commits have a search field); `r` Refresh (the banner says when it is
+    done); `Shift+F` Fetch.
+  - Commits: `b` `u` `d` `p` open the Branch, User, Date and Paths filters, `Shift+B` `Shift+U`
+    `Shift+D` `Shift+P` clear them; `.` regex, `c` match case. In an open filter ↑ / ↓ move through
+    its options (Date: through its presets), Space or Enter picks one, and Esc closes it and goes back
+    to the commit list.
   - Files: `e` expand all, `c` collapse all.
-  - Diff tab: `s` Split (side by side), `u` Unified, `w` Whole file.
+  - Details: ↑ / ↓ move between the commits, Enter or Space opens one.
+  - Diff tab: `s` Split (side by side), `u` Unified, `w` Whole file, once you click into the tab. `0`
+    only brings the tab forward, and a click takes you back to the panel: Orca gives plugins no way to
+    move keyboard focus between the panel and the tab.
   - Esc in a search clears it; in an empty search it goes back to the list. A thin line along the left
     edge marks the section the keys act on and stays there while focus is outside the panel.
 - **Right-click menu** with icons (or Shift+F10):

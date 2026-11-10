@@ -1462,7 +1462,13 @@ function showKeys(): void {
     h('div', { class: 'keys' }, h('h3', null, title), ...KEYS.filter((k) => k.scope === scope).map((k) => h('div', { class: 'key' }, h('kbd', null, k.shown), h('span', null, t(k.label)))))
   void dialog<null>({
     title: t('keyHelp'),
-    body: [group(t('keysAnywhere'), 'anywhere'), group(t('sectionCommits'), 'commits'), group(t('sectionFiles'), 'files'), group(t('keyDiffTab'), 'diff')],
+    body: [
+      group(t('keysAnywhere'), 'anywhere'),
+      group(t('sectionCommits'), 'commits'),
+      group(t('sectionFiles'), 'files'),
+      group(t('keyDiffTab'), 'diff'),
+      h('p', { class: 'keys-note' }, t('keysDiffNote'))
+    ],
     buttons: [{ label: t('dismiss'), value: null }]
   })
 }
