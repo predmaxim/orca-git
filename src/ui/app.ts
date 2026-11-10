@@ -626,7 +626,7 @@ function branchMenu(event: MouseEvent, ref: BranchRef & { kind: 'local' | 'remot
             hint: hintBusy ?? t('localBranchExists', { name: localName }),
             run: () => void act(scope, { kind: 'checkout', target: localName, track: ref.full }, t('checkingOut', { name: localName }))
           }
-        : { label: t('checkoutRevision'), icon: 'checkout', disabled: ref.kind === 'head' || Boolean(operation), hint: hintBusy, run: () => void act(scope, { kind: 'checkout', target: ref.hash }, t('checkingOutBare')) },
+        : { label: t('checkoutRevision'), icon: 'checkout', disabled: ref.kind === 'head' || Boolean(operation), hint: hintBusy, run: () => void act(scope, { kind: 'checkout', target: ref.hash, detach: true }, t('checkingOutBare')) },
     { label: t('newBranchFrom', { name: ref.name }), icon: 'branch', run: () => void newBranch(scope, ref.hash) },
     'separator',
     { icon: 'search', label: filter.branches?.includes(ref.full) ? t('showAllBranches') : t('showOnly', { name: ref.name }), run: () => applyFilter({ branches: filter.branches?.includes(ref.full) ? [] : [ref.full] }) },
@@ -1244,7 +1244,7 @@ function commitMenu(x: number, y: number): void {
       run: () => void createPatch(scope, hashes)
     },
     'separator',
-    { label: t('checkoutRevision'), icon: 'checkout', disabled: !single || Boolean(operation), hint: hintBusy ?? t('hintSelectOne'), run: () => void act(scope, { kind: 'checkout', target: single!.hash }, t('checkingOutBare')) }
+    { label: t('checkoutRevision'), icon: 'checkout', disabled: !single || Boolean(operation), hint: hintBusy ?? t('hintSelectOne'), run: () => void act(scope, { kind: 'checkout', target: single!.hash, detach: true }, t('checkingOutBare')) }
   ]
   if (single) {
     for (const label of refLabels(single.refs, repo.head.branch)) {

@@ -141,7 +141,7 @@ test('checkout of a branch, a hash and a remote branch, reset in every mode, and
   sh(w.root, 'update-ref', 'refs/remotes/origin/feature', w.t2)
   assert.equal((await runAction(git, { kind: 'checkout', target: 'topic' })).ok, true)
   assert.equal(sh(w.root, 'branch', '--show-current'), 'topic')
-  assert.equal((await runAction(git, { kind: 'checkout', target: w.c1 })).ok, true)
+  assert.equal((await runAction(git, { kind: 'checkout', target: w.c1, detach: true })).ok, true)
   assert.equal(sh(w.root, 'rev-parse', 'HEAD'), w.c1)
   assert.equal(sh(w.root, 'branch', '--show-current'), '')
   // A remote branch is checked out as a new local branch that tracks it.
@@ -201,6 +201,34 @@ test('new branch and tag names under refs/ are refused before git runs', async (
     await refusedBeforeGit(w, `rename to ${name}`, (git) => runBranchAction(git, { kind: 'rename', name: 'old', newName: name }))
     await refusedBeforeGit(w, `checkout ${name}`, (git) => runAction(git, { kind: 'checkout', target: name }))
   }
+})
+
+test('names shaped like a full commit hash are refused, and a hash reaches git as that commit, never as a branch so named', async () => {
+  const w = world()
+  // git checkout and git branch read a bare 40-hex argument as a branch of that name before the commit.
+  for (const name of [w.c2, 'a'.repeat(64)]) {
+    for (const checkout of [false, true]) await refusedBeforeGit(w, `branch ${name}`, (git) => runAction(git, { kind: 'branch', hash: w.c1, name, checkout }))
+    await refusedBeforeGit(w, `tag ${name}`, (git) => runAction(git, { kind: 'tag', hash: w.c1, name }))
+    await refusedBeforeGit(w, `rename to ${name}`, (git) => runBranchAction(git, { kind: 'rename', name: 'topic', newName: name }))
+    await refusedBeforeGit(w, `checkout of the branch ${name}`, (git) => runAction(git, { kind: 'checkout', target: name }))
+  }
+  // A commit is checked out only when the request says so, and only by its full hash.
+  for (const target of hashes(w)) await refusedBeforeGit(w, `detached checkout of ${JSON.stringify(target)}`, (git) => runAction(git, { kind: 'checkout', target: as(target), detach: true }))
+  // Branches named with c1's and c3's hashes, made in a terminal, at t2.
+  sh(w.root, 'branch', w.c1, w.t2)
+  sh(w.root, 'branch', w.c3, w.t2)
+  const git = createGit(w.root)
+  assert.equal((await runAction(git, { kind: 'branch', hash: w.c1, name: 'fresh', checkout: false })).ok, true)
+  assert.equal(sh(w.root, 'rev-parse', 'refs/heads/fresh'), w.c1)
+  assert.equal((await runAction(git, { kind: 'branch', hash: w.c1, name: 'fresh2', checkout: true })).ok, true)
+  assert.equal(sh(w.root, 'rev-parse', 'HEAD'), w.c1)
+  sh(w.root, 'switch', '-q', 'main')
+  assert.equal((await runAction(git, { kind: 'checkout', target: w.c1, detach: true })).ok, true)
+  assert.equal(sh(w.root, 'rev-parse', 'HEAD'), w.c1)
+  sh(w.root, 'switch', '-q', 'main')
+  // A backup branch of HEAD (c3) keeps c3, not the branch named like it.
+  assert.equal((await createBackup(git, { kind: 'branch', name: 'backup/main-1', target: w.c3 })).ok, true)
+  assert.equal(sh(w.root, 'rev-parse', 'refs/heads/backup/main-1'), w.c3)
 })
 
 test('engine actions refuse hostile names, hashes, modes and plans before git runs', async () => {
@@ -411,7 +439,7 @@ test('a conflict or a refusal by git aborts the operation and leaves everything 
   await failsCleanly('checkout over a local edit', editA, (git) => runAction(git, { kind: 'checkout', target: 'topic' }))
   await failsCleanly('checkout over an untracked file', (w) => writeFileSync(join(w.root, 't.txt'), 'mine\n'), (git) => runAction(git, { kind: 'checkout', target: 'topic' }))
   await failsCleanly('new branch over a local edit', editA, (git, w) => runAction(git, { kind: 'branch', hash: w.t1, name: 'fresh', checkout: true }))
-  await failsCleanly('checkout of a commit that does not exist', nothing, (git) => runAction(git, { kind: 'checkout', target: 'f'.repeat(40) }))
+  await failsCleanly('checkout of a commit that does not exist', nothing, (git) => runAction(git, { kind: 'checkout', target: 'f'.repeat(40), detach: true }))
   // Cherry-pick and revert: a conflict on the first or a later commit is aborted.
   await failsCleanly('cherry-pick with a conflict', nothing, (git, w) => runAction(git, { kind: 'cherryPick', hashes: [w.t1] }), /aborted/)
   const t3 = (w: World) => {
@@ -507,7 +535,7 @@ test('a cherry-pick of several commits that git refuses at the first leaves no s
 /** Every operation on a fresh world with a local edit to b.txt and an untracked notes.txt. */
 const everyOperation = (w: World): [string, (git: Git) => Promise<Result>][] => [
   ['checkout of a branch', (git) => runAction(git, { kind: 'checkout', target: 'topic' })],
-  ['checkout of a hash', (git) => runAction(git, { kind: 'checkout', target: w.c1 })],
+  ['checkout of a hash', (git) => runAction(git, { kind: 'checkout', target: w.c1, detach: true })],
   ['new branch', (git) => runAction(git, { kind: 'branch', hash: w.c1, name: 'fresh', checkout: false })],
   ['new branch, checked out', (git) => runAction(git, { kind: 'branch', hash: w.c1, name: 'fresh', checkout: true })],
   ['new tag', (git) => runAction(git, { kind: 'tag', hash: w.c1, name: 'v1' })],

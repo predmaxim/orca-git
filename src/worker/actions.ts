@@ -18,6 +18,7 @@ import {
 } from './rebase.ts'
 
 const HASH = /^[0-9a-f]{40}$/
+const FULL_HASH = /^([0-9a-f]{40}|[0-9a-f]{64})$/
 const REWRITES = new Set<string>(['squash', 'fixup', 'drop', 'reword', 'rebase'])
 
 function assertHashes(hashes: unknown): string[] {
@@ -32,7 +33,8 @@ export async function assertName(git: Git, name: string, kind: 'branch' | 'tag')
   const args = kind === 'branch' ? ['check-ref-format', '--branch', trimmed] : ['check-ref-format', `refs/tags/${trimmed}`]
   // --branch expands @{-1} and @{u} to the branch they name: refuse "@{" and any name git does not keep as is.
   // Under refs/ too: branch refs/heads/main is stored as refs/heads/refs/heads/main, yet git reads the name as main.
-  const result = trimmed && !trimmed.startsWith('-') && !trimmed.includes('@{') && !trimmed.startsWith('refs/') ? await git.run(args) : null
+  // A full SHA-1 or SHA-256 hash: git checkout and git branch read that argument as a branch of the name first.
+  const result = trimmed && !trimmed.startsWith('-') && !trimmed.includes('@{') && !trimmed.startsWith('refs/') && !FULL_HASH.test(trimmed) ? await git.run(args) : null
   if (!result?.ok || (kind === 'branch' && result.stdout.trim() !== trimmed)) throw new Error(t(kind === 'branch' ? 'invalidBranchName' : 'invalidTagName', { name: trimmed }))
   return trimmed
 }
@@ -160,15 +162,21 @@ async function perform(git: Git, action: ActionRequest): Promise<string> {
         await git.out(['branch', '--track', name, track])
         const switched = await git.run(['switch', '--end-of-options', name])
         if (!switched.ok) throw new Error(`${t('branchMadeNotSwitched', { name, upstream: track.slice(13) })}\n${lastLines(switched.stderr || switched.stdout, 4)}`)
-      } else if (HASH.test(target)) await git.out(['checkout', '--detach', target, '--'])
+      } else if (action.detach === true) {
+        // A commit only when the request says so, never guessed from the text: a branch can be named like a hash.
+        if (typeof action.target !== 'string' || !HASH.test(action.target)) throw new Error(t('invalidCommit'))
+        // <hash>^{commit}: git checkout reads a bare 40-hex argument as a branch of that name first.
+        await git.out(['checkout', '--detach', `${action.target}^{commit}`, '--'])
+      }
       // Anything else must be a local branch: git switch refuses a tag, a remote branch, the stash or a revision.
       else await git.out(['switch', '--end-of-options', await assertName(git, target, 'branch')])
-      return t('checkedOut', { target: HASH.test(target) ? target.slice(0, 8) : target })
+      return t('checkedOut', { target: action.detach === true ? target.slice(0, 8) : target })
     }
     case 'branch': {
       const [hash] = assertHashes([action.hash])
       const name = await assertName(git, action.name, 'branch')
-      await git.out(action.checkout ? ['checkout', '-b', name, hash, '--'] : ['branch', name, hash])
+      // <hash>^{commit}: git checkout -b and git branch read a bare 40-hex start as a branch of that name first.
+      await git.out(action.checkout ? ['checkout', '-b', name, `${hash}^{commit}`, '--'] : ['branch', name, `${hash}^{commit}`])
       return t(action.checkout ? 'createdCheckedOut' : 'createdBranch', { name })
     }
     case 'tag': {

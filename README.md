@@ -73,8 +73,10 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   repository while a dialog is open (or, for an action on the current branch, HEAD moves), nothing
   runs and a banner says so. The worker checks HEAD once more right before it runs such an action, and
   Undo runs only while HEAD is still where the action left it. New branch, rename and checkout
-  refuse names git would expand, like `@{-1}`, and names under `refs/`; checkout takes only a branch
-  (`git switch`) or a full commit hash, and merge and rebase onto take the branch's full ref.
+  refuse names git would expand, like `@{-1}`, names under `refs/` and names shaped like a full commit
+  hash; checkout takes only a branch (`git switch`) or, for Checkout Revision, a full commit hash given
+  as `<hash>^{commit}` so that a branch named like the hash cannot take its place, and merge and
+  rebase onto take the branch's full ref.
 - While a rebase, merge, cherry-pick or revert started elsewhere (a terminal) is stopped, the worker
   refuses every action that moves HEAD or touches the work tree, and the menus disable them; a new
   branch without checkout and a new tag still work. A cherry-pick or revert that left only its todo
@@ -148,7 +150,7 @@ commits it touches: it points at the old tip of the branch (for a deleted branch
 keeps them all.
 
 - The worker makes the backup in the same request, before the operation, with
-  `git branch --no-track <name> <commit>` or `git tag <name> <commit>`. An existing branch or tag is
+  `git branch --no-track <name> <commit>^{commit}` or `git tag <name> <commit>`. An existing branch or tag is
   never overwritten; if the backup fails, the operation does not run (if only saving the stash fails,
   the message names the backup already made).
 - The worker checks the name when you press the button, and the dialog stays open with the reason: a
