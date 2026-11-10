@@ -581,6 +581,7 @@ test('staged, unstaged and untracked changes come back from rewrites, merge and 
     // git's autostash puts changes back unstaged, except new files, which stay added.
     assert.equal(sh(w.root, 'diff', '--cached', '--name-only'), 'n.txt', label)
     assert.match(result.message, /no longer staged/, label)
+    assert.doesNotMatch(result.message, /are back/, label)
   }
   // Nothing staged, or only new files: nothing to say.
   const w = world()
