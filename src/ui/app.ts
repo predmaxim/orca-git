@@ -624,7 +624,7 @@ function branchMenu(event: MouseEvent, ref: BranchRef & { kind: 'local' | 'remot
             icon: 'checkout',
             disabled: Boolean(operation) || Boolean(refs?.locals.some((l) => l.name === localName)),
             hint: hintBusy ?? t('localBranchExists', { name: localName }),
-            run: () => void act(scope, { kind: 'checkout', target: localName }, t('checkingOut', { name: localName }))
+            run: () => void act(scope, { kind: 'checkout', target: localName, track: ref.full }, t('checkingOut', { name: localName }))
           }
         : { label: t('checkoutRevision'), icon: 'checkout', disabled: ref.kind === 'head' || Boolean(operation), hint: hintBusy, run: () => void act(scope, { kind: 'checkout', target: ref.hash }, t('checkingOutBare')) },
     { label: t('newBranchFrom', { name: ref.name }), icon: 'branch', run: () => void newBranch(scope, ref.hash) },
@@ -1240,7 +1240,7 @@ function commitMenu(x: number, y: number): void {
       } else if (label.kind === 'remote') {
         const name = label.text.slice(label.text.indexOf('/') + 1)
         if (!refs?.locals.some((l) => l.name === name)) {
-          entries.push({ label: t('checkoutQuotedAs', { remote: label.text, name }), disabled: Boolean(operation), hint: hintBusy, run: () => void act(scope, { kind: 'checkout', target: name }, t('checkingOut', { name })) })
+          entries.push({ label: t('checkoutQuotedAs', { remote: label.text, name }), disabled: Boolean(operation), hint: hintBusy, run: () => void act(scope, { kind: 'checkout', target: name, track: `refs/remotes/${label.text}` }, t('checkingOut', { name })) })
         }
       }
     }

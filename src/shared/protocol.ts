@@ -137,7 +137,8 @@ export interface PlanItem {
 export type RewriteKind = 'squash' | 'fixup' | 'drop' | 'reword' | 'rebase' | 'undo'
 
 export type ActionRequest =
-  | { kind: 'checkout'; target: string }
+  /** `track`: a remote branch (full ref) to make `target` from, as a new local branch tracking it. */
+  | { kind: 'checkout'; target: string; track?: string }
   | { kind: 'branch'; hash: string; name: string; checkout: boolean }
   | { kind: 'tag'; hash: string; name: string }
   | { kind: 'cherryPick'; hashes: string[] }

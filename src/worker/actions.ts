@@ -147,9 +147,16 @@ async function perform(git: Git, action: ActionRequest): Promise<string> {
   switch (action.kind) {
     case 'checkout': {
       const target = typeof action.target === 'string' ? action.target.trim() : ''
-      // A full hash detaches; anything else must be a branch: git switch refuses a tag, a remote branch, the stash or a
-      // revision, and makes a local branch tracking a remote one of that name.
-      if (HASH.test(target)) await git.out(['checkout', '--detach', target, '--'])
+      if (action.track !== undefined) {
+        // A new local branch tracking exactly the remote branch clicked: switch's own guess refuses a name several
+        // remotes have, and follows checkout.defaultRemote rather than the click.
+        const track = action.track
+        if (typeof track !== 'string' || !track.startsWith('refs/remotes/') || !(await git.run(['show-ref', '--verify', '--quiet', track])).ok) {
+          throw new Error(t('notBranchOrCommit', { name: String(track) }))
+        }
+        await git.out(['switch', '--create', await assertName(git, target, 'branch'), '--track', track])
+      } else if (HASH.test(target)) await git.out(['checkout', '--detach', target, '--'])
+      // Anything else must be a local branch: git switch refuses a tag, a remote branch, the stash or a revision.
       else await git.out(['switch', '--end-of-options', await assertName(git, target, 'branch')])
       return t('checkedOut', { target: HASH.test(target) ? target.slice(0, 8) : target })
     }

@@ -145,7 +145,7 @@ test('checkout of a branch, a hash and a remote branch, reset in every mode, and
   assert.equal(sh(w.root, 'rev-parse', 'HEAD'), w.c1)
   assert.equal(sh(w.root, 'branch', '--show-current'), '')
   // A remote branch is checked out as a new local branch that tracks it.
-  assert.equal((await runAction(git, { kind: 'checkout', target: 'feature' })).ok, true)
+  assert.equal((await runAction(git, { kind: 'checkout', target: 'feature', track: 'refs/remotes/origin/feature' })).ok, true)
   assert.equal(sh(w.root, 'rev-parse', '--abbrev-ref', 'feature@{upstream}'), 'origin/feature')
   assert.equal((await runAction(git, { kind: 'checkout', target: 'main' })).ok, true)
 
@@ -311,6 +311,34 @@ test('a merge commit names the branch by its short name, or by its full ref when
     assert.equal(sh(w.root, 'log', '-1', '--format=%s'), subject, name)
     assert.equal(sh(w.root, 'rev-parse', 'HEAD^2'), w.t2, name)
   }
+})
+
+test('checkout of a remote branch as local tracks the remote branch clicked, whatever other remotes hold', async () => {
+  const w = world()
+  sh(w.root, 'remote', 'add', 'origin', join(w.root, 'origin.git'))
+  sh(w.root, 'remote', 'add', 'upstream', join(w.root, 'upstream.git'))
+  sh(w.root, 'update-ref', 'refs/remotes/origin/feature', w.t1)
+  sh(w.root, 'update-ref', 'refs/remotes/upstream/feature', w.t2)
+  const git = createGit(w.root)
+  // git switch feature would refuse (two remotes have it) or follow checkout.defaultRemote instead of the click.
+  for (const [remote, at, defaultRemote] of [['origin', w.t1, ''], ['upstream', w.t2, 'origin'], ['origin', w.t1, 'upstream']]) {
+    if (defaultRemote) sh(w.root, 'config', 'checkout.defaultRemote', defaultRemote)
+    const result = await runAction(git, { kind: 'checkout', target: 'feature', track: `refs/remotes/${remote}/feature` })
+    assert.equal(result.ok, true, `${remote}: ${result.message}`)
+    assert.equal(sh(w.root, 'rev-parse', '--abbrev-ref', 'feature@{upstream}'), `${remote}/feature`)
+    assert.equal(sh(w.root, 'rev-parse', 'HEAD'), at)
+    sh(w.root, 'switch', '-q', 'main')
+    sh(w.root, 'branch', '-q', '-D', 'feature')
+  }
+  for (const track of ['origin/feature', 'refs/remotes/origin/nope', 'refs/tags/x', 'refs/heads/topic', '-x', 42]) {
+    await refusedBeforeGit(w, `track ${track}`, (g) => runAction(g, as({ kind: 'checkout', target: 'feature', track })))
+  }
+  await refusedBeforeGit(w, 'track to a bad name', (g) => runAction(g, { kind: 'checkout', target: 'a b', track: 'refs/remotes/origin/feature' }))
+  // The local branch exists already: git refuses to make it again.
+  sh(w.root, 'branch', 'feature', w.t1)
+  const before = snapshot(w.root)
+  assert.equal((await runAction(git, { kind: 'checkout', target: 'feature', track: 'refs/remotes/origin/feature' })).ok, false)
+  assert.deepEqual(snapshot(w.root), before)
 })
 
 test('branch actions refuse hostile names before git runs', async () => {
