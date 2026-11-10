@@ -377,6 +377,18 @@ input[type='radio'] {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
+}
+
+/* The area the keys act on: a line down its left edge, above the rows' backgrounds, shifting nothing. */
+.col-section.current-area::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: var(--ring);
+  pointer-events: none;
+  z-index: 1;
 }
 
 .col-section.collapsed {
