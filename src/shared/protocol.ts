@@ -283,6 +283,8 @@ declare module 'orca' {
     'repo.fetch': { input: { root: string; id?: string }; output: ActionResult }
     /** Shows the state in the Diff tab of the workspace that holds `root`, opening the tab if needed. */
     'diff.open': { input: DiffTabState; output: { ok: boolean; reason?: string } }
+    /** Brings forward the Diff tab `diff.open` showed for `root`, without reloading it; `ok: false` if none was shown. */
+    'diff.focus': { input: { root: string }; output: { ok: boolean; reason?: string } }
     'diff.state': { input: { root: string }; output: DiffTabState | null }
     /** The Diff tab stepped to another file of its state. */
     'diff.index': { input: { root: string; index: number }; output: { ok: boolean } }

@@ -227,6 +227,40 @@ test('a Diff tab that fails to open leaves no state for a later one to show', as
   }
 })
 
+test('going to an open Diff tab shows it again without reloading it', async () => {
+  const root = fixture()
+  try {
+    const h = host(root)
+    const worker = await mountWorker(main, { host: h })
+    const state = diffState(root)
+    await worker.request('diff.open', state)
+    const posted = worker.posts.length
+    assert.deepEqual(await worker.request('diff.focus', { root }), { ok: true })
+    assert.deepEqual(h.callsOf('editor.open'), [
+      { workspaceId: 'wt-1', path: ANCHOR },
+      { workspaceId: 'wt-1', path: ANCHOR }
+    ])
+    assert.equal(worker.posts.length, posted)
+    assert.deepEqual(await worker.request('diff.state', { root }), state)
+    await worker.deactivate()
+  } finally {
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
+})
+
+test('going to the Diff tab of a repository it never showed opens nothing', async () => {
+  const root = fixture()
+  try {
+    const h = host(root)
+    const worker = await mountWorker(main, { host: h })
+    assert.deepEqual(await worker.request('diff.focus', { root }), { ok: false })
+    assert.deepEqual(h.callsOf('editor.open'), [])
+    await worker.deactivate()
+  } finally {
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
+})
+
 test('a Diff tab state with bad files, hashes or index opens nothing', async () => {
   const root = fixture()
   try {

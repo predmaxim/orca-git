@@ -139,20 +139,27 @@ function claimAnchor(anchor: string, root: string, text: string): string | null 
   return t('diffAnchorFailed', { path: anchor, code: failure?.code ?? String(failure) })
 }
 
-async function openDiff(input: any): Promise<{ ok: boolean; reason?: string }> {
-  if (!validDiffState(input)) return { ok: false, reason: t('diffInvalid') }
-  const git = await gitFor(input.root)
-  const root: string = input.root
+/** What `editor.open` needs to show the Diff tab of the workspace that holds `root`, or why it cannot. */
+async function diffTab(root: string): Promise<{ workspaceId: string; path: string } | { reason: string }> {
+  const git = await gitFor(root)
   const workspace = await workspaceFor(orcaApi, root, await gitPath())
-  if (!workspace) return { ok: false, reason: t('diffNoWorkspace') }
+  if (!workspace) return { reason: t('diffNoWorkspace') }
   const anchor = join(workspace.path, DIFF_ANCHOR)
   const refused = claimAnchor(anchor, root, `${JSON.stringify({ root, workspaceId: workspace.id }, null, 2)}\n`)
-  if (refused) return { ok: false, reason: refused }
+  if (refused) return { reason: refused }
   await exclude(git, root, DIFF_ANCHOR)
+  return { workspaceId: workspace.id, path: DIFF_ANCHOR }
+}
+
+async function openDiff(input: any): Promise<{ ok: boolean; reason?: string }> {
+  if (!validDiffState(input)) return { ok: false, reason: t('diffInvalid') }
+  const root: string = input.root
+  const tab = await diffTab(root)
+  if ('reason' in tab) return { ok: false, reason: tab.reason }
   const previous = diffStates.get(root)
   diffStates.set(root, { root, files: input.files, index: input.index })
   try {
-    await orcaApi.host.call('editor.open', { workspaceId: workspace.id, path: DIFF_ANCHOR })
+    await orcaApi.host.call('editor.open', tab)
   } catch (error) {
     // No tab opened: a later one must not show these files.
     if (previous) diffStates.set(root, previous)
@@ -161,6 +168,15 @@ async function openDiff(input: any): Promise<{ ok: boolean; reason?: string }> {
   }
   // An open tab reads the new state on this event; a new one reads it when it starts.
   orcaApi.panels.post('diff.show', { root })
+  return { ok: true }
+}
+
+/** Brings the Diff tab of `root` forward as it is: no new state, no `diff.show`, so it keeps its scroll. */
+async function focusDiff({ root }: { root: string }): Promise<{ ok: boolean; reason?: string }> {
+  if (!diffStates.has(root)) return { ok: false }
+  const tab = await diffTab(root)
+  if ('reason' in tab) return { ok: false, reason: tab.reason }
+  await orcaApi.host.call('editor.open', tab)
   return { ok: true }
 }
 
@@ -281,6 +297,8 @@ export default function activate(orca: OrcaWorkerApi): void {
   })
 
   handle('diff.open', openDiff)
+
+  handle('diff.focus', focusDiff)
 
   handle('diff.state', ({ root }) => diffStates.get(root) ?? null)
 
