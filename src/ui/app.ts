@@ -1151,8 +1151,9 @@ async function reset(scope: Scope, hash: string): Promise<void> {
   if (!mode) return
   const request = backup?.value()
   if (mode === 'hard') {
-    // Asked even with the stash: it keeps tracked changes only, and the listed untracked files are overwritten.
-    const text = t(request?.stash ? 'hardResetStashConfirm' : 'hardResetConfirm')
+    // Asked even with the stash: it keeps tracked changes only, not the listed untracked files or nested repositories.
+    const nested = state.repositories.length || state.unchecked?.length
+    const text = t(!request?.stash ? 'hardResetConfirm' : nested ? 'hardResetStashConfirmNested' : 'hardResetStashConfirm')
     if (!(await confirm(t('hardResetTitle'), [text, overwrittenWarning(state, Boolean(request?.stash))], t('reset'), true))) return
   }
   await act(scope, { kind: 'reset', hash, mode }, t('progResetting'), request)

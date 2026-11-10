@@ -201,11 +201,11 @@ const resetModes = (): { mode: ResetMode; label: string; help: string }[] => [
 
 /**
  * What a hard reset destroys besides tracked changes, at most 10 paths per list: nested repositories it
- * deletes whole first, then untracked files; null when there is neither. `stash`: the dialog offers the
- * stash, which does not keep the files.
+ * deletes whole first, then folders it deletes that could not be fully checked for them, then untracked
+ * files; null when there is none. `stash`: the dialog offers the stash, which does not keep the files.
  */
-export function overwrittenWarning({ overwritten, repositories }: ResetCheck, stash: boolean): HTMLElement | null {
-  if (!overwritten.length && !repositories.length) return null
+export function overwrittenWarning({ overwritten, repositories, unchecked = [] }: ResetCheck, stash: boolean): HTMLElement | null {
+  if (!overwritten.length && !repositories.length && !unchecked.length) return null
   const list = (paths: string[]) => [
     h('ul', { class: 'file-list mono' }, ...paths.slice(0, 10).map((path) => h('li', null, path))),
     paths.length > 10 ? t('pushedMore', { count: paths.length - 10 }).trim() : null
@@ -218,6 +218,7 @@ export function overwrittenWarning({ overwritten, repositories }: ResetCheck, st
       'div',
       null,
       ...(repositories.length ? [h('strong', null, t('hardResetRepositories', { count: repositories.length })), ...list(repositories)] : []),
+      ...(unchecked.length ? [h('strong', null, t('hardResetUnchecked', { count: unchecked.length })), ...list(unchecked)] : []),
       ...(overwritten.length ? [t(stash ? 'hardResetOverwrittenStash' : 'hardResetOverwritten', { count: overwritten.length }), ...list(overwritten)] : [])
     )
   )

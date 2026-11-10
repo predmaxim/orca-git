@@ -300,6 +300,80 @@ test('the reset check names the nested repositories a hard reset deletes whole',
   assert.deepEqual(await checkReset(git, root, target), { dirty: false, overwritten: ['a/f'], repositories: ['a/inner/', 'nested/', 'outer/inner/'] })
 })
 
+test('the reset check names every repository inside a folder the target replaces with a file', async () => {
+  const root = repo()
+  const git = createGit(root)
+  sh(root, 'checkout', '-q', '-b', 'other')
+  for (const file of ['sub', 'vendor', 'd']) commit(root, file, 'theirs\n', `add ${file}`)
+  mkdirSync(join(root, 'nested'))
+  commit(root, 'nested/sub', 'theirs\n', 'add nested/sub')
+  const target = rev(root, 'HEAD')
+  sh(root, 'checkout', '-q', 'main')
+  // Tracked folders that hold a repository: vendor/ itself, d/e/ deeper, and the submodule sub/ with an edit.
+  mkdirSync(join(root, 'vendor'))
+  mkdirSync(join(root, 'd', 'e'), { recursive: true })
+  commit(root, 'vendor/README', 'mine\n', 'add vendor')
+  commit(root, 'd/e/b.txt', 'mine\n', 'add d')
+  sh(root, 'init', '-q', 'vendor')
+  sh(root, 'init', '-q', 'd/e')
+  sh(root, 'clone', '-q', repo(), 'sub')
+  sh(root, '-c', 'advice.addEmbeddedRepo=false', 'add', 'sub')
+  sh(root, 'commit', '-q', '-m', 'add sub')
+  writeFileSync(join(root, 'sub', 'c1.txt'), 'edited\n')
+  // Untracked: my repository nested/ with a plain folder sub/ holding the repository deep/, and the tracked c1.txt turned into a folder.
+  sh(root, 'init', '-q', 'nested')
+  sh(root, 'init', '-q', 'nested/sub/deep')
+  rmSync(join(root, 'c1.txt'))
+  mkdirSync(join(root, 'c1.txt'))
+  writeFileSync(join(root, 'c1.txt', 'f'), 'mine\n')
+  sh(root, 'init', '-q', 'c1.txt/r')
+  assert.deepEqual(await checkReset(git, root, target), {
+    dirty: true,
+    overwritten: ['c1.txt/f', 'nested/sub'],
+    repositories: ['c1.txt/r/', 'd/e/', 'nested/sub/deep/', 'sub/', 'vendor/']
+  })
+  // The reset puts a file at each of those folders, deleting the repositories inside.
+  sh(root, 'reset', '-q', '--hard', target)
+  for (const path of ['c1.txt', 'd', 'nested/sub', 'sub', 'vendor']) assert.ok(lstatSync(join(root, path)).isFile(), path)
+})
+
+test('the reset check leaves out a folder where the target has a submodule, which a hard reset keeps', async () => {
+  const root = repo()
+  const git = createGit(root)
+  const source = repo()
+  const paths = ['nested', 'plain', 'file']
+  sh(root, 'checkout', '-q', '-b', 'other')
+  for (const path of paths) sh(root, 'clone', '-q', source, path)
+  sh(root, '-c', 'advice.addEmbeddedRepo=false', 'add', ...paths)
+  sh(root, 'commit', '-q', '-m', 'add submodules')
+  const target = rev(root, 'HEAD')
+  for (const path of paths) rmSync(join(root, path), { recursive: true, force: true })
+  sh(root, 'checkout', '-q', 'main')
+  // Where the target has a submodule: my repository, a plain folder, and a file.
+  sh(root, 'init', '-q', 'nested')
+  writeFileSync(join(root, 'nested', 'work.txt'), 'mine\n')
+  mkdirSync(join(root, 'plain'))
+  writeFileSync(join(root, 'plain', 'f'), 'mine\n')
+  writeFileSync(join(root, 'file'), 'mine\n')
+  assert.deepEqual(await checkReset(git, root, target), { dirty: false, overwritten: ['file'], repositories: [] })
+  sh(root, 'reset', '-q', '--hard', target)
+  assert.equal(readFileSync(join(root, 'nested', 'work.txt'), 'utf8'), 'mine\n')
+  assert.equal(readFileSync(join(root, 'plain', 'f'), 'utf8'), 'mine\n')
+  assert.ok(lstatSync(join(root, 'file')).isDirectory())
+})
+
+test('the reset check names a folder too large to search for repositories instead of passing it', async () => {
+  const root = repo()
+  const git = createGit(root)
+  sh(root, 'checkout', '-q', '-b', 'other')
+  commit(root, 'big', 'theirs\n', 'add big')
+  const target = rev(root, 'HEAD')
+  sh(root, 'checkout', '-q', 'main')
+  // Empty folders: git lists none, and there are more than the search reads.
+  for (let i = 0; i <= 10_000; i++) mkdirSync(join(root, 'big', String(i)), { recursive: true })
+  assert.deepEqual(await checkReset(git, root, target), { dirty: false, overwritten: [], repositories: [], unchecked: ['big'] })
+})
+
 test('the reset check splits a long list of paths over several git calls', async () => {
   const root = repo()
   const real = createGit(root)

@@ -1,4 +1,4 @@
-import { lstatSync } from 'node:fs'
+import { lstatSync, readdirSync } from 'node:fs'
 import type { ActionResult, BackupDelete, ResetCheck } from '../shared/protocol.ts'
 import { assertName } from './actions.ts'
 import { lastLines, type Git } from './git.ts'
@@ -128,31 +128,93 @@ function insideNestedRepos(root: string, added: string[]): string[] {
   return [...listed]
 }
 
+/** Most folder entries the repository search reads in one check, so a deleted `node_modules` cannot stall the dialog. */
+const SEARCH_MAX = 10_000
+
+/** Whether `path` is a real folder reached through real folders only: a hard reset never writes through a link. */
+function realFolder(root: string, path: string): boolean {
+  const parts = path.split('/')
+  try {
+    return lstatSync(`${root}/${path}`).isDirectory() && parts.every((_, i) => lstatSync(`${root}/${parts.slice(0, i + 1).join('/')}`).isDirectory())
+  } catch {
+    return false
+  }
+}
+
+/** The entries of `folder`, links not followed; null when it cannot be read. */
+function entriesOf(folder: string): { name: string; isDirectory(): boolean }[] | null {
+  try {
+    return readdirSync(folder, { withFileTypes: true })
+  } catch {
+    return null
+  }
+}
+
 /**
- * What a hard reset to `target` would lose: whether tracked files have uncommitted changes, and the
- * untracked files, ignored ones included, it overwrites: those at a path `target` tracks and HEAD does
- * not (or inside a folder there, or inside a nested repository), and those standing where `target` needs
- * a folder. Nested repositories the reset deletes whole are listed apart, as `name/`. `root` is the
- * repository's top level.
+ * The repositories at or under `path`, a folder the reset deletes, as `name/`: a folder holding `.git` (a
+ * folder or a file) is one, and the search goes neither into it nor through links. It reads at most
+ * `budget.left` entries; `complete` is false when it runs out or a folder cannot be read.
+ */
+function repositoriesIn(root: string, path: string, budget: { left: number }): { found: string[]; complete: boolean } {
+  const found: string[] = []
+  const folders = [path]
+  while (folders.length) {
+    const folder = folders.pop()!
+    const entries = entriesOf(`${root}/${folder}`)
+    if (!entries || (budget.left -= entries.length) < 0) return { found, complete: false }
+    if (entries.some((entry) => entry.name === '.git')) found.push(`${folder}/`)
+    else folders.push(...entries.filter((entry) => entry.isDirectory()).map((entry) => `${folder}/${entry.name}`))
+  }
+  return { found, complete: true }
+}
+
+/**
+ * What a hard reset to `target` would lose: whether tracked files have uncommitted changes; the untracked
+ * files, ignored ones included, it overwrites: those at a path the target has and the index or the work
+ * tree lacks (or inside a folder there, or inside a nested repository), and those standing where `target`
+ * needs a folder; and, as `name/`, every repository inside a folder it replaces with a file, at any depth,
+ * which it deletes whole. `unchecked`: such folders too large or unreadable to search completely. A folder
+ * where the target has a submodule is kept. `root` is the repository's top level.
  */
 export async function checkReset(git: Git, root: string, target: unknown): Promise<ResetCheck> {
   if (typeof target !== 'string' || !HASH.test(target)) throw new Error(t('invalidCommit'))
   const dirty = (await git.out(['status', '--porcelain', '-z', '--untracked-files=no'])) !== ''
-  // On a branch with no commits yet, every file of the target is new.
-  const listed = (await readHead(git)).hash
-    ? await git.out(['diff', '-z', '--name-only', '--no-renames', '--diff-filter=A', 'HEAD', target, '--'])
-    : await git.out(['ls-tree', '-r', '-z', '--name-only', target])
-  const added = listed.split('\0').filter(Boolean)
-  const folders = new Set(added.flatMap((path) => path.split('/').slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join('/'))))
+  // The target against the index and work tree, so no commit is needed on HEAD: D and T are the paths the
+  // reset writes, with something else there or nothing. --ignore-submodules=none: config must not hide submodules.
+  const fields = (await git.out(['diff', '-z', '--raw', '--no-renames', '--ignore-submodules=none', '--diff-filter=DT', target, '--'])).split('\0')
+  const paths: string[] = []
+  const submodules = new Set<string>()
+  for (let i = 1; i < fields.length; i += 2) {
+    paths.push(fields[i])
+    if (fields[i - 1].startsWith(':160000 ')) submodules.add(fields[i])
+  }
+  const folders = new Set(paths.flatMap((path) => path.split('/').slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join('/'))))
   // --directory lists an untracked folder as one `name/` line, so only a file named like a folder matches it.
   const blocking = (await untrackedAt(git, ['--directory'], [...folders])).filter((path) => folders.has(path))
-  const found = [...new Set([...(await untrackedAt(git, [], added)), ...blocking, ...insideNestedRepos(root, added)])].sort()
+  // At a submodule the reset keeps any folder, so only a file or link there is overwritten.
+  const kept = (path: string) => {
+    const bare = path.replace(/\/$/, '')
+    return submodules.has(bare) ? realFolder(root, bare) : [...submodules].some((submodule) => bare.startsWith(`${submodule}/`))
+  }
+  const found = [...new Set([...(await untrackedAt(git, [], paths)), ...blocking, ...insideNestedRepos(root, paths)])].filter((path) => !kept(path)).sort()
   // Git lists a nested repository as `name/`; the walk lists one without the slash.
   const isRepository = (path: string) => foundAt(`${root}/${path.replace(/\/$/, '')}`) === 'repository'
+  const repositories = new Set(found.filter(isRepository).map((path) => path.replace(/\/?$/, '/')))
+  const budget = { left: SEARCH_MAX }
+  const unchecked: string[] = []
+  for (const path of paths) {
+    if (submodules.has(path) || !realFolder(root, path)) continue
+    const { found: inside, complete } = repositoriesIn(root, path, budget)
+    inside.forEach((repository) => repositories.add(repository))
+    if (!complete) unchecked.push(path)
+  }
+  const listed = [...repositories].sort()
   return {
     dirty,
-    overwritten: found.filter((path) => !isRepository(path)),
-    repositories: found.filter(isRepository).map((path) => path.replace(/\/?$/, '/'))
+    // A path inside a listed repository goes with it.
+    overwritten: found.filter((path) => !isRepository(path) && !listed.some((repository) => path.startsWith(repository))),
+    repositories: listed,
+    ...(unchecked.length ? { unchecked } : {})
   }
 }
 

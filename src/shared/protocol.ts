@@ -194,8 +194,10 @@ export interface ResetCheck {
   dirty: boolean
   /** Untracked files, ignored ones included, that the target tracks: the reset overwrites them. */
   overwritten: string[]
-  /** Untracked nested repositories, as `name/`, that the reset deletes whole with their own history. */
+  /** Repositories, as `name/`, inside a folder the target replaces with a file: the reset deletes them whole. */
   repositories: string[]
+  /** Folders the reset deletes that were too large or unreadable to search for repositories completely. */
+  unchecked?: string[]
 }
 
 /** Sent with `action.run` and `branch.run`: the HEAD the confirmation showed, and the backup to make first. */
