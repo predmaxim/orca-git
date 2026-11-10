@@ -376,16 +376,23 @@ test('checkout of a remote branch as local tracks the remote branch clicked, wha
     sh(w.root, 'switch', '-q', 'main')
     sh(w.root, 'branch', '-q', '-D', 'feature')
   }
-  // Local changes the remote branch would overwrite: the branch is made, the switch refused, the files kept.
+  // Local changes the remote branch would overwrite: asked first, before the branch is made; nothing changes.
   sh(w.root, 'config', '--unset', 'checkout.defaultRemote')
   writeFileSync(join(w.root, 'a.txt'), 'local a\n')
   const kept = snapshot(w.root)
+  const asked = await runAction(git, { kind: 'checkout', target: 'feature', track: 'refs/remotes/origin/feature' })
+  assert.equal(asked.ok, false)
+  assert.deepEqual(asked.atRisk?.conflicts, ['a.txt'])
+  assert.deepEqual(snapshot(w.root), kept)
+  // An edit git hides from status is not asked about: the branch is made, git refuses the switch, the files are kept.
+  sh(w.root, 'update-index', '--assume-unchanged', 'a.txt')
   const refused = await runAction(git, { kind: 'checkout', target: 'feature', track: 'refs/remotes/origin/feature' })
   assert.equal(refused.ok, false)
   assert.match(refused.message, /feature/)
   assert.equal(sh(w.root, 'rev-parse', '--abbrev-ref', 'feature@{upstream}'), 'origin/feature')
   assert.deepEqual({ ...snapshot(w.root), refs: kept.refs }, kept)
   sh(w.root, 'branch', '-q', '-D', 'feature')
+  sh(w.root, 'update-index', '--no-assume-unchanged', 'a.txt')
   sh(w.root, 'checkout', '-q', '--', 'a.txt')
   for (const track of ['origin/feature', 'refs/remotes/origin/nope', 'refs/tags/x', 'refs/heads/topic', '-x', 42]) {
     await refusedBeforeGit(w, `track ${track}`, (g) => runAction(g, as({ kind: 'checkout', target: 'feature', track })))
