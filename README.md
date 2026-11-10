@@ -71,6 +71,8 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
 - While a rebase, merge, cherry-pick or revert started elsewhere (a terminal) is stopped, the worker
   refuses every action that moves HEAD or touches the work tree; a new branch without checkout and a
   new tag still work.
+- Every git command the worker runs, where its input comes from and how it is checked is listed in
+  [docs/git-safety.md](docs/git-safety.md).
 - **Refresh** re-reads the log and branches; **Fetch** runs `git fetch --all` (without `--prune`) and
   reports the result in the banner. It never asks for a password: it works through the SSH agent and
   git's credential helpers.

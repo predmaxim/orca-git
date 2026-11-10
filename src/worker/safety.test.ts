@@ -190,7 +190,165 @@ test('new branch and tag names under refs/ are refused before git runs', async (
   }
 })
 
+test('engine actions refuse hostile names, hashes, modes and plans before git runs', async () => {
+  const w = world()
+  const bad = hashes(w)
+  for (const name of NAMES) {
+    for (const checkout of [false, true]) await refusedBeforeGit(w, `branch ${JSON.stringify(name)}`, (git) => runAction(git, { kind: 'branch', hash: w.c1, name: as(name), checkout }))
+    await refusedBeforeGit(w, `tag ${JSON.stringify(name)}`, (git) => runAction(git, { kind: 'tag', hash: w.c1, name: as(name) }))
+  }
+  for (const hash of bad) {
+    const label = JSON.stringify(hash)
+    await refusedBeforeGit(w, `branch at ${label}`, (git) => runAction(git, { kind: 'branch', hash: as(hash), name: 'fresh', checkout: true }))
+    await refusedBeforeGit(w, `tag at ${label}`, (git) => runAction(git, { kind: 'tag', hash: as(hash), name: 'v1' }))
+    await refusedBeforeGit(w, `reset to ${label}`, (git) => runAction(git, { kind: 'reset', hash: as(hash), mode: 'hard' }))
+    await refusedBeforeGit(w, `undo ${label}`, (git) => runAction(git, { kind: 'undo', hash: as(hash) }))
+    await refusedBeforeGit(w, `reword ${label}`, (git) => runAction(git, { kind: 'reword', hash: as(hash), message: 'x' }))
+    for (const kind of ['cherryPick', 'revert', 'squash', 'fixup', 'drop'] as const) {
+      await refusedBeforeGit(w, `${kind} ${label}`, (git) => runAction(git, as({ kind, hashes: [hash], message: 'x' })))
+      await refusedBeforeGit(w, `${kind} [c3, ${label}]`, (git) => runAction(git, as({ kind, hashes: [w.c3, hash], message: 'x' })))
+    }
+    await refusedBeforeGit(w, `rebase plan ${label}`, (git) => runAction(git, { kind: 'rebase', plan: [{ hash: as(hash), action: 'pick' }] }))
+  }
+  for (const kind of ['cherryPick', 'revert', 'squash', 'fixup', 'drop'] as const) {
+    for (const list of [[], 'abc', null]) await refusedBeforeGit(w, `${kind} ${JSON.stringify(list)}`, (git) => runAction(git, as({ kind, hashes: list, message: 'x' })))
+  }
+  for (const mode of ['merge', 'hard --', '', 'HARD', '--hard', 42, null]) {
+    await refusedBeforeGit(w, `reset --${mode}`, (git) => runAction(git, { kind: 'reset', hash: w.c1, mode: as(mode) }))
+  }
+  // Undo only takes back HEAD itself.
+  await refusedBeforeGit(w, 'undo of an older commit', (git) => runAction(git, { kind: 'undo', hash: w.c2 }))
+  for (const message of ['', '   ', 42, null]) {
+    await refusedBeforeGit(w, `reword to ${JSON.stringify(message)}`, (git) => runAction(git, { kind: 'reword', hash: w.c3, message: as(message) }))
+    await refusedBeforeGit(w, `squash to ${JSON.stringify(message)}`, (git) => runAction(git, { kind: 'squash', hashes: [w.c3, w.c2], message: as(message) }))
+  }
+  const plans: unknown[] = [
+    [],
+    'abc',
+    null,
+    // Only pick, reword, squash, fixup and drop: no exec, edit or break from a frame.
+    [{ hash: w.c2, action: 'exec' }, { hash: w.c3, action: 'pick' }],
+    [{ hash: w.c2, action: 'edit' }, { hash: w.c3, action: 'pick' }],
+    [{ hash: w.c2, action: 'pick' }, { hash: w.c2, action: 'pick' }],
+    [{ hash: w.c2, action: 'pick' }],
+    [{ hash: w.t1, action: 'pick' }],
+    [{ hash: w.c3, action: 'squash' }, { hash: w.c2, action: 'pick' }],
+    [{ hash: w.c2, action: 'reword', message: '   ' }, { hash: w.c3, action: 'pick' }]
+  ]
+  for (const plan of plans) await refusedBeforeGit(w, `rebase plan ${JSON.stringify(plan)}`, (git) => runAction(git, { kind: 'rebase', plan: as<PlanItem[]>(plan) }))
+})
+
+test('branch actions refuse hostile names before git runs', async () => {
+  const w = world()
+  sh(w.root, 'branch', 'old')
+  for (const name of NAMES) {
+    const label = JSON.stringify(name)
+    await refusedBeforeGit(w, `rename to ${label}`, (git) => runBranchAction(git, { kind: 'rename', name: 'old', newName: as(name) }))
+    await refusedBeforeGit(w, `rename ${label}`, (git) => runBranchAction(git, { kind: 'rename', name: as(name), newName: 'fresh' }))
+    for (const force of [false, true]) await refusedBeforeGit(w, `delete ${label}`, (git) => runBranchAction(git, { kind: 'delete', name: as(name), force }))
+  }
+  // Merge and rebase onto targets: branchActions.test.ts "refuse targets that are not one commit". Backups: backup.test.ts.
+})
+
 // ---------- 3. A failure is aborted and leaves everything as it was ----------
+
+/** Runs `run` on a fresh world prepared by `prepare` and checks it failed and changed nothing. */
+async function failsCleanly(label: string, prepare: (w: World) => void, run: (git: Git, w: World) => Promise<Result>, why = /./): Promise<void> {
+  const w = world()
+  prepare(w)
+  const before = snapshot(w.root)
+  const result = await run(createGit(w.root), w)
+  assert.equal(result.ok, false, `${label}: ${result.message}`)
+  assert.match(result.message, why, label)
+  assert.deepEqual(snapshot(w.root), before, label)
+}
+
+const nothing = () => {}
+/** A local edit to a.txt that every commit touching a.txt would overwrite. */
+const editA = (w: World) => writeFileSync(join(w.root, 'a.txt'), 'local a\n')
+
+test('a conflict or a refusal by git aborts the operation and leaves everything as it was', async () => {
+  // Checkout and new branch: git refuses to overwrite a local edit or an untracked file.
+  await failsCleanly('checkout over a local edit', editA, (git) => runAction(git, { kind: 'checkout', target: 'topic' }))
+  await failsCleanly('checkout over an untracked file', (w) => writeFileSync(join(w.root, 't.txt'), 'mine\n'), (git) => runAction(git, { kind: 'checkout', target: 'topic' }))
+  await failsCleanly('new branch over a local edit', editA, (git, w) => runAction(git, { kind: 'branch', hash: w.t1, name: 'fresh', checkout: true }))
+  await failsCleanly('checkout of a commit that does not exist', nothing, (git) => runAction(git, { kind: 'checkout', target: 'f'.repeat(40) }))
+  // Cherry-pick and revert: a conflict on the first or a later commit is aborted.
+  await failsCleanly('cherry-pick with a conflict', nothing, (git, w) => runAction(git, { kind: 'cherryPick', hashes: [w.t1] }), /aborted/)
+  const t3 = (w: World) => {
+    sh(w.root, 'checkout', '-q', 'topic')
+    commit(w.root, 'a.txt', 'topic again\n', 't3')
+    sh(w.root, 'tag', 't3')
+    sh(w.root, 'checkout', '-q', 'main')
+  }
+  await failsCleanly('cherry-pick with a conflict on the second commit', t3, (git, w) => runAction(git, { kind: 'cherryPick', hashes: [w.t2, sh(w.root, 'rev-parse', 't3')] }), /aborted/)
+  await failsCleanly('cherry-pick over a local edit', editA, (git, w) => runAction(git, { kind: 'cherryPick', hashes: [w.t1] }))
+  await failsCleanly('revert with a conflict', nothing, (git, w) => runAction(git, { kind: 'revert', hashes: [w.c1] }), /aborted/)
+  await failsCleanly('revert of a commit that does not exist', nothing, (git) => runAction(git, { kind: 'revert', hashes: ['f'.repeat(40)] }))
+  // Reset --keep refuses rather than overwrite a local edit; a tree is not a commit.
+  await failsCleanly('reset --keep over a local edit', editA, (git, w) => runAction(git, { kind: 'reset', hash: w.c1, mode: 'keep' }))
+  for (const mode of ['soft', 'mixed', 'hard', 'keep'] as const) {
+    await failsCleanly(`reset --${mode} to a tree`, nothing, (git, w) => runAction(git, { kind: 'reset', hash: sh(w.root, 'rev-parse', `${w.c1}^{tree}`), mode }))
+  }
+  // History rewrites: a conflict, a refusing pre-rebase hook or a commit git cannot make is aborted, with local changes back.
+  const dirty = (w: World) => writeFileSync(join(w.root, 'b.txt'), 'local b\n')
+  // Main takes topic's a.txt: merging topic then reaches the commit (and its hooks) without a conflict.
+  const matchTopic = (w: World) => commit(w.root, 'a.txt', 'topic\n', 'match topic')
+  await failsCleanly('drop that makes a later commit conflict', (w) => {
+    dirty(w)
+    commit(w.root, 'a.txt', 'main again\n', 'c4')
+  }, (git, w) => runAction(git, { kind: 'drop', hashes: [w.c3] }), /aborted/)
+  const refuseHook = (name: string) => (w: World) => {
+    dirty(w)
+    writeFileSync(join(w.root, '.git', 'hooks', name), '#!/bin/sh\nexit 1\n')
+    chmodSync(join(w.root, '.git', 'hooks', name), 0o755)
+  }
+  for (const kind of ['squash', 'fixup', 'drop', 'reword'] as const) {
+    await failsCleanly(`${kind} refused by a pre-rebase hook`, refuseHook('pre-rebase'), (git, w) =>
+      runAction(git, as(kind === 'reword' ? { kind, hash: w.c2, message: 'x' } : { kind, hashes: [w.c3, w.c2], message: 'x' }))
+    , /aborted/)
+  }
+  await failsCleanly('interactive rebase refused by a pre-rebase hook', refuseHook('pre-rebase'), (git, w) =>
+    runAction(git, { kind: 'rebase', plan: [{ hash: w.c3, action: 'pick' }, { hash: w.c2, action: 'pick' }] })
+  , /aborted/)
+  await failsCleanly('reword to a message git refuses', dirty, (git, w) => runAction(git, { kind: 'reword', hash: w.c2, message: 'a\0b' }), /aborted/)
+  // Merge and rebase onto: a refusing hook, an untracked file in the way or unrelated histories are aborted with local changes back.
+  await failsCleanly('merge refused by a pre-merge-commit hook', (w) => {
+    matchTopic(w)
+    refuseHook('pre-merge-commit')(w)
+  }, (git) => runBranchAction(git, { kind: 'merge', name: 'topic' }), /aborted/)
+  await failsCleanly('rebase onto refused by a pre-rebase hook', refuseHook('pre-rebase'), (git) => runBranchAction(git, { kind: 'rebaseOnto', name: 'topic' }), /aborted/)
+  const inTheWay = (w: World) => {
+    matchTopic(w)
+    dirty(w)
+    writeFileSync(join(w.root, 't.txt'), 'mine\n')
+  }
+  await failsCleanly('merge over an untracked file', inTheWay, (git) => runBranchAction(git, { kind: 'merge', name: 'topic' }), /aborted/)
+  await failsCleanly('rebase onto over an untracked file', inTheWay, (git) => runBranchAction(git, { kind: 'rebaseOnto', name: 'topic' }), /aborted/)
+  await failsCleanly('merge of unrelated histories', (w) => {
+    sh(w.root, 'checkout', '-q', '--orphan', 'other')
+    sh(w.root, 'rm', '-rq', '--cached', '.')
+    writeFileSync(join(w.root, 'z.txt'), 'z\n')
+    sh(w.root, 'add', 'z.txt')
+    sh(w.root, 'commit', '-qm', 'unrelated')
+    sh(w.root, 'checkout', '-qf', 'main')
+    dirty(w)
+  }, (git) => runBranchAction(git, { kind: 'merge', name: 'other' }), /aborted/)
+  // Branch actions: git refuses a taken name, an unmerged branch without force and a branch another worktree uses.
+  await failsCleanly('rename to a taken name', nothing, (git) => runBranchAction(git, { kind: 'rename', name: 'topic', newName: 'main' }))
+  await failsCleanly('delete of an unmerged branch without force', nothing, (git) => runBranchAction(git, { kind: 'delete', name: 'topic', force: false }))
+  await failsCleanly('delete of the current branch', nothing, (git) => runBranchAction(git, { kind: 'delete', name: 'main', force: true }))
+  await failsCleanly('delete of a branch that does not exist', nothing, (git) => runBranchAction(git, { kind: 'delete', name: 'gone', force: true }))
+  const elsewhere = tempDir('git-log-safety-worktree-')
+  await failsCleanly('delete of a branch another worktree has checked out', (w) => {
+    sh(w.root, 'worktree', 'add', '-q', join(elsewhere, 'wt'), 'topic')
+  }, (git) => runBranchAction(git, { kind: 'delete', name: 'topic', force: true }))
+  // Patch: an existing file is not overwritten without asking.
+  await failsCleanly('patch over an existing file', (w) => writeFileSync(join(w.root, 'out.patch'), 'mine\n'), async (git, w) => {
+    const result = await createPatch(git, w.root, [w.c2], 'out.patch')
+    return { ok: result.ok, message: result.ok ? '' : result.reason }
+  })
+})
 
 test('a cherry-pick of several commits that git refuses at the first leaves no sequencer behind and keeps staged changes', async () => {
   for (const verb of ['cherryPick', 'revert'] as const) {
@@ -242,6 +400,26 @@ const everyOperation = (w: World): [string, (git: Git) => Promise<Result>][] => 
   }]
 ]
 
+test('every operation keeps local changes and untracked files, or refuses and changes nothing', async () => {
+  for (const [label] of everyOperation(world())) {
+    const w = world()
+    // Main takes topic's a.txt so that the merge goes through; rebase onto still stops on c3 and is aborted.
+    if (label === 'merge' || label === 'rebase onto') commit(w.root, 'a.txt', 'topic\n', 'match topic')
+    writeFileSync(join(w.root, 'b.txt'), 'local b\n')
+    writeFileSync(join(w.root, 'notes.txt'), 'my notes\n')
+    const before = snapshot(w.root)
+    const run = everyOperation(w).find(([name]) => name === label)![1]
+    const result = await run(createGit(w.root))
+    if (result.ok) {
+      assert.equal(readFileSync(join(w.root, 'b.txt'), 'utf8'), 'local b\n', label)
+      assert.equal(readFileSync(join(w.root, 'notes.txt'), 'utf8'), 'my notes\n', label)
+    } else {
+      assert.deepEqual(snapshot(w.root), before, `${label}: ${result.message}`)
+    }
+  }
+  // reset --hard discards local changes by design, behind a confirmation and the stash backup: backup.test.ts.
+})
+
 test('a history rewrite whose local changes cannot be re-applied says so and offers no undo', async () => {
   const w = world()
   // c2 added c.txt; dropping it leaves the local edit with nothing to apply to.
@@ -290,6 +468,49 @@ test('a merge git stops before it starts gives the local changes back', async ()
     keys.forEach((key, i) => (saved[i] === undefined ? delete process.env[key] : (process.env[key] = saved[i])))
   }
   assert.deepEqual(snapshot(w.root), before)
+})
+
+test('Undo after an action refuses once HEAD or the files it would reset have moved on', async () => {
+  const w = world()
+  const git = createGit(w.root)
+  const picked = await runGuarded(git, { expectHead: w.c3 }, 'HEAD', () => runAction(git, { kind: 'cherryPick', hashes: [w.t2] }))
+  assert.equal(picked.ok, true, picked.message)
+  const undo = () => runGuarded(git, { expectHead: picked.head }, 'HEAD', () => runAction(git, { kind: 'reset', hash: picked.previousHead!, mode: 'keep' }))
+  // An edit to the file the cherry-pick added: reset --keep refuses rather than lose it.
+  writeFileSync(join(w.root, 't.txt'), 'local t\n')
+  let before = snapshot(w.root)
+  assert.equal((await undo()).ok, false)
+  assert.deepEqual(snapshot(w.root), before)
+  // A commit made since: the Undo is bound to the HEAD the action left.
+  commit(w.root, 't.txt', 'local t\n', 'more')
+  before = snapshot(w.root)
+  assert.equal((await undo()).ok, false)
+  assert.deepEqual(snapshot(w.root), before)
+})
+
+// ---------- 5. Pushed commits are reported before a rewrite ----------
+
+test('the rewrite checks name the remote branches that already hold the commits', async () => {
+  const w = world()
+  const git = createGit(w.root)
+  sh(w.root, 'update-ref', 'refs/remotes/origin/main', w.c2)
+  const pushed = async (kind: Parameters<typeof checkRewrite>[1], list: string[]) => {
+    const check = await checkRewrite(git, kind, list)
+    assert.ok(check.ok, `${kind}: ${!check.ok && check.reason}`)
+    return check.ok ? check.pushed : []
+  }
+  assert.deepEqual(await pushed('squash', [w.c3, w.c2]), ['origin/main'])
+  assert.deepEqual(await pushed('reword', [w.c2]), ['origin/main'])
+  assert.deepEqual(await pushed('drop', [w.c2]), ['origin/main'])
+  assert.deepEqual(await pushed('rebase', [w.c2]), ['origin/main'])
+  // A single fixup folds into its parent, which is rewritten too.
+  assert.deepEqual(await pushed('fixup', [w.c3]), ['origin/main'])
+  assert.deepEqual(await pushed('drop', [w.c3]), [])
+  assert.deepEqual(await pushed('undo', [w.c3]), [])
+  assert.deepEqual(await checkRebaseOnto(git, 'topic'), { pushed: ['origin/main'] })
+  sh(w.root, 'update-ref', 'refs/remotes/origin/main', w.c3)
+  assert.deepEqual(await pushed('undo', [w.c3]), ['origin/main'])
+  assert.deepEqual(await pushed('drop', [w.c3]), ['origin/main'])
 })
 
 // ---------- 6. An operation left in progress in a terminal ----------
@@ -346,6 +567,22 @@ for (const [state, start] of IN_PROGRESS) {
     assert.deepEqual({ ...snapshot(w.root), refs: before.refs }, before)
   })
 }
+
+test('git itself refuses to rename or delete the branch a terminal is rebasing', async () => {
+  const w = world()
+  terminal(w.root, ['rebase', '-i', w.c1], { GIT_SEQUENCE_EDITOR: 'sed -i s/^pick/edit/' })
+  const before = snapshot(w.root)
+  const git = createGit(w.root)
+  assert.equal((await runBranchAction(git, { kind: 'rename', name: 'main', newName: 'renamed' })).ok, false)
+  assert.equal((await runBranchAction(git, { kind: 'delete', name: 'main', force: true })).ok, false)
+  assert.deepEqual(snapshot(w.root), before)
+  sh(w.root, 'rebase', '--abort')
+  sh(w.root, 'checkout', '-q', '-b', 'backup/main-1')
+  terminal(w.root, ['rebase', '-i', w.c1], { GIT_SEQUENCE_EDITOR: 'sed -i s/^pick/edit/' })
+  const backup = await deleteBackup(git, { kind: 'deleteBackup', ref: 'branch', name: 'backup/main-1', hash: w.c3 })
+  assert.equal(backup.ok, false)
+  assert.equal(sh(w.root, 'rev-parse', 'refs/heads/backup/main-1'), w.c3)
+})
 
 // ---------- Create patch: the file goes inside the repository, never through a link ----------
 
