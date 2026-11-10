@@ -202,6 +202,8 @@ function showNotice(text: string): void {
   const covered = shownBanner && (shownBanner[1] === 'error' || shownBanner[3] || shownBanner[2]?.length) ? shownBanner : null
   showBanner(text, 'info')
   if (!covered) return
+  // A second notice covers the same banner, not the first notice.
+  shownBanner = covered
   clearTimeout(bannerTimer)
   bannerTimer = setTimeout(() => showBanner(...covered), 3000)
 }
@@ -1525,7 +1527,7 @@ async function goToDiff(): Promise<void> {
   }
   // A selection whose files are still loading: wait for them rather than say there is none.
   if (selected.size && !selectionFiles.length) await filesLoad
-  if (!selectionFiles.length) return showBanner(t('filesPlaceholder'), 'info')
+  if (!selectionFiles.length) return showNotice(t('filesPlaceholder'))
   openFile(Math.max(0, selectionFiles.findIndex((file) => file.path === currentFile)))
 }
 
@@ -1567,6 +1569,8 @@ function refByFull(full: string | undefined): MenuRef | null {
 function areaMenu(id: SectionId) {
   if (id === 'commits') {
     const entries = commitEntries()
+    // A selection whose rows are not there yet: the log is reloading after a filter changed.
+    if (!entries && selected.size) return t('logLoading')
     const rect = viewport.getBoundingClientRect()
     return entries && { entries, x: rect.left + 40, y: rect.top + Math.max(0, (cursor + 1) * rowH - viewport.scrollTop), restore: viewport }
   }

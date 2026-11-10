@@ -10,27 +10,43 @@ import { readHead } from './log.ts'
 const LISTED = 50
 const split = (out: string) => out.split('\0').filter(Boolean)
 
-// Submodules left out: git switch never writes into one unless submodule.recurse is on, and then refuses a changed one.
-const STATUS = ['status', '--porcelain=v1', '-z', '--untracked-files=no', '--ignore-submodules=all']
+// Edits inside a submodule are left out: git switch never writes into one unless submodule.recurse is on, and then refuses them.
+const STATUS = ['status', '--porcelain=v1', '-z', '--untracked-files=no', '--ignore-submodules=dirty']
 
 /**
  * Paths of `git status --porcelain=v1 -z`: a rename or copy, in the index or in the files, gives its old path too.
  * `gone`: deleted from the index (a staged deletion, the old path of a staged rename).
  */
-function statusPaths(out: string): { paths: string[]; gone: Set<string> } {
+function statusPaths(out: string): { paths: string[]; gone: Set<string>; inFiles: string[] } {
   const entries = out.split('\0')
   const paths: string[] = []
   const gone = new Set<string>()
+  // Changed in the files only (` M`): for a submodule, checked out at another commit.
+  const inFiles: string[] = []
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i]
     if (entry.length < 4) continue
     paths.push(entry.slice(3))
+    if (entry.startsWith(' M ')) inFiles.push(entry.slice(3))
     if (entry[0] === 'D') gone.add(entry.slice(3))
     if (!/[RC]/.test(entry.slice(0, 2))) continue
     paths.push(entries[++i])
     if (entry[0] === 'R') gone.add(entries[i])
   }
-  return { paths: paths.filter(Boolean), gone }
+  return { paths: paths.filter(Boolean), gone, inFiles }
+}
+
+/**
+ * Of `paths` (changed in the files only), the submodules merely checked out at another commit: a gitlink in the index
+ * with a folder on disk. git switch leaves such a submodule alone and no stash can hold it, so it is no change here;
+ * not with submodule.recurse on, where git switch moves it and can leave its own commits on no branch.
+ */
+async function movedSubmodules(git: Git, paths: string[]): Promise<Set<string>> {
+  if (!paths.length || (await git.run(['config', '--type=bool', '--get', 'submodule.recurse'])).stdout.trim() === 'true') return new Set()
+  const wanted = new Set(paths)
+  // `<mode> <hash> <stage>\t<path>`
+  const gitlinks = split(await git.out(['ls-files', '-z', '-s'])).filter((line) => line.startsWith('160000 ')).map((line) => line.slice(line.indexOf('\t') + 1))
+  return new Set(gitlinks.filter((path) => wanted.has(path) && ['folder', 'repository'].includes(foundAt(join(git.root, path)))))
 }
 
 /** Whether something other than a folder is at `path` (a file or a link where the target needs a folder). */
@@ -53,7 +69,9 @@ export async function checkoutRisk(git: Git, commit: string): Promise<CheckoutRi
   if (head === commit) return null
   // A branch with no commits yet: compare with the empty tree.
   const from = head ?? (await git.out(['hash-object', '-t', 'tree', '--stdin'], { input: '' })).trim()
-  const changed = statusPaths(await git.out(STATUS)).paths
+  const status = statusPaths(await git.out(STATUS))
+  const moved = await movedSubmodules(git, status.inFiles)
+  const changed = status.paths.filter((path) => !moved.has(path))
   const differ = new Set(split(await git.out(['diff', '--name-only', '-z', '--no-renames', from, commit, '--'])))
   const conflicts = changed.filter((path) => differ.has(path))
   // Where the target writes a file: that path, and each folder of it that is not a folder on disk now.
@@ -124,6 +142,20 @@ export interface Stash {
   error?: string
 }
 
+/**
+ * Our stash among those pushed after `before` (the top before the push), found by its name: refs/stash is shared by
+ * every worktree, so another one may have pushed meanwhile. Empty when there is none.
+ */
+async function stashSince(git: Git, before: string, name: string): Promise<string> {
+  const log = await git.run(['log', '-g', '-n', '20', '--format=%H%x09%s', 'refs/stash', '--'])
+  for (const line of log.ok ? log.stdout.split('\n') : []) {
+    const [hash, subject = ''] = line.split('\t')
+    if (!hash || hash === before) break
+    if (subject.endsWith(`: ${name}`)) return hash
+  }
+  return ''
+}
+
 const stashTop = async (git: Git) => (await git.run(['rev-parse', '--verify', '-q', 'refs/stash'])).stdout.trim()
 
 /**
@@ -150,8 +182,8 @@ export async function stashForCheckout(git: Git, risk: CheckoutRisk, from: strin
       input: paths.map((path) => `:(literal)${path}`).join('\0')
     })
   }
-  const hash = await stashTop(git)
-  const made = Boolean(hash) && hash !== before
+  const hash = await stashSince(git, before, name)
+  const made = Boolean(hash)
   if (result.ok && made) return { hash, name }
   const error = `${t('stashFailed')}\n${lastLines(result.stderr || result.stdout, 4)}`.trim()
   if (!made) throw new Error(error)

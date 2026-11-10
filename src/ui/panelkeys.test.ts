@@ -31,3 +31,7 @@ test('a letter whose item the menu leaves out says it does not apply here', () =
 test('a letter with nothing under the cursor asks to pick something', () => {
   assert.deepEqual(entityAction(drop, null), { notice: t('keyNoTarget') })
 })
+
+test('a letter while the area cannot act says why', () => {
+  assert.deepEqual(entityAction(drop, 'The log is still loading'), { notice: 'The log is still loading' })
+})

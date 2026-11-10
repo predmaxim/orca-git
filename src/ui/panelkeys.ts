@@ -32,14 +32,15 @@ export interface PanelKeysHost {
   /** As a click on the header: the last open area stays open. */
   toggle(id: SectionId): void
   run: Partial<Record<KeyId, () => void>>
-  /** The menu of the commits or branch under the cursor; null when there is none. */
-  menu(id: SectionId): EntityTarget | null
+  /** The menu of the commits or branch under the cursor; null when there is none, or why the area cannot act now. */
+  menu(id: SectionId): EntityTarget | string | null
   /** Says why a letter did nothing. */
   notice(text: string): void
 }
 
 /** What a letter does: the menu item with its key, or why nothing runs. */
-export function entityAction(binding: KeyBinding, entries: MenuEntry[] | null): { run: () => void } | { notice: string } {
+export function entityAction(binding: KeyBinding, entries: MenuEntry[] | string | null): { run: () => void } | { notice: string } {
+  if (typeof entries === 'string') return { notice: entries }
   if (!entries) return { notice: t('keyNoTarget') }
   const entry = entries.find((e): e is Exclude<MenuEntry, 'separator'> => e !== 'separator' && e.key === binding.id)
   if (!entry) return { notice: t('keyNotHere', { action: t(binding.label) }) }
@@ -94,14 +95,16 @@ export function mountPanelKeys(host: PanelKeysHost): void {
       const target = host.menu(id)
       if (!target) return
       event.preventDefault()
-      showMenu(target.x, target.y, target.entries, target.restore)
+      if (typeof target === 'string') host.notice(target)
+      else showMenu(target.x, target.y, target.entries, target.restore)
       return
     }
     const key = findKey(event, id ? ['anywhere', id] : ['anywhere'])
     if (!key) return
     const area = AREA_KEYS[key.id]
     if (key.menu) {
-      const action = entityAction(key, host.menu(id!)?.entries ?? null)
+      const target = host.menu(id!)
+      const action = entityAction(key, typeof target === 'string' ? target : (target?.entries ?? null))
       if ('run' in action) action.run()
       else host.notice(action.notice)
     } else if (area) {

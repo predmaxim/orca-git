@@ -338,6 +338,104 @@ test('a submodule at another commit is not a change: no question, and the checko
   assert.equal(read(root, 'sm/s.txt'), 'v1\n')
 })
 
+/** main with submodule `sm` at s1; branch `later` moves it to s2. */
+function withSubmodule(): string {
+  const sub = mkdtempSync(join(tmpdir(), 'git-log-sub-'))
+  dirs.push(sub)
+  sh(sub, 'init', '-q', '-b', 'main')
+  sh(sub, 'config', 'user.name', 'Tester')
+  sh(sub, 'config', 'user.email', 'tester@example.com')
+  write(sub, 's.txt', 'v1\n')
+  sh(sub, 'add', '-A')
+  sh(sub, 'commit', '-q', '-m', 's1')
+  write(sub, 's.txt', 'v2\n')
+  sh(sub, 'commit', '-q', '-am', 's2')
+  const root = newRepo()
+  sh(root, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', sub, 'sm')
+  sh(join(root, 'sm'), 'switch', '-q', '--detach', 'HEAD~1')
+  sh(root, 'add', 'sm')
+  sh(root, 'commit', '-q', '-m', 'sm at s1')
+  sh(root, 'switch', '-q', '-c', 'later')
+  sh(join(root, 'sm'), 'switch', '-q', '--detach', 'main')
+  sh(root, 'add', 'sm')
+  sh(root, 'commit', '-q', '-m', 'sm at s2')
+  sh(root, 'switch', '-q', 'main')
+  sh(join(root, 'sm'), 'switch', '-q', '--detach', 'HEAD~1')
+  return root
+}
+
+test('a file where a submodule folder was is a change: asked, and kept', async () => {
+  const root = withSubmodule()
+  rmSync(join(root, 'sm'), { recursive: true, force: true })
+  write(root, 'sm', 'precious\n')
+  const result = await runAction(createGit(root), { kind: 'checkout', target: 'later' })
+  assert.equal(result.ok, false)
+  assert.ok(result.atRisk?.changed.includes('sm'), JSON.stringify(result.atRisk))
+  assert.equal(result.atRisk?.carry, false)
+  assert.equal(branch(root), 'main')
+  assert.equal(read(root, 'sm'), 'precious\n')
+})
+
+test('with submodule.recurse, a submodule at a commit of its own is a change: asked, and the commit stays', async () => {
+  const root = withSubmodule()
+  sh(root, 'config', 'submodule.recurse', 'true')
+  const sm = join(root, 'sm')
+  sh(sm, 'config', 'user.name', 'Tester')
+  sh(sm, 'config', 'user.email', 'tester@example.com')
+  write(sm, 'mine.txt', 'mine\n')
+  sh(sm, 'add', '-A')
+  sh(sm, 'commit', '-q', '-m', 'mine')
+  const mine = sh(sm, 'rev-parse', 'HEAD')
+  const result = await runAction(createGit(root), { kind: 'checkout', target: 'later' })
+  assert.equal(result.ok, false)
+  assert.ok(result.atRisk?.changed.includes('sm'), JSON.stringify(result.atRisk))
+  assert.equal(branch(root), 'main')
+  assert.equal(sh(sm, 'rev-parse', 'HEAD'), mine)
+})
+
+test('a stash someone else pushed while ours failed is not taken for ours', async () => {
+  const root = newRepo()
+  write(root, 'same.txt', 'mine\n')
+  const real = createGit(root)
+  // Another worktree's stash lands while our push fails before it records anything.
+  const git = { ...real, run: async (args: string[], options?: any) => {
+    if (args[0] !== 'stash' || args[1] !== 'push') return real.run(args, options)
+    const theirs = (await real.out(['stash', 'create'])).trim()
+    await real.out(['stash', 'store', '-m', 'On topic: someone else', theirs])
+    return { ok: false, code: 1, stdout: '', stderr: 'Cannot save the current worktree state' }
+  } }
+  const result = await runAction(git, { ...toTopic, stash: true })
+  assert.equal(result.ok, false)
+  assert.equal(result.stash, undefined)
+  assert.ok(!result.message.includes('git-log: main → topic'), result.message)
+  assert.equal(read(root, 'same.txt'), 'mine\n')
+  assert.equal(branch(root), 'main')
+})
+
+test('our stash is found under one someone else pushed right after it', async () => {
+  const root = newRepo()
+  write(root, 'same.txt', 'mine\n')
+  write(root, 'other.txt', 'theirs\n')
+  sh(root, 'add', 'other.txt')
+  const real = createGit(root)
+  let theirs = ''
+  const git = { ...real, run: async (args: string[], options?: any) => {
+    if (args[0] !== 'stash' || args[1] !== 'push') return real.run(args, options)
+    const ours = await real.run(args, options)
+    write(root, 'later.txt', 'theirs\n')
+    sh(root, 'add', 'later.txt')
+    theirs = (await real.out(['stash', 'create'])).trim()
+    await real.out(['stash', 'store', '-m', 'On topic: someone else', theirs])
+    sh(root, 'rm', '-q', '--cached', 'later.txt')
+    rmSync(join(root, 'later.txt'))
+    return ours
+  } }
+  const result = await runAction(git, { ...toTopic, stash: true })
+  assert.equal(result.ok, true, result.message)
+  assert.notEqual(result.stash, theirs)
+  assert.match(sh(root, 'show', '-s', '--format=%s', result.stash!), /: git-log: main → topic, /)
+})
+
 test('a stash git made but then reported as failed is named, and HEAD stays', async () => {
   const root = newRepo()
   write(root, 'same.txt', 'mine\n')
