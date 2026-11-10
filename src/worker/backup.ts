@@ -23,13 +23,12 @@ async function tipOf(git: Git, ref: string): Promise<string | null> {
 const NAME_MAX = 200
 
 /**
- * `name` trimmed, once it can become a new backup `kind`: a name git accepts, not under `refs/`, not taken,
+ * `name` trimmed, once it can become a new backup `kind`: a name git accepts (never under `refs/`), not taken,
  * and not a folder of an existing ref or under one (git keeps refs as files). Throws the reason otherwise.
  */
 async function backupName(git: Git, kind: unknown, name: unknown): Promise<string> {
   if ((kind !== 'branch' && kind !== 'tag') || typeof name !== 'string') throw new Error(t('backupInvalid'))
   const checked = await assertName(git, name, kind)
-  if (checked.startsWith('refs/')) throw new Error(t('backupNameRefs'))
   if (new TextEncoder().encode(checked).length > NAME_MAX) throw new Error(t('backupNameLong', { max: NAME_MAX }))
   const full = refName(kind, checked)
   const parents = checked.split('/').slice(0, -1).map((_, i, parts) => refName(kind, parts.slice(0, i + 1).join('/')))

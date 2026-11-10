@@ -178,6 +178,18 @@ test('checkout refuses anything but a branch name or a full commit hash before g
   }
 })
 
+test('new branch and tag names under refs/ are refused before git runs', async () => {
+  const w = world()
+  sh(w.root, 'branch', 'old')
+  // A branch named refs/heads/main is refs/heads/refs/heads/main, yet git reads that name as main: merge or rebase onto it would take main.
+  for (const name of ['refs/heads/main', 'refs/heads/x', 'refs/tags/x', 'refs/x']) {
+    for (const checkout of [false, true]) await refusedBeforeGit(w, `branch ${name}`, (git) => runAction(git, { kind: 'branch', hash: w.c1, name, checkout }))
+    await refusedBeforeGit(w, `tag ${name}`, (git) => runAction(git, { kind: 'tag', hash: w.c1, name }))
+    await refusedBeforeGit(w, `rename to ${name}`, (git) => runBranchAction(git, { kind: 'rename', name: 'old', newName: name }))
+    await refusedBeforeGit(w, `checkout ${name}`, (git) => runAction(git, { kind: 'checkout', target: name }))
+  }
+})
+
 // ---------- 3. A failure is aborted and leaves everything as it was ----------
 
 test('a cherry-pick of several commits that git refuses at the first leaves no sequencer behind and keeps staged changes', async () => {

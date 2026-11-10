@@ -30,7 +30,8 @@ export async function assertName(git: Git, name: string, kind: 'branch' | 'tag')
   const trimmed = name.trim()
   const args = kind === 'branch' ? ['check-ref-format', '--branch', trimmed] : ['check-ref-format', `refs/tags/${trimmed}`]
   // --branch expands @{-1} and @{u} to the branch they name: refuse "@{" and any name git does not keep as is.
-  const result = trimmed && !trimmed.startsWith('-') && !trimmed.includes('@{') ? await git.run(args) : null
+  // Under refs/ too: branch refs/heads/main is stored as refs/heads/refs/heads/main, yet git reads the name as main.
+  const result = trimmed && !trimmed.startsWith('-') && !trimmed.includes('@{') && !trimmed.startsWith('refs/') ? await git.run(args) : null
   if (!result?.ok || (kind === 'branch' && result.stdout.trim() !== trimmed)) throw new Error(t(kind === 'branch' ? 'invalidBranchName' : 'invalidTagName', { name: trimmed }))
   return trimmed
 }
