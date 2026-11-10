@@ -356,3 +356,21 @@ test('same-named workspaces are told apart by terminal titles, then by a previou
     rmSync(b, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   }
 })
+
+test('a second change to a repository while one is running is refused, not queued', async () => {
+  const root = fixture()
+  try {
+    sh(root, 'branch', 'topic', 'HEAD~1')
+    writeFileSync(join(root, '.git', 'hooks', 'post-checkout'), '#!/bin/sh\nsleep 1\n', { mode: 0o755 })
+    const worker = await mountWorker(main, { host: host(root) })
+    const checkout = () => worker.request('action.run', { root, action: { kind: 'checkout', target: 'topic' } })
+    const results = await Promise.all([checkout(), checkout()])
+    assert.deepEqual(results.map((result) => result.ok).sort(), [false, true], JSON.stringify(results))
+    assert.match(results.find((result) => !result.ok)!.message, /still running/)
+    // Free again once the first has ended.
+    assert.equal((await worker.request('repo.fetch', { root })).message, 'No remotes configured.')
+    await worker.deactivate()
+  } finally {
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
+})

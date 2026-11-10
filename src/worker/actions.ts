@@ -47,7 +47,7 @@ export async function oldestFirst(git: Git, hashes: string[]): Promise<string[]>
 
 async function sequencer(git: Git, verb: 'cherry-pick' | 'revert', args: string[]): Promise<void> {
   const start = (await readHead(git)).hash
-  const result = await git.run([verb, ...args], { timeoutMs: 120_000 })
+  const result = await git.run([verb, ...args])
   if (!result.ok) {
     const reason = lastLines(result.stderr || result.stdout, 4)
     if ((await operationInProgress(git)) === verb) {

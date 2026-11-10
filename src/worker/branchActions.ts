@@ -5,7 +5,8 @@ import { t } from '../shared/i18n.ts'
 import { readHead } from './log.ts'
 import { autostashConflict, noteUnstaged, operationInProgress, operationRefusal, pushedTo } from './rebase.ts'
 
-const NETWORK_TIMEOUT_MS = 120_000
+// Under the 120 s a frame waits, so the fetch's own message arrives.
+const NETWORK_TIMEOUT_MS = 100_000
 
 /** Runs a branch action; never throws, a failure is `{ ok: false, message }`. */
 export async function runBranchAction(git: Git, action: BranchAction): Promise<BranchActionResult> {
@@ -91,7 +92,7 @@ async function integrate(git: Git, kind: 'merge' | 'rebase', target: string): Pr
     (await git.run(['rev-parse', '--verify', '-q', '--symbolic-full-name', '--end-of-options', short])).stdout.trim() === name &&
     (await commitOf(short)) === (await commitOf(name))
   const args = kind === 'merge' ? ['merge', '--no-edit', '--autostash', exact ? short : name] : ['rebase', '--autostash', name]
-  const result = await git.run(args, { timeoutMs: NETWORK_TIMEOUT_MS })
+  const result = await git.run(args)
   if (!result.ok) {
     let kept: string | null = null
     if (await operationInProgress(git)) await git.run([kind, '--abort'])

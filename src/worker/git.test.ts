@@ -6,7 +6,7 @@ import { join, relative } from 'node:path'
 import { after, test } from 'node:test'
 import { checkRewrite, runAction } from './actions.ts'
 import { createBackup } from './backup.ts'
-import { createGit } from './git.ts'
+import { createGit, timeoutFor } from './git.ts'
 import { gitCandidates, resolveGit } from './launch.ts'
 import { readDetails, readLogPage, readRefs } from './log.ts'
 import { readFileDiff } from './diff.ts'
@@ -299,6 +299,15 @@ test('new tags and backup tags are made unsigned, without an editor, under tag.g
   assert.equal(sh(root, 'cat-file', '-t', 'v1'), 'commit')
 })
 
+test('a git process killed half way is reported as possibly half done', { skip: process.platform === 'win32' }, async () => {
+  const { root } = repo(2)
+  sh(root, 'branch', 'topic', 'HEAD~1')
+  writeFileSync(join(root, '.git', 'hooks', 'post-checkout'), '#!/bin/sh\nkill -TERM $PPID\n', { mode: 0o755 })
+  const result = await runAction(createGit(root), { kind: 'checkout', target: 'topic' })
+  assert.equal(result.ok, false)
+  assert.match(result.message, /stopped before it finished[\s\S]*git status/)
+})
+
 test('a bare git name is looked up only in absolute PATH entries; a relative path is refused', { skip: process.platform === 'win32' }, () => {
   const base = mkdtempSync(join(tmpdir(), 'git-path-'))
   dirs.push(base)
@@ -326,4 +335,11 @@ test('on Windows git is looked up with the .com and .exe of PATHEXT in each abso
   assert.deepEqual(gitCandidates('git.exe', env, 'win32'), ['C:\\Git\\cmd\\git.exe', 'D:\\Quoted Dir\\git.exe'])
   assert.throws(() => resolveGit('.\\git.exe', env, 'win32'), /relative path/)
   assert.throws(() => resolveGit('C:git.exe', env, 'win32'), /relative path/)
+})
+
+test('only reads are killed after a time limit, unless the caller sets one', () => {
+  assert.equal(timeoutFor(['log', '--format=%H']), 60_000)
+  assert.equal(timeoutFor(['switch', '--end-of-options', 'main']), 0)
+  assert.equal(timeoutFor(['-c', 'rebase.updateRefs=false', 'rebase', '-i', 'HEAD~2']), 0)
+  assert.equal(timeoutFor(['fetch', '--all'], { timeoutMs: 100_000 }), 100_000)
 })

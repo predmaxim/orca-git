@@ -2,7 +2,7 @@ import { appendFileSync, closeSync, constants, existsSync, fstatSync, mkdirSync,
 import { dirname, join, resolve } from 'node:path'
 import type { OrcaWorkerApi } from 'orca/worker'
 import { pickLocale, setLocale, t } from '../shared/i18n.ts'
-import type { DiffTabState, RepoResult } from '../shared/protocol.ts'
+import type { ActionResult, DiffTabState, RepoResult } from '../shared/protocol.ts'
 import { checkRewrite, runAction } from './actions.ts'
 import { checkBackup, checkReset, deleteBackup, runGuarded } from './backup.ts'
 import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
@@ -20,6 +20,19 @@ const repos = new Map<string, Git>()
 const watchers = new Map<string, Promise<RepoWatcher | null>>()
 /** What each repository's Diff tab shows; the tab reads it when it starts and on `diff.show`. */
 const diffStates = new Map<string, DiffTabState>()
+/** Roots with a request running that changes the repository. */
+const changing = new Set<string>()
+
+/** Runs `change` on `root` (as `gitFor` accepted it) unless another change to it is running: that one is refused, not queued. */
+async function exclusive<T>(root: string, change: () => Promise<T>): Promise<T | ActionResult> {
+  if (changing.has(root)) return { ok: false, message: t('repoBusy') }
+  changing.add(root)
+  try {
+    return await change()
+  } finally {
+    changing.delete(root)
+  }
+}
 
 async function setting<T>(key: string, fallback: T): Promise<T> {
   try {
@@ -180,19 +193,23 @@ export default function activate(orca: OrcaWorkerApi): void {
 
   handle('action.run', async ({ root, action, expectHead, backup }) => {
     const git = await gitFor(root)
-    const hardReset = action?.kind === 'reset' && action?.mode === 'hard'
-    const result = await runGuarded(git, { expectHead, backup }, 'HEAD', () => runAction(git, action), hardReset)
-    orca.panels.post('repo.changed', { root })
-    return result
+    return exclusive(root, async () => {
+      const hardReset = action?.kind === 'reset' && action?.mode === 'hard'
+      const result = await runGuarded(git, { expectHead, backup }, 'HEAD', () => runAction(git, action), hardReset)
+      orca.panels.post('repo.changed', { root })
+      return result
+    })
   })
 
   handle('branch.run', async ({ root, action, expectHead, backup }) => {
     const git = await gitFor(root)
-    // A deleted branch's backup keeps that branch; every other branch action moves HEAD.
-    const tip = action?.kind === 'delete' ? { branch: action.name } : 'HEAD'
-    const result = await runGuarded(git, { expectHead, backup }, tip, () => runBranchAction(git, action))
-    orca.panels.post('repo.changed', { root })
-    return result
+    return exclusive(root, async () => {
+      // A deleted branch's backup keeps that branch; every other branch action moves HEAD.
+      const tip = action?.kind === 'delete' ? { branch: action.name } : 'HEAD'
+      const result = await runGuarded(git, { expectHead, backup }, tip, () => runBranchAction(git, action))
+      orca.panels.post('repo.changed', { root })
+      return result
+    })
   })
 
   handle('backup.check', async ({ root, kind, name }) => checkBackup(await gitFor(root), kind, name))
@@ -200,17 +217,23 @@ export default function activate(orca: OrcaWorkerApi): void {
   handle('reset.check', async ({ root, target }) => checkReset(await gitFor(root), root, target))
 
   handle('backup.delete', async ({ root, action }) => {
-    const result = await deleteBackup(await gitFor(root), action)
-    orca.panels.post('repo.changed', { root })
-    return result
+    const git = await gitFor(root)
+    return exclusive(root, async () => {
+      const result = await deleteBackup(git, action)
+      orca.panels.post('repo.changed', { root })
+      return result
+    })
   })
 
   handle('branch.check', async ({ root, name }) => checkRebaseOnto(await gitFor(root), name))
 
   handle('repo.fetch', async ({ root }) => {
-    const result = await fetchAll(await gitFor(root))
-    if (result.ok) orca.panels.post('repo.changed', { root })
-    return result
+    const git = await gitFor(root)
+    return exclusive(root, async () => {
+      const result = await fetchAll(git)
+      if (result.ok) orca.panels.post('repo.changed', { root })
+      return result
+    })
   })
 
   handle('diff.open', openDiff)

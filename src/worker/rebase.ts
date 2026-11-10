@@ -232,10 +232,7 @@ export async function runRebase(git: Git, base: string | null, plan: PlanItem[],
         'rebase', '-i', '--autostash', '--no-autosquash', '--empty=drop',
         base ?? '--root'
       ],
-      {
-        env: { GIT_SEQUENCE_EDITOR: `cp ${shQuote(todoFile)}` },
-        timeoutMs: 120_000
-      }
+      { env: { GIT_SEQUENCE_EDITOR: `cp ${shQuote(todoFile)}` } }
     )
     if (!result.ok || (await operationInProgress(git)) === 'rebase') {
       const reason = lastLines(result.stderr || result.stdout, 4)

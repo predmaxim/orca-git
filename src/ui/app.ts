@@ -1,5 +1,5 @@
 import type { ActionRequest, ActionResult, BackupDelete, BackupRequest, BranchAction, BranchActionResult, BranchRef, CommitDetails, CommitRow, LogFilter, RefsResult, RepoInfo, RepoResult, ResetCheck, RewriteKind, SelectionFile, WorkspaceChoice } from '../shared/protocol.ts'
-import { api, copyText, errorMessage, orca } from './api.ts'
+import { api, copyText, errorMessage, orca, timedOut } from './api.ts'
 import { backupBlock, suggestBackupName, type BackupBlock } from './backup.ts'
 import { buildFileTree, dirPaths, orderedFiles, renderFileTree, type FileNode } from './filetree.ts'
 import { renderBranches } from './branches.ts'
@@ -963,6 +963,11 @@ async function act(scope: Scope, action: ActionRequest | BranchAction | BackupDe
     if (action.kind === 'deleteBackup') result = await api.deleteBackup(root, action)
     else result = BRANCH_KINDS.has(action.kind) ? await api.branch(root, action as BranchAction, guard) : await api.run(root, action as ActionRequest, guard)
   } catch (error) {
+    // Orca stopped waiting, git did not: no failure to report yet. The worker posts repo.changed when it ends.
+    if (timedOut(error)) {
+      showBanner(t('stillRunning'), 'info')
+      return null
+    }
     result = { ok: false, message: errorMessage(error) }
   } finally {
     done()
@@ -1311,7 +1316,8 @@ fetchButton.addEventListener('click', async () => {
     const result = await api.fetch(repo.root)
     showBanner(result.message, result.ok ? 'success' : 'error')
   } catch (error) {
-    showBanner(errorMessage(error), 'error')
+    if (timedOut(error)) showBanner(t('stillRunning'), 'info')
+    else showBanner(errorMessage(error), 'error')
   } finally {
     fetchButton.disabled = false
   }

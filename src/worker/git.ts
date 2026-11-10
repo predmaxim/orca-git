@@ -32,6 +32,18 @@ export function lastLines(text: string, count = 6): string {
   return text.trim().split(/\r?\n/).slice(-count).join('\n')
 }
 
+/** Subcommands the worker only reads with. */
+const READ_ONLY = new Set(['check-ref-format', 'config', 'diff', 'diff-tree', 'for-each-ref', 'format-patch', 'hash-object', 'log', 'ls-files', 'ls-tree', 'remote', 'rev-list', 'rev-parse', 'show', 'show-ref', 'status', 'symbolic-ref'])
+
+/** The subcommand of `args`, past any `-c name=value` in front. */
+const subcommand = (args: string[]) => args.find((arg, i) => !arg.startsWith('-') && args[i - 1] !== '-c') ?? ''
+
+/**
+ * How long git may run before it is killed (0: never). A read is killed after 60 s; anything else may be half way
+ * through changing the repository, so it runs to the end unless the caller sets a limit (fetch, waiting on the network).
+ */
+export const timeoutFor = (args: string[], options: GitOptions = {}): number => options.timeoutMs ?? (READ_ONLY.has(subcommand(args)) ? 60_000 : 0)
+
 export function createGit(root: string, gitPath = 'git'): Git {
   // An absolute path: given a bare name, Windows starts the git.exe of the repository (the cwd) before PATH's.
   const file = resolveGit(gitPath)
@@ -46,12 +58,16 @@ export function createGit(root: string, gitPath = 'git'): Git {
           // Every message goes in with -m or -F; with the editor ":" git never waits for one.
           env: { ...env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C', GIT_EDITOR: ':', ...options.env },
           maxBuffer: 64 * 1024 * 1024,
-          timeout: options.timeoutMs ?? 60_000,
+          timeout: timeoutFor(args, options),
           windowsHide: true
         },
         (error, stdout, stderr) => {
           const code = error ? (typeof (error as any).code === 'number' ? (error as any).code : null) : 0
-          resolve({ ok: !error, code, stdout: String(stdout), stderr: String(stderr || (error && !stderr ? error.message : '')) })
+          // Killed (a signal, a time limit, the output cap) rather than refused: what it was changing may be half done.
+          const stopped = Boolean((error as any)?.signal) || (error as any)?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
+          const text = String(stderr || (error && !stopped ? error.message : ''))
+          const note = stopped ? `${text.trimEnd()}\n${t('gitStopped', { command: subcommand(args) })}`.trimStart() : text
+          resolve({ ok: !error, code, stdout: String(stdout), stderr: note })
         }
       )
     })
