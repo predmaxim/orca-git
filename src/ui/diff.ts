@@ -6,6 +6,7 @@ import { fileIcon } from './fileicons.ts'
 import { shortHash, statusName } from './format.ts'
 import { t } from '../shared/i18n.ts'
 import { highlightLines, languageFor, markRange } from './highlight.ts'
+import { findKey, withKey } from './keys.ts'
 
 export type DiffMode = 'split' | 'unified'
 
@@ -129,9 +130,9 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { dispo
   const arrow = (label: string, tip: string, run: () => void) => h('button', { class: 'tool', title: tip, 'aria-label': tip, onclick: run }, label)
   const prevFile = arrow('←', t('diffPrevFile'), () => go(index - 1))
   const nextFile = arrow('→', t('diffNextFile'), () => go(index + 1))
-  const splitButton = h('button', { class: 'tool', title: t('diffSplitTip'), onclick: () => setMode('split') }, t('diffSplit'))
-  const unifiedButton = h('button', { class: 'tool', title: t('diffUnifiedTip'), onclick: () => setMode('unified') }, t('diffUnified'))
-  const wholeButton = h('button', { class: 'tool', title: t('diffWholeFileTip'), onclick: () => setWhole(!wholeFile) }, t('diffWholeFile'))
+  const splitButton = h('button', { class: 'tool', title: withKey(t('diffSplitTip'), 'split'), onclick: () => setMode('split') }, t('diffSplit'))
+  const unifiedButton = h('button', { class: 'tool', title: withKey(t('diffUnifiedTip'), 'unified'), onclick: () => setMode('unified') }, t('diffUnified'))
+  const wholeButton = h('button', { class: 'tool', title: withKey(t('diffWholeFileTip'), 'wholeFile'), onclick: () => setWhole(!wholeFile) }, t('diffWholeFile'))
   const view = h(
     'div',
     { class: 'diff-view' },
@@ -248,7 +249,12 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { dispo
     if ((event.altKey && event.key === 'ArrowUp') || (plain && event.key === 'ArrowLeft')) go(index - 1)
     else if ((event.altKey && event.key === 'ArrowDown') || (plain && event.key === 'ArrowRight')) go(index + 1)
     else if (event.key === 'F7') jump(event.shiftKey ? -1 : 1)
-    else return
+    else {
+      const key = findKey(event, ['diff'])?.id
+      if (key === 'split' || key === 'unified') setMode(key)
+      else if (key === 'wholeFile') setWhole(!wholeFile)
+      else return
+    }
     event.preventDefault()
   }
 
