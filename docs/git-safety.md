@@ -92,5 +92,6 @@ Test names below are from `src/worker/safety.test.ts` unless a file is named; `g
 - Reset (and restore to a backup) moves the branch away from commits a remote branch already holds without a pushed warning; the commits stay on the remote.
 - Pushed means "a remote-tracking branch holds it": a push from another machine that was not fetched is not seen.
 - A bisect in progress is not treated as an operation in progress.
-- A checkout target that looks like an abbreviated hash but is no branch name is resolved by git as a commit and checked out detached.
+- Existing branches whose names start with `refs/` cannot be checked out, renamed or deleted from the panel (the name check refuses them); a terminal still can.
+- A file staged and then edited again comes back from a rewrite, merge or rebase onto with only its work-tree version: git's autostash does not keep the staged one. The message says the staging was lost.
 - The patch path is checked, then written: the file itself is opened so that it never replaces or follows a link made in between, but a folder of the path swapped for a link in between is not caught.
