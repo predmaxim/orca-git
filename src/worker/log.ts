@@ -80,7 +80,8 @@ export function logArgs(filter: LogFilter): string[] {
 }
 
 export async function readLogPage(git: Git, filter: LogFilter, skip: number, limit: number): Promise<LogPage> {
-  const result = await git.run(['log', '-z', `--format=${LOG_FORMAT}`, `--skip=${skip}`, `-n${limit + 1}`, ...logArgs(filter)])
+  // --encoding=UTF-8 here and below: i18n.logOutputEncoding would garble the text, or (UTF-16) every field.
+  const result = await git.run(['log', '-z', '--encoding=UTF-8', `--format=${LOG_FORMAT}`, `--skip=${skip}`, `-n${limit + 1}`, ...logArgs(filter)])
   // An empty repository (no HEAD yet) is an empty log, not an error.
   if (!result.ok) {
     if (!(await readHead(git)).hash) return { commits: [], hasMore: false }
@@ -91,7 +92,7 @@ export async function readLogPage(git: Git, filter: LogFilter, skip: number, lim
   if (hasMore) commits.length = limit
   const text = filter.text?.trim()
   if (skip === 0 && text && isHashLike(text)) {
-    const found = await git.run(['log', '-z', '-1', '--decorate=full', `--format=${LOG_FORMAT}`, `${text}^{commit}`, '--'])
+    const found = await git.run(['log', '-z', '--encoding=UTF-8', '-1', '--decorate=full', `--format=${LOG_FORMAT}`, `${text}^{commit}`, '--'])
     const exact = found.ok ? parseLog(found.stdout)[0] : undefined
     if (exact && !commits.some((c) => c.hash === exact.hash)) commits.unshift(exact)
   }
@@ -137,7 +138,7 @@ export async function readRefs(git: Git): Promise<RefsResult> {
       'refs/tags'
     ]),
     readHead(git),
-    git.run(['log', '--branches', '--remotes', '--format=%an', '-n5000']),
+    git.run(['log', '--encoding=UTF-8', '--branches', '--remotes', '--format=%an', '-n5000']),
     git.run(['config', 'user.name'])
   ])
   const names = new Set<string>()
@@ -169,7 +170,7 @@ export function parseNameStatus(stdout: string): FileChange[] {
 
 export async function readDetails(git: Git, hash: string): Promise<CommitDetails> {
   assertRevision(hash)
-  const show = await git.out(['show', '-s', '-z', '--format=%H%x00%P%x00%an%x00%ae%x00%at%x00%cn%x00%ce%x00%ct%x00%B', hash, '--'])
+  const show = await git.out(['show', '-s', '-z', '--encoding=UTF-8', '--format=%H%x00%P%x00%an%x00%ae%x00%at%x00%cn%x00%ce%x00%ct%x00%B', hash, '--'])
   const [full, parents, author, email, at, committer, committerEmail, ct, message = ''] = show.split('\0')
   const parentList = parents ? parents.split(' ').filter(Boolean) : []
   const diff = parentList.length > 1

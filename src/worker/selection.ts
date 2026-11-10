@@ -29,7 +29,8 @@ export async function readSelectionFiles(git: Git, hashes: string[]): Promise<Se
     throw new Error(t('invalidSelection'))
   }
   const order = await oldestFirst(git, hashes)
-  const log = await git.out(['log', '--no-walk=unsorted', '--format=%H%x00%P', '-z', '--name-status', '-M', '--root', '--diff-merges=first-parent', ...order, '--'])
+  // --encoding=UTF-8: under i18n.logOutputEncoding=UTF-16 git would print even the hashes in UTF-16.
+  const log = await git.out(['log', '--no-walk=unsorted', '--encoding=UTF-8', '--format=%H%x00%P', '-z', '--name-status', '-M', '--root', '--diff-merges=first-parent', ...order, '--'])
   const entries = new Map<string, Entry>()
   // Per commit, in `order`: `<hash>\0<parents>\0`, then a newline and `<status>\0<path>\0` (two paths for a rename or copy) per file.
   // Only NUL separates: a path can hold any other byte.

@@ -26,8 +26,8 @@ export async function formatPatch(git: Git, hashes: string[]): Promise<{ text: s
     .map((line) => line.split(' '))
   if (order.some((ids) => ids.length > 2)) throw new Error(t('mergeNoPatch'))
   const parts: string[] = []
-  for (const [hash] of order) parts.push(await git.out(['format-patch', '--stdout', '--binary', '--no-signature', '-1', hash, '--']))
-  const subject = order.length === 1 ? (await git.out(['log', '-1', '--format=%s', order[0][0], '--'])).trim() : ''
+  for (const [hash] of order) parts.push(await git.out(['format-patch', '--stdout', '--encoding=UTF-8', '--binary', '--no-signature', '-1', hash, '--']))
+  const subject = order.length === 1 ? (await git.out(['log', '-1', '--encoding=UTF-8', '--format=%s', order[0][0], '--'])).trim() : ''
   return { text: parts.join(''), name: order.length === 1 ? `${slug(subject)}.patch` : `${order.length}-commits.patch` }
 }
 

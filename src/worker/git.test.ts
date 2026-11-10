@@ -10,6 +10,7 @@ import { parseLog, readDetails, readLogPage, readRefs } from './log.ts'
 import { readFileDiff } from './diff.ts'
 import { createPatch } from './patch.ts'
 import { buildTodo, emptyOption } from './rebase.ts'
+import { readSelectionFiles } from './selection.ts'
 
 const dirs: string[] = []
 after(() => dirs.forEach((dir) => rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })))
@@ -200,6 +201,39 @@ test('text in a commit, an author name or a config value cannot forge a log row,
   assert.deepEqual(parseLog(row(crafted, 'real') + row('x'.repeat(40), 'not a hash') + row(crafted, 'again')).map((c) => c.subject), ['real'])
 })
 
+test('a log output encoding other than UTF-8 neither garbles nor hides text, and a rewrite writes messages back intact', async () => {
+  for (const encoding of ['cp1251', 'UTF-16']) {
+    const { root } = repo(1)
+    const add = (file: string, message: string) => {
+      writeFileSync(join(root, file), `${file}\n`)
+      sh(root, 'add', '.')
+      sh(root, 'commit', '-qm', message)
+      return sh(root, 'rev-parse', 'HEAD')
+    }
+    const a = add('a.txt', 'Исправить ошибку')
+    const b = add('b.txt', 'Добавить тест\n\nТело')
+    sh(root, 'config', 'i18n.logOutputEncoding', encoding)
+    const git = createGit(root)
+    assert.deepEqual((await readLogPage(git, {}, 0, 50)).commits.map((c) => c.subject), ['Добавить тест', 'Исправить ошибку', 'c1'], encoding)
+    assert.equal((await readDetails(git, b)).message, 'Добавить тест\n\nТело', encoding)
+    assert.deepEqual((await readRefs(git)).users, ['Tester'], encoding)
+    assert.deepEqual((await readSelectionFiles(git, [b])).map((f) => f.path), ['b.txt'], encoding)
+    const patch = await createPatch(git, root, [b])
+    assert.ok(patch.ok && patch.text?.includes('\n\nТело\n'), encoding)
+    const check = await checkRewrite(git, 'squash', [a, b])
+    assert.deepEqual(check.ok && check.commits.map((c) => c.message), ['Исправить ошибку', 'Добавить тест\n\nТело'], encoding)
+    const result = await runAction(git, { kind: 'rebase', plan: [{ hash: a, action: 'pick' }, { hash: b, action: 'squash' }] })
+    assert.equal(result.ok, true, `${encoding}: ${result.message}`)
+    assert.equal(sh(root, '-c', 'i18n.logOutputEncoding=UTF-8', 'log', '-1', '--format=%B'), 'Исправить ошибку\n\nДобавить тест\n\nТело', encoding)
+  }
+  // The worker writes messages in UTF-8: i18n.commitEncoding must not label them as anything else.
+  const { root, hashes } = repo(1)
+  sh(root, 'config', 'i18n.commitEncoding', 'cp1251')
+  const reworded = await runAction(createGit(root), { kind: 'reword', hash: hashes[0], message: 'Новое сообщение' })
+  assert.equal(reworded.ok, true, reworded.message)
+  assert.equal(sh(root, 'log', '-1', '--encoding=UTF-8', '--format=%B'), 'Новое сообщение')
+})
+
 test('the empty-commit stop is spelled for the git version: stop from 2.45, ask before or when unknown', () => {
   const cases: Array<[string, string]> = [
     ['git version 2.56.0', '--empty=stop'],
@@ -281,5 +315,5 @@ test('create patch exports the selected commits oldest first, applies cleanly an
 test('squash and reword todo lines amend with the configured git executable', () => {
   const hash = 'a'.repeat(40)
   const todo = buildTodo([{ hash, action: 'reword', message: 'New' }], new Map(), () => '/tmp/message.txt', '/opt/my git/bin/git')
-  assert.ok(todo.includes(`exec '/opt/my git/bin/git' commit --amend`), todo)
+  assert.ok(todo.includes(`exec '/opt/my git/bin/git' -c i18n.commitEncoding=UTF-8 commit --amend`), todo)
 })

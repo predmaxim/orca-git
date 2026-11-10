@@ -16,7 +16,8 @@ const HASH = /^[0-9a-f]{40}$/
 
 export async function readFirstParentHistory(git: Git, limit = HISTORY_LIMIT): Promise<HistoryEntry[]> {
   // -z ends each record with NUL, and NUL ends each field: no commit message, name or path can hold one.
-  const fields = (await git.out(['log', '-z', '--first-parent', '--format=%H%x00%P%x00%s%x00%B', `-n${limit}`, 'HEAD', '--'])).split('\0')
+  // --encoding=UTF-8: i18n.logOutputEncoding would garble the messages a rewrite writes back, or (UTF-16) hide them.
+  const fields = (await git.out(['log', '-z', '--encoding=UTF-8', '--first-parent', '--format=%H%x00%P%x00%s%x00%B', `-n${limit}`, 'HEAD', '--'])).split('\0')
   const entries: HistoryEntry[] = []
   for (let i = 0; i + 4 <= fields.length; i += 4) {
     const [hash, parents, subject, message] = fields.slice(i, i + 4)
@@ -119,7 +120,8 @@ export function buildTodo(
     if (final !== undefined) {
       if (!final.trim()) throw new Error(t('commitMessageEmpty'))
       // As `git commit -F` cleans up: a line that starts with # (an issue number) is part of the message, not a comment.
-      lines.push(`exec ${shQuote(gitBin)} commit --amend --allow-empty --no-verify --cleanup=whitespace -F ${shQuote(writeMessage(final))}`)
+      // The message file is UTF-8: i18n.commitEncoding must not label it as anything else.
+      lines.push(`exec ${shQuote(gitBin)} -c i18n.commitEncoding=UTF-8 commit --amend --allow-empty --no-verify --cleanup=whitespace -F ${shQuote(writeMessage(final))}`)
     }
     group = null
   }
@@ -251,6 +253,8 @@ export async function runRebase(git: Git, base: string | null, plan: PlanItem[],
         '-c', 'rebase.updateRefs=false',
         '-c', 'rebase.missingCommitsCheck=ignore',
         '-c', 'advice.waitingForEditor=false',
+        // git writes its own todo list in the log output encoding, and cannot read it back in UTF-16.
+        '-c', 'i18n.logOutputEncoding=UTF-8',
         // A commit that becomes empty stops the rebase (then aborted): dropped, the next amend or fixup would rewrite the commit below it.
         'rebase', '-i', '--autostash', '--no-autosquash', empty,
         base ?? '--root'
