@@ -141,15 +141,22 @@ keeps them all.
   an existing ref folder (`backup/main` and `backup/main/x` cannot both exist).
 - A reset first checks the work tree. When tracked files have uncommitted changes, a hard reset can
   also save them to the stash (`git stash create`, then `git stash store`; the work tree is not
-  touched). The hard reset is still confirmed, and both dialogs list the untracked files it would
-  overwrite, ignored ones included: files at a path the target tracks and HEAD does not (or inside a
-  folder at such a path), files named like a folder the target needs, and the same inside a nested
-  repository of their own. Git does not list those, so the plugin checks each folder on disk without
-  following links: a file or link standing where the target needs a folder is listed by its own path.
-  The stash does not keep them. A nested repository the reset deletes whole (the target has a file at
-  its path or at a folder holding it) is listed apart, first and in bold: its own history goes with
-  it, and neither the backup nor the stash keeps it. A file created after the dialog opened is not
-  listed.
+  touched). The hard reset is still confirmed, and both dialogs list what it would destroy that the
+  stash does not keep. The check compares the target with the index and the work tree
+  (`git diff <target>`), so it also covers tracked files deleted or replaced with a folder. Listed:
+  untracked files, ignored ones included, at a path the target has and the index or work tree lacks
+  (or inside a folder there), files named like a folder the target needs, and the same inside a
+  nested repository of their own, where git does not look: there the plugin checks each folder on
+  disk without following links, and a file or link standing where the target needs a folder is
+  listed by its own path. First and in bold come the repositories (folders holding `.git`) inside a
+  folder the target replaces with a file, at any depth: a submodule the target turns into a file, a
+  tracked folder with its own `.git`, or one deeper in a plain folder. The reset deletes them whole,
+  with their files and any history kept in them; neither the backup nor the stash keeps them. The
+  search reads at most 10,000 folder entries and never follows links; a folder it cannot finish is
+  named in bold as not fully checked rather than passed. A folder where the target has a submodule
+  is kept by the reset and not listed. Not listed: a file created after the dialog opened, and, with
+  `submodule.recurse=true` in the git config, uncommitted changes inside submodules, which the reset
+  then also discards.
 - The banner names the backup and offers Undo and **Show Backup**, which opens its folder in the branch
   tree.
 - Backup branches sit in the `backup/` folder of the branch tree, backup tags among the tags. Their menu
