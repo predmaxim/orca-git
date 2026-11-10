@@ -870,6 +870,30 @@ test('create patch saves only inside the repository, outside its .git, and never
   assert.equal(readFileSync(join(w.root, 'a.txt'), 'utf8'), 'main\n')
 })
 
+test('create patch refuses the git dir under a name other than .git', async () => {
+  // A git dir inside the work tree under another name, as NTFS also allows with .git. or GIT~1: no part of the path is .git.
+  const root = tempDir('git-log-safety-gitdir-')
+  sh(root, 'init', '-q', '-b', 'main', '--separate-git-dir', join(root, 'meta'))
+  sh(root, 'config', 'user.name', 'Tester')
+  sh(root, 'config', 'user.email', 'tester@example.com')
+  sh(root, 'config', 'commit.gpgsign', 'false')
+  writeFileSync(join(root, 'a.txt'), '1\n')
+  sh(root, 'add', 'a.txt')
+  sh(root, 'commit', '-q', '-m', 'c1')
+  const git = createGit(root)
+  const hash = sh(root, 'rev-parse', 'HEAD')
+  const config = readFileSync(join(root, 'meta', 'config'), 'utf8')
+  for (const path of ['meta/config', 'meta/x.patch', 'meta/new/x.patch', 'meta/refs/heads/x.patch']) {
+    for (const overwrite of [false, true]) {
+      const result = await createPatch(git, root, [hash], path, overwrite)
+      assert.equal(result.ok, false, `${path}: ${result.ok ? result.path : result.reason}`)
+    }
+  }
+  assert.equal(readFileSync(join(root, 'meta', 'config'), 'utf8'), config)
+  assert.deepEqual(['x.patch', 'new', 'refs/heads/x.patch'].filter((name) => existsSync(join(root, 'meta', name))), [])
+  assert.equal((await createPatch(git, root, [hash], 'out/c1.patch')).ok, true)
+})
+
 test('create patch refuses a FIFO or another file that is not a regular one, without blocking', async () => {
   const w = world()
   try {
