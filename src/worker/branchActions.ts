@@ -124,7 +124,8 @@ async function returnAutostash(git: Git): Promise<string | null> {
 export async function fetchAll(git: Git): Promise<ActionResult> {
   const remotes = await git.run(['remote'])
   if (!remotes.ok || !remotes.stdout.trim()) return { ok: false, message: t('noRemotes') }
-  const result = await git.run(['fetch', '--all'], { timeoutMs: NETWORK_TIMEOUT_MS })
+  // In parallel, so a kill takes the per-remote fetches with it; one by one they would go on writing refs.
+  const result = await git.run(['-c', 'fetch.parallel=0', 'fetch', '--all'], { timeoutMs: NETWORK_TIMEOUT_MS })
   if (result.ok) return { ok: true, message: t('fetched') }
   const reason = lastLines(result.stderr, 4)
   return { ok: false, message: `${t('fetchFailed')}${reason ? `\n${reason}` : ''}` }
