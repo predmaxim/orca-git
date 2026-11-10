@@ -65,8 +65,9 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   opens the menu of what is under the cursor (on a folder row Space opens or closes it). A letter
   whose item is greyed out says why, as the menu's tooltip does; one the menu leaves out says it does
   not apply.
-  Every letter that changes the repository asks first: Cherry-Pick, Revert, Merge, Undo Commit, Fixup,
-  Drop and Rebase onto get a confirmation (also from the menu), the others open their own dialog.
+  A letter that changes the repository asks first: Cherry-Pick, Revert, Merge, Undo Commit, Fixup, Drop
+  and Rebase onto get a confirmation (also from the menu), the others open their own dialog, except
+  Checkout, which asks only when uncommitted changes are in the way (see below).
   - Anywhere in the panel: `1` `2` `3` `4` go to Branches, Commits, Files and Details (a folded
     section opens first); `0` brings up the Diff tab as it was left (or, if the repository has none
     yet, opens the current file of the selection); `Shift+Z` folds or unfolds the current section;
@@ -107,6 +108,8 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
     target would overwrite into a new stash named `git-log: <from> → <to>, <time>`, then switches;
     **Switch with Changes** takes them along as git does, only when nothing would be lost (an ignored
     file where the target puts one is deleted by git without asking, so that case needs the stash).
+    A repository of its own (a clone, not a submodule) where the target puts files refuses the checkout:
+    git would overwrite or delete what is in it, and no stash can hold it.
   - Reset Current Branch to Here… (soft / mixed / hard / keep), Revert Commits, Undo Commit
   - Edit Commit Message…, Fixup, Squash Commits…, Drop Commits, Interactively Rebase from Here…
   - New Branch…, New Tag…

@@ -3,7 +3,7 @@ import { lstatSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CheckoutRisk } from '../shared/protocol.ts'
 import { t } from '../shared/i18n.ts'
-import { editedFiles, realFile, untrackedAt } from './backup.ts'
+import { editedFiles, foundAt, realFile, untrackedAt } from './backup.ts'
 import { lastLines, type Git } from './git.ts'
 import { readHead } from './log.ts'
 
@@ -41,7 +41,8 @@ function notFolder(path: string): boolean {
 /**
  * What moving HEAD to `commit` (40 hex) would touch, with full lists; null when that is nothing, or `commit` is HEAD's
  * own. Edits git hides from status (files marked assume-unchanged or skip-worktree, inside submodules) are left out:
- * `git switch` refuses or leaves them alone itself.
+ * `git switch` refuses or leaves them alone itself. Throws, before anything changes, when a nested repository stands
+ * where the target writes: git looks neither for its files nor into it, and no stash can hold it.
  */
 export async function checkoutRisk(git: Git, commit: string): Promise<CheckoutRisk | null> {
   const head = (await readHead(git)).hash
@@ -52,7 +53,14 @@ export async function checkoutRisk(git: Git, commit: string): Promise<CheckoutRi
   const differ = new Set(split(await git.out(['diff', '--name-only', '-z', '--no-renames', from, commit, '--'])))
   const conflicts = changed.filter((path) => differ.has(path))
   // Where the target writes a file: that path, and each folder of it that is not a folder on disk now.
-  const written = split(await git.out(['diff', '--name-only', '-z', '--no-renames', '--diff-filter=d', from, commit, '--']))
+  // `:<old mode> <new mode> <old> <new> <status>`, then the path; a gitlink (160000) is a submodule git moves itself.
+  const raw = (await git.out(['diff', '-z', '--raw', '--no-renames', '--diff-filter=d', from, commit, '--'])).split('\0')
+  const written: string[] = []
+  const gitlinks = new Set<string>()
+  for (let i = 0; i + 1 < raw.length; i += 2) {
+    written.push(raw[i + 1])
+    if (raw[i].split(' ')[1] === '160000') gitlinks.add(raw[i + 1])
+  }
   const places = new Set(written)
   for (const path of written) {
     for (let i = path.indexOf('/'); i > 0; i = path.indexOf('/', i + 1)) {
@@ -62,6 +70,17 @@ export async function checkoutRisk(git: Git, commit: string): Promise<CheckoutRi
   const list = [...places]
   const untracked = list.length ? await untrackedAt(git, ['--exclude-standard'], list) : []
   const ignored = list.length ? await untrackedAt(git, ['-i', '--exclude-standard'], list) : []
+  // A repository at or above a path the target writes, or one git lists (as `name/`) where it writes.
+  const repositories = new Set([...untracked, ...ignored].filter((path) => path.endsWith('/')).map((path) => path.slice(0, -1)))
+  for (const path of written.filter((path) => !gitlinks.has(path))) {
+    const parts = path.split('/')
+    for (let i = 1; i <= parts.length; i++) {
+      const at = foundAt(join(git.root, ...parts.slice(0, i)))
+      if (at === 'repository') repositories.add(parts.slice(0, i).join('/'))
+      if (at !== 'folder') break
+    }
+  }
+  if (repositories.size) throw new Error(t('repositoryInTheWay', { paths: [...repositories].sort().join(', ') }))
   if (!changed.length && !untracked.length && !ignored.length) return null
   return { changed, conflicts, untracked, ignored, carry: !conflicts.length && !untracked.length && !ignored.length, more: 0 }
 }
@@ -98,23 +117,24 @@ const stashTop = async (git: Git) => (await git.run(['rev-parse', '--verify', '-
  * Moves into one new stash, named `git-log: <from> → <to>, <local time>`: the changes of tracked files, every
  * untracked file, and the ignored files in the target's way (`risk`, full lists); other ignored files stay.
  */
-export async function stashForCheckout(git: Git, risk: CheckoutRisk, from: string, to: string): Promise<{ hash: string; name: string }> {
+export async function stashForCheckout(git: Git, risk: CheckoutRisk, from: string, to: string): Promise<{ hash: string; name: string } | null> {
   const name = `git-log: ${from} → ${to}, ${stamp(new Date())}`
   const before = await stashTop(git)
   let result
   if (!risk.ignored.length && !(await hiddenEdits(git))) result = await git.run(['stash', 'push', '--include-untracked', '-m', name])
   else {
     // A list of paths: --all takes ignored files too, but only those it names, and the stash puts back only the listed
-    // files, never a hidden edit. The paths are literal, never globs or pathspec magic.
+    // files, never a hidden edit. Each is literal, never a glob or pathspec magic; an empty list would mean the whole
+    // tree, so with nothing listed there is no stash (what is left, a staged deletion, goes along with the checkout).
     // shortcut: git stash stages the listed paths with `git add`, which refuses one gone from both the index and the
     // disk, so a staged deletion (or a rename's old path) is left out and stays staged, carried along by the checkout;
     // nothing is lost. Upgrade if that mix (with ignored files in the way or hidden edits) ever matters.
     const { gone } = statusPaths(await git.out(STATUS))
     const untracked = split(await git.out(['ls-files', '-z', '-o', '--exclude-standard']))
     const paths = [...new Set([...risk.changed.filter((path) => !gone.has(path)), ...untracked, ...risk.ignored])]
+    if (!paths.length) return null
     result = await git.run(['stash', 'push', '--all', '-m', name, '--pathspec-from-file=-', '--pathspec-file-nul'], {
-      env: { GIT_LITERAL_PATHSPECS: '1' },
-      input: paths.join('\0')
+      input: paths.map((path) => `:(literal)${path}`).join('\0')
     })
   }
   const hash = await stashTop(git)

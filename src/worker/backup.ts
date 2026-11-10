@@ -91,7 +91,7 @@ const present = (path: string) => {
 }
 
 /** What is at `path`, a link counted as a file and never followed; a nested repository is a real folder holding `.git`. */
-function foundAt(path: string): 'nothing' | 'file' | 'folder' | 'repository' {
+export function foundAt(path: string): 'nothing' | 'file' | 'folder' | 'repository' {
   try {
     if (!lstatSync(path).isDirectory()) return 'file'
   } catch {

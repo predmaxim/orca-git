@@ -246,6 +246,63 @@ test('a dirty submodule is not a change: git leaves it alone', async () => {
   assert.equal(read(root, 'sm/s.txt'), 'mine\n')
 })
 
+test('a hidden edit with only a staged deletion to stash: nothing is stashed, the edit and ignored files stay', async () => {
+  const root = newRepo((r) => write(r, 'cfg.txt', 'base\n'))
+  sh(root, 'update-index', '--assume-unchanged', 'cfg.txt')
+  write(root, 'cfg.txt', 'mine\n')
+  sh(root, 'rm', '-q', 'same.txt')
+  write(root, 'node_modules/big', 'ignored\n')
+  const result = await runAction(createGit(root), { ...toTopic, stash: true })
+  assert.equal(result.ok, true, result.message)
+  assert.equal(result.stash, undefined)
+  assert.equal(sh(root, 'stash', 'list'), '')
+  assert.equal(read(root, 'cfg.txt'), 'mine\n')
+  assert.equal(read(root, 'node_modules/big'), 'ignored\n')
+})
+
+test('a nested repository where the target writes: refused before anything changes', async () => {
+  for (const ignored of [true, false]) {
+    const root = newRepo()
+    // The target writes vendor/lib/x.txt; vendor/lib is a clone of its own, with an uncommitted file there.
+    sh(root, 'switch', '-q', 'topic')
+    write(root, 'vendor/lib/x.txt', 'T\n')
+    sh(root, 'add', '-f', 'vendor/lib/x.txt')
+    sh(root, 'commit', '-q', '-m', 'vendor')
+    sh(root, 'switch', '-q', 'main')
+    if (ignored) write(root, '.git/info/exclude', 'vendor/\n')
+    write(root, 'vendor/lib/x.txt', 'NESTED UNCOMMITTED\n')
+    sh(join(root, 'vendor', 'lib'), 'init', '-q')
+    write(root, 'same.txt', 'mine\n')
+    for (const flags of [{}, { stash: true }, { carry: true }]) {
+      const result = await runAction(createGit(root), { ...toTopic, ...flags })
+      assert.equal(result.ok, false, `${ignored} ${JSON.stringify(flags)}`)
+      assert.equal(result.atRisk, undefined)
+      assert.match(result.message, /vendor\/lib/)
+      assert.equal(branch(root), 'main')
+      assert.equal(read(root, 'vendor/lib/x.txt'), 'NESTED UNCOMMITTED\n')
+      assert.equal(read(root, 'same.txt'), 'mine\n')
+      assert.equal(sh(root, 'stash', 'list'), '')
+    }
+  }
+})
+
+test('stash is refused before it is made when git would refuse the move anyway', async () => {
+  const root = newRepo()
+  const elsewhere = mkdtempSync(join(tmpdir(), 'git-log-wt-'))
+  dirs.push(elsewhere)
+  rmSync(elsewhere, { recursive: true })
+  sh(root, 'worktree', 'add', '-q', elsewhere, 'topic')
+  write(root, 'same.txt', 'mine\n')
+  const busy = await runAction(createGit(root), { ...toTopic, stash: true })
+  assert.equal(busy.ok, false)
+  assert.ok(busy.message.includes(elsewhere), busy.message)
+  const taken = await runAction(createGit(root), { kind: 'branch', hash: sh(root, 'rev-parse', 'topic'), name: 'topic', checkout: true, stash: true })
+  assert.equal(taken.ok, false)
+  assert.equal(sh(root, 'stash', 'list'), '')
+  assert.equal(read(root, 'same.txt'), 'mine\n')
+  assert.equal(branch(root), 'main')
+})
+
 test('trimRisk keeps 50 paths of each list and counts the rest', () => {
   const many = Array.from({ length: 60 }, (_, i) => `f${i}`)
   const trimmed = trimRisk({ changed: many, conflicts: [], untracked: many.slice(0, 5), ignored: [], carry: true, more: 0 })

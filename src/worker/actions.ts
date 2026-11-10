@@ -1,3 +1,5 @@
+import { realpathSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type { ActionRequest, ActionResult, CheckoutRisk, CheckResult, RewriteKind } from '../shared/protocol.ts'
 import { checkoutRisk, stashForCheckout, trimRisk } from './checkout.ts'
 import { lastLines, type Git } from './git.ts'
@@ -216,7 +218,7 @@ class StashKept extends Error {
  * the request says, into a new stash (`stash: true`) or along with git (`carry: true`, refused when anything would be
  * lost). Neither said: throws CheckoutAtRisk, so the panel asks. Resolves to the stash it made, if any.
  */
-async function putAside(git: Git, action: { stash?: unknown; carry?: unknown }, ref: string, to: string) {
+async function putAside(git: Git, action: { stash?: unknown; carry?: unknown }, ref: string, to: string, newBranch?: string) {
   const commit = (await git.run(['rev-parse', '--verify', '-q', `${ref}^{commit}`])).stdout.trim()
   // An unknown target: the checkout itself says so.
   const risk = HASH.test(commit) ? await checkoutRisk(git, commit) : null
@@ -226,8 +228,25 @@ async function putAside(git: Git, action: { stash?: unknown; carry?: unknown }, 
     if (!risk.carry) throw new Error(t('carryRefused'))
     return null
   }
+  // What git refuses whatever the files hold, said before the changes go into the stash rather than after.
+  if (newBranch !== undefined && (await git.run(['show-ref', '--verify', '--quiet', `refs/heads/${newBranch}`])).ok) {
+    throw new Error(t('localBranchExists', { name: newBranch }))
+  }
+  if (newBranch === undefined && ref.startsWith('refs/heads/')) {
+    const where = (await git.out(['for-each-ref', '--format=%(worktreepath)', ref])).trim()
+    if (where && !samePath(where, git.root)) throw new Error(t('branchInWorktree', { name: ref.slice(11), path: where }))
+  }
   const head = await readHead(git)
   return stashForCheckout(git, risk, head.branch ?? head.hash?.slice(0, 8) ?? 'HEAD', to)
+}
+
+/** Whether two folders are one, links resolved. */
+function samePath(a: string, b: string): boolean {
+  try {
+    return realpathSync(a) === realpathSync(b)
+  } catch {
+    return resolve(a) === resolve(b)
+  }
 }
 
 /** Runs the command that moves HEAD; when it fails after a stash, the error names the stash. */
@@ -261,7 +280,7 @@ async function perform(git: Git, action: ActionRequest): Promise<string | Warned
           throw new Error(t('notBranchOrCommit', { name: String(track) }))
         }
         const name = await assertName(git, target, 'branch')
-        const stashed = await putAside(git, action, track, name)
+        const stashed = await putAside(git, action, track, name, name)
         // git branch checks the tracking before it writes; `switch --create --track` would update the index and files
         // first, then fail on a ref no remote's fetch refspec maps and leave the remote branch staged on HEAD.
         return moveWith(stashed, async () => {
@@ -287,7 +306,7 @@ async function perform(git: Git, action: ActionRequest): Promise<string | Warned
       // Exactly true, as main.ts's onHead reads it: only then was the HEAD the dialog showed checked.
       const checkout = action.checkout === true
       if (checkout) await guardLeaving(git, action.leave, hash)
-      const stashed = checkout ? await putAside(git, action, hash, name) : null
+      const stashed = checkout ? await putAside(git, action, hash, name, name) : null
       // <hash>^{commit}: git checkout -b and git branch read a bare 40-hex start as a branch of that name first.
       const args = checkout ? ['checkout', '-b', name, `${hash}^{commit}`, '--'] : ['branch', name, `${hash}^{commit}`]
       return moveWith(stashed, () => git.out(args), t(checkout ? 'createdCheckedOut' : 'createdBranch', { name }))
