@@ -781,6 +781,24 @@ test('a checkout or a new branch whose target keeps the commits of a detached HE
   assert.equal(sh(w.root, 'branch', '--show-current'), 'rescue')
 })
 
+test('the banner gets git\'s own warnings, the line-ending ones as one line', async () => {
+  const w = world()
+  commit(w.root, 'a.txt', 'topic\n', 'match topic')
+  for (let i = 0; i < 8; i++) writeFileSync(join(w.root, `f${i}.txt`), 'x\n')
+  sh(w.root, 'add', '-A')
+  sh(w.root, 'commit', '-q', '-m', 'files')
+  // The default of Git for Windows: the merge's autostash warns once per file.
+  sh(w.root, 'config', 'core.autocrlf', 'true')
+  for (let i = 0; i < 8; i++) writeFileSync(join(w.root, `f${i}.txt`), 'edited\n')
+  // A hook's own output is not git's warning.
+  writeFileSync(join(w.root, '.git', 'hooks', 'post-merge'), '#!/bin/sh\necho "WARNING: node_modules out of date" >&2\n')
+  chmodSync(join(w.root, '.git', 'hooks', 'post-merge'), 0o755)
+  const result = await runBranchAction(createGit(w.root), { kind: 'merge', name: 'refs/heads/topic', tip: w.t2 })
+  assert.equal(result.ok, true, result.message)
+  assert.equal(result.gitWarnings?.length, 1, JSON.stringify(result.gitWarnings))
+  assert.match(result.gitWarnings![0], /line endings of 8 files/i)
+})
+
 test('force delete, merge and rebase onto run only while the branch is at the commit the menu showed', async () => {
   const w = world()
   // The menu showed topic at t1; it has moved to t2 since (a fetch into it, a terminal). Without a tip nothing is checked.

@@ -8,19 +8,28 @@ const MUTATING = new Set(['checkout', 'switch', 'branch', 'tag', 'reset', 'cherr
 /** Most warnings one result carries; the rest are counted. */
 const SHOWN = 5
 
-/** git's `warning:` and `Warning:` messages in `stderr`, each with the lines that continue it up to a blank line or a hint. */
+/** git starts its own warnings exactly so, at the start of a line; a hook's `WARNING:` is not one of them. */
+const WARNING = /^(warning|Warning): /
+
+/** The line-ending conversion (core.autocrlf, .gitattributes) git warns about once per file: shown as one count. */
+const LINE_ENDINGS = /\b(CR)?LF will be replaced by (CR)?LF\b/
+
+/**
+ * git's `warning: ` and `Warning: ` messages in `stderr`. A message git wraps goes on, indented or in lower case,
+ * after a line that ends without `.`, `:`, `!` or `?`; a blank line, a `hint: ` or anything else ends it.
+ */
 export function warningsIn(stderr: string): string[] {
-  const found: string[][] = []
+  const found: string[] = []
   let open = false
   for (const line of stderr.split(/\r?\n/)) {
-    const text = line.trim()
-    if (/^warning:/i.test(text)) {
-      found.push([text])
+    if (WARNING.test(line)) {
+      found.push(line.trim())
       open = true
-    } else if (!text || /^(hint|error|fatal):/i.test(text)) open = false
-    else if (open) found[found.length - 1].push(text)
+    } else if (open && /^(\s+\S|[a-z'"])/.test(line) && !/^\s*\w+: /.test(line) && !/[.:!?]$/.test(found[found.length - 1])) {
+      found[found.length - 1] += ` ${line.trim()}`
+    } else open = false
   }
-  return found.map((lines) => lines.join(' '))
+  return found
 }
 
 /**
@@ -48,7 +57,9 @@ export function noteWarnings(git: Git): { git: Git; withWarnings<R extends Actio
       }
     },
     withWarnings(result) {
-      const unique = [...new Set(found)]
+      const all = [...new Set(found)]
+      const endings = all.filter((warning) => LINE_ENDINGS.test(warning)).length
+      const unique = [...all.filter((warning) => !LINE_ENDINGS.test(warning)), ...(endings ? [t('lineEndingWarnings', { count: endings })] : [])]
       if (!result.ok || !unique.length) return result
       const shown = unique.length > SHOWN ? [...unique.slice(0, SHOWN), t('moreGitWarnings', { count: unique.length - SHOWN })] : unique
       return { ...result, gitWarnings: shown }
