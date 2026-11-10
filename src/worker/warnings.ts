@@ -46,6 +46,7 @@ export function noteWarnings(git: Git): { git: Git; withWarnings<R extends Actio
   return {
     git: {
       gitPath: git.gitPath,
+      root: git.root,
       run,
       out: async (args, options) => stdoutOf(args, await run(args, options))
     },

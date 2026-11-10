@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import type { PlanItem, RangeCommit, RewriteKind } from '../shared/protocol.ts'
 import { lastLines, type Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
@@ -160,8 +160,15 @@ export function buildTodo(
   return lines.join('\n') + '\n'
 }
 
+/**
+ * Where git keeps `name` in the git dir. No `--path-format=absolute`: git before 2.31 prints it back as one more path, and
+ * an operation in progress would go unseen. git prints the path relative to the root it runs in, or absolute; anything
+ * but exactly one path throws, so the actions that check for an operation in progress refuse rather than run blind.
+ */
 export async function gitPath(git: Git, name: string): Promise<string> {
-  return (await git.out(['rev-parse', '--path-format=absolute', '--git-path', name])).trim()
+  const lines = (await git.out(['rev-parse', '--git-path', name])).replace(/\r?\n$/, '').split(/\r?\n/)
+  if (lines.length !== 1 || !lines[0]) throw new Error(t('gitOutputUnreadable', { command: 'rev-parse' }))
+  return resolve(git.root, lines[0])
 }
 
 export async function operationInProgress(git: Git): Promise<'rebase' | 'merge' | 'cherry-pick' | 'revert' | null> {

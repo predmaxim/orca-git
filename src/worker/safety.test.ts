@@ -8,7 +8,7 @@ import type { ActionRequest, ActionResult, PlanItem } from '../shared/protocol.t
 import { checkRewrite, runAction } from './actions.ts'
 import { createBackup, deleteBackup, runGuarded } from './backup.ts'
 import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
-import { createGit, type Git } from './git.ts'
+import { createGit, stdoutOf, type Git } from './git.ts'
 import { createPatch } from './patch.ts'
 import { emptyOption, readFirstParentHistory } from './rebase.ts'
 import { describeRepo } from './repo.ts'
@@ -111,6 +111,7 @@ function recorder(root: string): { git: Git; mutations: () => string[] } {
   }
   const git: Git = {
     gitPath: real.gitPath,
+    root: real.root,
     run: (args, options) => (note(args), real.run(args, options)),
     out: (args, options) => (note(args), real.out(args, options))
   }
@@ -917,6 +918,7 @@ test('undo commit resets to the parent of the commit it checked, even when HEAD 
   }
   const racing: Git = {
     gitPath: real.gitPath,
+    root: real.root,
     run: (args, options) => (race(args), real.run(args, options)),
     out: (args, options) => (race(args), real.out(args, options))
   }
@@ -1042,6 +1044,23 @@ test('a cherry-pick that left only its todo list is reported as such, with --qui
   terminal(w.root, ['cherry-pick', w.t1])
   assert.equal((await describeRepo(git, w.root, null)).todoOnly, false)
   assert.match((await runAction(git, { kind: 'drop', hashes: [w.c2] })).message, /is in progress/)
+})
+
+test('a git that prints anything but one path for --git-path makes the operation check refuse, not pass', async () => {
+  const w = world()
+  // A merge stopped on a conflict, with the user's resolution in the file.
+  terminal(w.root, ['merge', 'topic'])
+  writeFileSync(join(w.root, 'a.txt'), 'resolved\n')
+  const before = snapshot(w.root)
+  assert.deepEqual(before.state, ['MERGE_HEAD'])
+  const real = createGit(w.root)
+  // git 2.30 prints --path-format=absolute back as one more path.
+  const run: Git['run'] = (args, options) =>
+    args.includes('--git-path') ? Promise.resolve({ ok: true, code: 0, stdout: `--path-format=absolute\n.git/${args.at(-1)}\n`, stderr: '' }) : real.run(args, options)
+  const git: Git = { ...real, run, out: async (args, options) => stdoutOf(args, await run(args, options)) }
+  const result = await runAction(git, { kind: 'reset', hash: w.c1, mode: 'hard' })
+  assert.equal(result.ok, false, result.message)
+  assert.deepEqual(snapshot(w.root), before)
 })
 
 test('git itself refuses to rename or delete the branch a terminal is rebasing', async () => {
