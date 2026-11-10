@@ -435,3 +435,19 @@ test('a second change to a repository while one is running is refused, not queue
     rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   }
 })
+
+test('a panel that shows another repository stops watching the one before', async () => {
+  const roots = [fixture(), fixture()]
+  try {
+    const worker = await mountWorker(main, { host: host(roots[0]) })
+    for (const root of roots) assert.deepEqual(await worker.request('repo.watch', { root }), { ok: true })
+    for (const root of roots) sh(root, 'commit', '-q', '--allow-empty', '-m', 'four')
+    // A watch posts 400 ms after the last change it sees.
+    await new Promise((done) => setTimeout(done, 1500))
+    const changed = worker.posts.filter((post) => post.event === 'repo.changed').map((post) => (post.payload as { root: string }).root)
+    assert.deepEqual([...new Set(changed)], [roots[1]])
+    await worker.deactivate()
+  } finally {
+    for (const root of roots) rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
+})

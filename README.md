@@ -99,7 +99,8 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   `remote.<name>.prune` and `fetch.pruneTags` in your config delete neither remote branches nor local
   tags such as backups) and reports the result in the banner. It never asks for a password: it works
   through the SSH agent and git's credential helpers.
-- Live refresh when the repository changes (commits, checkouts, fetches, rebases from a terminal).
+- Live refresh when the repository changes (commits, checkouts, fetches, rebases from a terminal). A
+  panel that moves to another repository stops watching the one before, unless another panel shows it.
 
 ## Where it shows
 

@@ -1,6 +1,6 @@
 import { appendFileSync, closeSync, constants, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import type { OrcaWorkerApi } from 'orca/worker'
+import type { OrcaWorkerApi, PanelRequestContext } from 'orca/worker'
 import { pickLocale, setLocale, t } from '../shared/i18n.ts'
 import type { ActionResult, DiffTabState, RepoResult } from '../shared/protocol.ts'
 import { checkRewrite, runAction } from './actions.ts'
@@ -19,6 +19,8 @@ import { watchRepo, type RepoWatcher } from './watch.ts'
 let orcaApi: OrcaWorkerApi
 const repos = new Map<string, Git>()
 const watchers = new Map<string, Promise<RepoWatcher | null>>()
+/** The root each panel (by its id) watches: one that shows another repository lets the old watcher go. */
+const watchedBy = new Map<string, string>()
 /** What each repository's Diff tab shows; the tab reads it when it starts and on `diff.show`. */
 const diffStates = new Map<string, DiffTabState>()
 /** Roots with a request running that changes the repository. */
@@ -160,10 +162,10 @@ export default function activate(orca: OrcaWorkerApi): void {
   orca.panels.post('worker.started', {})
 
   // Each request names the caller's language; set it before the handler runs.
-  const handle = (name: string, handler: (input: any) => unknown) =>
-    orca.panels.handle(name, (input: any) => {
+  const handle = (name: string, handler: (input: any, context: PanelRequestContext) => unknown) =>
+    orca.panels.handle(name, (input: any, context) => {
       setLocale(pickLocale(input?.locale))
-      return handler(input)
+      return handler(input, context)
     })
 
   handle('repo.resolve', async (input): Promise<RepoResult> => {
@@ -175,8 +177,14 @@ export default function activate(orca: OrcaWorkerApi): void {
 
   handle('repo.refs', async ({ root }) => readRefs(await gitFor(root)))
 
-  handle('repo.watch', async ({ root }) => {
+  handle('repo.watch', async ({ root }, { panel }) => {
     const git = await gitFor(root)
+    const previous = watchedBy.get(panel.id)
+    watchedBy.set(panel.id, root)
+    if (previous !== undefined && ![...watchedBy.values()].includes(previous)) {
+      void watchers.get(previous)?.then((w) => w?.close())
+      watchers.delete(previous)
+    }
     if (!watchers.has(root)) {
       watchers.set(
         root,
@@ -280,4 +288,5 @@ export default function activate(orca: OrcaWorkerApi): void {
 export function deactivate(): void {
   for (const watcher of watchers.values()) void watcher.then((w) => w?.close())
   watchers.clear()
+  watchedBy.clear()
 }
