@@ -111,7 +111,11 @@ installed too, turn it off so the two do not both show: `orca plugin disable ema
 `orca plugin uninstall emamalet.git-log`.
 
 Requires Orca 1.4.248 or later and `git` on the `PATH` (or set **Git executable** in the plugin
-settings). The plugin runs as a `trusted-worker`: it starts `git` with your user account.
+settings). The plugin runs as a `trusted-worker`: it starts `git` with your user account. It
+starts git by its full path: a bare name is looked up only in the absolute folders of `PATH`, never
+in the repository or through an empty or `.` entry, and a relative **Git executable** is refused, so
+a `git` or `git.exe` inside a cloned repository never runs. Variables such as `GIT_DIR` that
+would point git at another repository are removed from its environment.
 
 ### Develop
 

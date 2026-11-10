@@ -345,7 +345,10 @@ export const en = {
   invalidCommitDetail: 'Invalid commit: {hash}',
   invalidRevision: 'Invalid revision: {rev}',
   gitLogFailed: 'git log failed',
-  gitCommandFailed: 'git {command} failed'
+  gitCommandFailed: 'git {command} failed',
+  gitNotOnPath: 'No {name} in the folders of PATH (git is never looked for in the current folder or in relative PATH entries). Install git, or set Git executable in the plugin settings to its full path.',
+  gitNotRunnable: 'Git executable {path} is not a file that can be run. Set it in the plugin settings to the full path of git.',
+  gitPathRelative: 'Git executable {path} is a relative path, which would run whatever that path holds inside the repository. Set it in the plugin settings to a full path or to a bare name such as git.'
 } satisfies Record<string, Message>
 
 export const ru: Record<keyof typeof en, Message> = {
@@ -694,7 +697,10 @@ export const ru: Record<keyof typeof en, Message> = {
   invalidCommitDetail: 'Некорректный коммит: {hash}',
   invalidRevision: 'Некорректная ревизия: {rev}',
   gitLogFailed: 'git log завершился с ошибкой',
-  gitCommandFailed: 'git {command} завершился с ошибкой'
+  gitCommandFailed: 'git {command} завершился с ошибкой',
+  gitNotOnPath: 'В папках PATH нет {name} (в текущей папке и в относительных записях PATH git не ищется). Установите git или укажите в настройках плагина полный путь к нему (Git executable).',
+  gitNotRunnable: 'Git executable {path} — не файл, который можно запустить. Укажите в настройках плагина полный путь к git.',
+  gitPathRelative: 'Git executable {path} — относительный путь: он запустил бы то, что лежит по этому пути внутри репозитория. Укажите в настройках плагина полный путь или просто имя, например git.'
 }
 
 export type MessageKey = keyof typeof en

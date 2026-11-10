@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import { t } from '../shared/i18n.ts'
+import { resolveGit } from './launch.ts'
 
 export interface GitResult {
   ok: boolean
@@ -32,10 +33,12 @@ export function lastLines(text: string, count = 6): string {
 }
 
 export function createGit(root: string, gitPath = 'git'): Git {
+  // An absolute path: given a bare name, Windows starts the git.exe of the repository (the cwd) before PATH's.
+  const file = resolveGit(gitPath)
   const run = (args: string[], options: GitOptions = {}) =>
     new Promise<GitResult>((resolve) => {
       execFile(
-        gitPath,
+        file,
         ['-c', 'core.quotepath=off', '-c', 'color.ui=false', '-c', 'log.showSignature=false', ...args],
         {
           cwd: root,
@@ -51,7 +54,7 @@ export function createGit(root: string, gitPath = 'git'): Git {
       )
     })
   return {
-    gitPath,
+    gitPath: file,
     run,
     async out(args, options) {
       const result = await run(args, options)

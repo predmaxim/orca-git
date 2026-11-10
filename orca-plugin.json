@@ -41,7 +41,7 @@
       {
         "key": "gitPath",
         "title": "Git executable",
-        "description": "Path or name of the git binary used by the log.",
+        "description": "Full path of git, or a name looked up in the absolute folders of PATH (never the repository). A relative path is refused.",
         "type": "string",
         "default": "git",
         "maxLength": 1024

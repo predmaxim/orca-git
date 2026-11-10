@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { after, test } from 'node:test'
 import { checkRewrite, runAction } from './actions.ts'
 import { createGit } from './git.ts'
+import { gitCandidates, resolveGit } from './launch.ts'
 import { readDetails, readLogPage, readRefs } from './log.ts'
 import { readFileDiff } from './diff.ts'
 import { createPatch } from './patch.ts'
@@ -248,4 +249,48 @@ test('squash and reword todo lines amend with the configured git executable', ()
   const hash = 'a'.repeat(40)
   const todo = buildTodo([{ hash, action: 'reword', message: 'New' }], new Map(), () => '/tmp/message.txt', '/opt/my git/bin/git')
   assert.ok(todo.includes(`exec '/opt/my git/bin/git' commit --amend`), todo)
+})
+
+test('a git in the repository never runs, even with . or an empty entry on PATH', { skip: process.platform === 'win32' }, async () => {
+  const { root } = repo(1)
+  const marker = join(root, '.git', 'decoy-ran')
+  writeFileSync(join(root, 'git'), `#!/bin/sh\ntouch '${marker}'\n`, { mode: 0o755 })
+  const path = process.env.PATH
+  process.env.PATH = `.::${path}`
+  try {
+    const result = await createGit(root).run(['rev-parse', '--show-toplevel'])
+    assert.equal(result.ok, true, result.stderr)
+  } finally {
+    process.env.PATH = path
+  }
+  assert.equal(existsSync(marker), false)
+})
+
+test('a bare git name is looked up only in absolute PATH entries; a relative path is refused', { skip: process.platform === 'win32' }, () => {
+  const base = mkdtempSync(join(tmpdir(), 'git-path-'))
+  dirs.push(base)
+  const exe = (dir: string) => {
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'git'), '#!/bin/sh\n', { mode: 0o755 })
+    return join(dir, 'git')
+  }
+  const decoy = exe(join(base, 'repo'))
+  mkdirSync(join(base, 'empty'))
+  writeFileSync(join(base, 'empty', 'git'), 'not executable\n')
+  const real = exe(join(base, 'bin'))
+  const PATH = ['', '.', relative(process.cwd(), join(base, 'repo')), join(base, 'empty'), join(base, 'bin')].join(':')
+  assert.equal(resolveGit('git', { PATH }, 'linux'), real)
+  assert.throws(() => resolveGit('git', { PATH: `:.:${relative(process.cwd(), join(base, 'repo'))}` }, 'linux'), /PATH/)
+  assert.equal(resolveGit(decoy, {}, 'linux'), decoy)
+  assert.throws(() => resolveGit(join(base, 'missing'), { PATH }, 'linux'), /not a file that can be run/)
+  assert.throws(() => resolveGit('./git', { PATH }, 'linux'), /relative path/)
+  assert.throws(() => resolveGit('repo/git', { PATH }, 'linux'), /relative path/)
+})
+
+test('on Windows git is looked up with the .com and .exe of PATHEXT in each absolute PATH folder', () => {
+  const env = { PATH: 'C:\\Git\\cmd;;.;tools;"D:\\Quoted Dir"', PATHEXT: '.BAT;.COM;.EXE;.CMD' }
+  assert.deepEqual(gitCandidates('git', env, 'win32'), ['C:\\Git\\cmd\\git.COM', 'C:\\Git\\cmd\\git.EXE', 'D:\\Quoted Dir\\git.COM', 'D:\\Quoted Dir\\git.EXE'])
+  assert.deepEqual(gitCandidates('git.exe', env, 'win32'), ['C:\\Git\\cmd\\git.exe', 'D:\\Quoted Dir\\git.exe'])
+  assert.throws(() => resolveGit('.\\git.exe', env, 'win32'), /relative path/)
+  assert.throws(() => resolveGit('C:git.exe', env, 'win32'), /relative path/)
 })
