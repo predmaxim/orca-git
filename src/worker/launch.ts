@@ -4,19 +4,32 @@ import { tmpdir } from 'node:os'
 import { posix, win32 } from 'node:path'
 import { t } from '../shared/i18n.ts'
 
+const unquote = (entry: string, platform: string) => (platform === 'win32' ? entry.replace(/^"(.*)"$/, '$1') : entry)
+
 /**
- * Where a bare `name` is looked for, in order: the absolute PATH entries only. Empty, `.` and other relative
- * entries are skipped, so the git of the folder it runs in (a cloned repository) is never started. On Windows each
- * folder is tried with the .com and .exe of PATHEXT in its order: CreateProcess starts nothing else without a shell.
+ * Whether `path` starts at a root. On Windows only a drive (`C:\`) or UNC (`\\server\`) path does: `\tools` and `/x`
+ * hang off the current drive, and `C:x` off that drive's current folder.
+ */
+const rooted = (path: string, platform: string) => (platform === 'win32' ? /^([A-Za-z]:[\\/]|[\\/]{2}[^\\/])/.test(path) : path.startsWith('/'))
+
+/**
+ * The entries of a PATH value that start at a root. Empty, `.` and other relative entries are dropped: they name
+ * folders of wherever a program starts, which for git is the repository.
+ */
+function absoluteEntries(value: string, platform: string): string[] {
+  return value.split((platform === 'win32' ? win32 : posix).delimiter).filter((entry) => rooted(unquote(entry, platform), platform))
+}
+
+/**
+ * The files the Git executable setting may mean, in order: a full path as it is, a bare name in each absolute PATH
+ * folder. On Windows a name without an extension is tried with the .com and .exe of PATHEXT in its order, as Windows
+ * runs it: CreateProcess starts nothing else without a shell.
  */
 export function gitCandidates(name: string, env: Record<string, string | undefined>, platform: string): string[] {
   const path = platform === 'win32' ? win32 : posix
   const extensions = platform === 'win32' && !path.extname(name) ? (env.PATHEXT || '.COM;.EXE').split(';').filter((ext) => /^\.(com|exe)$/i.test(ext)) : ['']
-  return (env.PATH ?? '')
-    .split(path.delimiter)
-    .map((dir) => (platform === 'win32' ? dir.replace(/^"(.*)"$/, '$1') : dir))
-    .filter((dir) => dir && path.isAbsolute(dir))
-    .flatMap((dir) => extensions.map((ext) => path.join(dir, name + ext)))
+  const files = rooted(name, platform) ? [name] : absoluteEntries(env.PATH ?? '', platform).map((dir) => path.join(unquote(dir, platform), name))
+  return files.flatMap((file) => extensions.map((ext) => file + ext))
 }
 
 function runnable(file: string): boolean {
@@ -29,18 +42,15 @@ function runnable(file: string): boolean {
 }
 
 /**
- * The absolute path of the git the Git executable setting names: an absolute path as it is, a bare name from PATH
- * (`gitCandidates`). A relative path is refused: it would start whatever that path holds in the repository.
+ * The absolute path of the git the Git executable setting names (`gitCandidates`). A relative path is refused: it
+ * would start whatever that path holds in the repository.
  */
 export function resolveGit(setting: string, env: Record<string, string | undefined> = process.env, platform: string = process.platform): string {
-  if ((platform === 'win32' ? win32 : posix).isAbsolute(setting)) {
-    if (runnable(setting)) return setting
-    throw new Error(t('gitNotRunnable', { path: setting }))
-  }
-  if (platform === 'win32' ? /[\\/:]/.test(setting) : setting.includes('/')) throw new Error(t('gitPathRelative', { path: setting }))
+  const full = rooted(setting, platform)
+  if (!full && (platform === 'win32' ? /[\\/:]/.test(setting) : setting.includes('/'))) throw new Error(t('gitPathRelative', { path: setting }))
   const found = gitCandidates(setting, env, platform).find(runnable)
-  if (!found) throw new Error(t('gitNotOnPath', { name: setting }))
-  return found
+  if (found) return found
+  throw new Error(full ? t('gitNotRunnable', { path: setting }) : t('gitNotOnPath', { name: setting }))
 }
 
 /** Per git executable, the variables that point it at another repository (`git rev-parse --local-env-vars`). */

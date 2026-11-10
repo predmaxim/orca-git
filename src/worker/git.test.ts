@@ -330,11 +330,16 @@ test('a bare git name is looked up only in absolute PATH entries; a relative pat
 })
 
 test('on Windows git is looked up with the .com and .exe of PATHEXT in each absolute PATH folder', () => {
-  const env = { PATH: 'C:\\Git\\cmd;;.;tools;"D:\\Quoted Dir"', PATHEXT: '.BAT;.COM;.EXE;.CMD' }
-  assert.deepEqual(gitCandidates('git', env, 'win32'), ['C:\\Git\\cmd\\git.COM', 'C:\\Git\\cmd\\git.EXE', 'D:\\Quoted Dir\\git.COM', 'D:\\Quoted Dir\\git.EXE'])
-  assert.deepEqual(gitCandidates('git.exe', env, 'win32'), ['C:\\Git\\cmd\\git.exe', 'D:\\Quoted Dir\\git.exe'])
+  // \tools and /x hang off the current drive: relative too.
+  const env = { PATH: 'C:\\Git\\cmd;;.;tools;\\tools;/x;"D:\\Quoted Dir";\\\\server\\share', PATHEXT: '.BAT;.COM;.EXE;.CMD' }
+  assert.deepEqual(gitCandidates('git', env, 'win32'), ['C:\\Git\\cmd\\git.COM', 'C:\\Git\\cmd\\git.EXE', 'D:\\Quoted Dir\\git.COM', 'D:\\Quoted Dir\\git.EXE', '\\\\server\\share\\git.COM', '\\\\server\\share\\git.EXE'])
+  assert.deepEqual(gitCandidates('git.exe', env, 'win32'), ['C:\\Git\\cmd\\git.exe', 'D:\\Quoted Dir\\git.exe', '\\\\server\\share\\git.exe'])
+  // A full path without an extension is tried as Windows runs it.
+  assert.deepEqual(gitCandidates('C:\\Git\\cmd\\git', env, 'win32'), ['C:\\Git\\cmd\\git.COM', 'C:\\Git\\cmd\\git.EXE'])
+  assert.deepEqual(gitCandidates('C:\\Git\\cmd\\git.exe', env, 'win32'), ['C:\\Git\\cmd\\git.exe'])
   assert.throws(() => resolveGit('.\\git.exe', env, 'win32'), /relative path/)
   assert.throws(() => resolveGit('C:git.exe', env, 'win32'), /relative path/)
+  assert.throws(() => resolveGit('\\Git\\cmd\\git.exe', env, 'win32'), /relative path/)
 })
 
 test('only reads are killed after a time limit, unless the caller sets one', () => {
