@@ -97,7 +97,12 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
     link is refused; the file gets git's bytes as they are, and a patch with file content that is not
     UTF-8 can only be saved)
   - Checkout Revision, checkout a branch at that commit, check out a remote branch as local. Leaving a
-    detached HEAD that holds commits on no branch asks first and offers a backup branch.
+    detached HEAD that holds commits on no branch asks first and offers a backup branch. A checkout (or
+    a new branch checked out at another commit) that would touch uncommitted changes asks first and
+    lists them: **Stash and Switch** puts the changes, every untracked file and the ignored files the
+    target would overwrite into a new stash named `git-log: <from> → <to>, <time>`, then switches;
+    **Switch with Changes** takes them along as git does, only when nothing would be lost (an ignored
+    file where the target puts one is deleted by git without asking, so that case needs the stash).
   - Reset Current Branch to Here… (soft / mixed / hard / keep), Revert Commits, Undo Commit
   - Edit Commit Message…, Fixup, Squash Commits…, Drop Commits, Interactively Rebase from Here…
   - New Branch…, New Tag…

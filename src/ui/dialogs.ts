@@ -1,4 +1,4 @@
-import type { PlanItem, RangeCommit, RebaseAction, ResetCheck, ResetMode } from '../shared/protocol.ts'
+import type { CheckoutRisk, PlanItem, RangeCommit, RebaseAction, ResetCheck, ResetMode } from '../shared/protocol.ts'
 import type { BackupBlock } from './backup.ts'
 import { h, icon } from './dom.ts'
 import { closePopups } from './menu.ts'
@@ -9,6 +9,9 @@ interface Button<T> {
   label: string
   value: T
   kind?: 'primary' | 'danger'
+  disabled?: boolean
+  /** Tooltip; says why when the button is disabled. */
+  title?: string
 }
 
 interface DialogOptions<T> {
@@ -78,7 +81,7 @@ export function dialog<T>(options: DialogOptions<T>): Promise<T | null> {
       finish(button.value)
     }
     const buttons = options.buttons.map((button) =>
-      h('button', { class: `btn ${button.kind ?? ''}`, onclick: () => void press(button) }, button.label)
+      h('button', { class: `btn ${button.kind ?? ''}`, disabled: button.disabled, title: button.title, onclick: () => void press(button) }, button.label)
     )
     const main = options.buttons.findIndex((b) => b.kind)
     const onKey = (event: KeyboardEvent) => {
@@ -136,6 +139,35 @@ export async function confirm(title: string, message: string | HTMLElement | (st
     validate: () => backup?.validate() ?? null
   })
   return result === true
+}
+
+/**
+ * What a checkout from `from` to `to` would touch (`risk`), and the choice: put it in a new stash first (the
+ * default), take the changes along when git can without losing any, or cancel.
+ */
+export function askCheckout(risk: CheckoutRisk, from: string, to: string): Promise<'stash' | 'carry' | null> {
+  const conflicts = new Set(risk.conflicts)
+  const group = (label: string, paths: string[]) =>
+    paths.length ? [h('p', null, label), h('ul', { class: 'file-list mono' }, ...paths.map((path) => h('li', null, path)))] : []
+  const noCarry = t('riskNoCarry')
+  return dialog<'stash' | 'carry'>({
+    title: t('checkoutRiskTitle', { name: to }),
+    wide: true,
+    body: [
+      ...group(t('riskChanged'), risk.changed.filter((path) => !conflicts.has(path))),
+      ...group(t('riskConflicts', { name: to }), risk.conflicts),
+      ...group(t('riskUntracked'), risk.untracked),
+      ...group(t('riskIgnored'), risk.ignored),
+      risk.more ? h('p', { class: 'muted' }, t('riskMore', { count: risk.more })) : null,
+      h('p', null, t('riskStash', { name: `git-log: ${from} → ${to}` })),
+      risk.carry ? null : h('p', { class: 'muted' }, noCarry)
+    ],
+    buttons: [
+      cancel(),
+      { label: t('btnCarry'), value: 'carry', disabled: !risk.carry, title: risk.carry ? t('btnCarryTip') : noCarry },
+      { label: t('btnStashSwitch'), value: 'stash', kind: 'primary' }
+    ]
+  })
 }
 
 export async function editMessage(title: string, initial: string, ok: string, extra: HTMLElement | null = null, backup?: BackupBlock): Promise<string | null> {

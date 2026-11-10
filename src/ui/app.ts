@@ -5,7 +5,7 @@ import { lateResults } from './late.ts'
 import { buildFileTree, dirPaths, orderedFiles, renderFileTree, type FileNode } from './filetree.ts'
 import { renderBranches } from './branches.ts'
 import { renderCommitList, renderPlaceholder } from './details.ts'
-import { askName, askPatch, askRebasePlan, askReset, busy, confirm, dialog, editMessage, overwrittenWarning, pushedWarning } from './dialogs.ts'
+import { askCheckout, askName, askPatch, askRebasePlan, askReset, busy, confirm, dialog, editMessage, overwrittenWarning, pushedWarning } from './dialogs.ts'
 import { h, icon } from './dom.ts'
 import { createFilterBar } from './filters.ts'
 import { KEYS, withKey, type KeyScope } from './keys.ts'
@@ -1045,7 +1045,7 @@ async function report(root: string, action: ActionRequest | BranchAction | Backu
   const made = here && backup && result.backup ? `refs/${backup.kind === 'tag' ? 'tags' : 'heads'}/${result.backup}` : null
   const show = made ? [{ label: t('showBackup'), run: () => reveal(made) }] : []
   // git's own warnings, one per line, after the message: they say what git left behind.
-  const text = about(root, [[result.message, result.backup && t('backupMade', { name: result.backup }), result.stash && t('backupStashed', { hash: shortHash(result.stash) })].filter(Boolean).join(' '), ...(result.gitWarnings ?? [])].join('\n'))
+  const text = about(root, [[result.message, result.backup && t('backupMade', { name: result.backup }), result.backup && result.stash && t('backupStashed', { hash: shortHash(result.stash) })].filter(Boolean).join(' '), ...(result.gitWarnings ?? [])].join('\n'))
   if (result.ok) {
     if (here) {
       if (action.kind === 'rename') followBranch(action.name, action.newName)
@@ -1058,7 +1058,7 @@ async function report(root: string, action: ActionRequest | BranchAction | Backu
       ? [{ label: t('undo'), run: () => void act({ root, head: result.head, reported: true }, { kind: 'reset', hash: previous, mode: 'keep' }, t('progUndoing')).then((r) => r?.ok && showBanner(t('restoredHead', { hash: shortHash(previous) }), 'success')) }]
       : []
     showBanner(text, result.warning ? 'info' : 'success', [...undo, ...show], result.warning || Boolean(result.gitWarnings?.length))
-  } else if (afterTimeout || (!result.needsForce && !result.leaves)) showBanner(text, 'error', show)
+  } else if (afterTimeout || (!result.needsForce && !result.leaves && !result.atRisk)) showBanner(text, 'error', show)
   await refreshAll()
   return result
 }
@@ -1193,15 +1193,31 @@ async function merge(scope: Scope, ref: BranchRef): Promise<void> {
 }
 
 /**
- * Runs a checkout, or a new branch checked out. When HEAD is detached on commits no branch holds, the worker refuses
- * and names them: this confirms leaving them, with the backup offer Reset makes, and runs it again.
+ * Runs a checkout, or a new branch checked out. The worker refuses and says why until each question is answered:
+ * when HEAD is detached on commits no branch holds, this confirms leaving them, with the backup offer Reset makes;
+ * when the move would touch uncommitted changes, it asks to stash them or take them along. Then it runs it again.
  */
 async function moveHead(scope: Scope, action: Extract<ActionRequest, { kind: 'checkout' | 'branch' }>, progress: string): Promise<void> {
-  const result = await act(scope, action, progress)
-  if (!result?.leaves) return
-  const backup = await offerHeadBackup(scope)
-  const list = h('ul', { class: 'file-list mono' }, ...result.leaves.map((hash) => h('li', null, `${shortHash(hash)} ${rows[indexByHash.get(hash) ?? -1]?.subject ?? ''}`)))
-  if (await confirm(t('leaveTitle'), [result.message, list], t('btnContinue'), true, backup)) await act(scope, { ...action, leave: true }, progress, backup?.value())
+  let request = action
+  // Sent once: the worker makes the backup before it checks anything else.
+  let backup: BackupRequest | undefined
+  for (;;) {
+    const result = await act(scope, request, progress, backup)
+    backup = undefined
+    if (result?.atRisk) {
+      const from = repo?.head.branch ?? shortHash(repo?.head.hash ?? '')
+      const to = request.kind === 'branch' ? request.name : request.detach ? shortHash(request.target) : request.target
+      const choice = await askCheckout(result.atRisk, from, to)
+      if (!choice) return
+      request = { ...request, [choice]: true }
+    } else if (result?.leaves) {
+      const block = await offerHeadBackup(scope)
+      const list = h('ul', { class: 'file-list mono' }, ...result.leaves.map((hash) => h('li', null, `${shortHash(hash)} ${rows[indexByHash.get(hash) ?? -1]?.subject ?? ''}`)))
+      if (!(await confirm(t('leaveTitle'), [result.message, list], t('btnContinue'), true, block))) return
+      request = { ...request, leave: true }
+      backup = block?.value()
+    } else return
+  }
 }
 
 async function newBranch(scope: Scope, hash: string): Promise<void> {
