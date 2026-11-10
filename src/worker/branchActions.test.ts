@@ -312,6 +312,27 @@ test('fetch updates remote branches without touching the work tree', async () =>
   assert.equal(sh(first, 'rev-parse', 'HEAD'), head)
 })
 
+test('fetch keeps backup tags and remote branches whatever the prune settings say', async () => {
+  const base = mkdtempSync(join(tmpdir(), 'git-log-fetch-'))
+  dirs.push(base)
+  const bare = join(base, 'origin.git')
+  sh(base, 'init', '-q', '--bare', '-b', 'main', bare)
+  sh(base, 'clone', '-q', bare, 'first')
+  const first = join(base, 'first')
+  for (const [key, value] of [['user.name', 'Tester'], ['user.email', 'tester@example.com'], ['commit.gpgsign', 'false']]) sh(first, 'config', key, value)
+  commit(first, 'a.txt', '1\n', 'c1')
+  sh(first, 'push', '-q', 'origin', 'main', 'main:gone')
+  sh(first, 'fetch', '-q')
+  sh(bare, 'branch', '-D', 'gone')
+  // A backup tag exists only here; with these settings a plain git fetch --all deletes it and origin/gone.
+  for (const key of ['fetch.prune', 'fetch.pruneTags', 'remote.origin.prune', 'remote.origin.pruneTags']) sh(first, 'config', key, 'true')
+  sh(first, 'tag', 'backup/main-20261110-1200')
+  const result = await fetchAll(createGit(first))
+  assert.equal(result.ok, true, result.message)
+  assert.equal(hasRef(first, 'refs/tags/backup/main-20261110-1200'), true)
+  assert.equal(hasRef(first, 'refs/remotes/origin/gone'), true)
+})
+
 test('fetch reports an unreachable remote instead of hanging', async () => {
   const root = newRepo()
   commit(root, 'a.txt', '1\n', 'c1')

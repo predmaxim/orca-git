@@ -123,7 +123,8 @@ async function returnAutostash(git: Git): Promise<string | null> {
 export async function fetchAll(git: Git): Promise<ActionResult> {
   const remotes = await git.run(['remote'])
   if (!remotes.ok || !remotes.stdout.trim()) return { ok: false, message: t('noRemotes') }
-  const result = await git.run(['fetch', '--all'], { timeoutMs: NETWORK_TIMEOUT_MS })
+  // fetch.prune, remote.<name>.prune and fetch.pruneTags would delete remote branches and local tags, backups included.
+  const result = await git.run(['fetch', '--all', '--no-prune', '--no-prune-tags'], { timeoutMs: NETWORK_TIMEOUT_MS })
   if (result.ok) return { ok: true, message: t('fetched') }
   const reason = lastLines(result.stderr, 4)
   return { ok: false, message: `${t('fetchFailed')}${reason ? `\n${reason}` : ''}` }
