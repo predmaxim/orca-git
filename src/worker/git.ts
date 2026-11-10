@@ -43,7 +43,7 @@ export function stdoutOf(args: string[], result: GitResult): string {
 }
 
 /** Subcommands the worker only reads with. */
-const READ_ONLY = new Set(['check-ref-format', 'config', 'diff', 'diff-tree', 'for-each-ref', 'format-patch', 'hash-object', 'log', 'ls-files', 'ls-tree', 'remote', 'rev-list', 'rev-parse', 'show', 'show-ref', 'status', 'symbolic-ref'])
+const READ_ONLY = new Set(['check-ref-format', 'config', 'diff', 'diff-tree', 'for-each-ref', 'format-patch', 'hash-object', 'log', 'ls-files', 'ls-tree', 'remote', 'rev-list', 'rev-parse', 'show', 'show-ref', 'status', 'symbolic-ref', 'version'])
 
 /** The subcommand of `args`, past any `-c name=value` in front. */
 export const subcommand = (args: string[]) => args.find((arg, i) => !arg.startsWith('-') && args[i - 1] !== '-c') ?? ''
