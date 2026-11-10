@@ -142,9 +142,10 @@ async function perform(git: Git, action: ActionRequest): Promise<string> {
   switch (action.kind) {
     case 'checkout': {
       const target = typeof action.target === 'string' ? action.target.trim() : ''
-      // A full hash or a branch name (a remote branch's makes a local branch tracking it), never @{-1}, HEAD~1 or a range.
+      // A full hash detaches; anything else must be a branch: git switch refuses a tag, a remote branch, the stash or a
+      // revision, and makes a local branch tracking a remote one of that name.
       if (HASH.test(target)) await git.out(['checkout', '--detach', target, '--'])
-      else await git.out(['checkout', await assertName(git, target, 'branch'), '--'])
+      else await git.out(['switch', '--end-of-options', await assertName(git, target, 'branch')])
       return t('checkedOut', { target: HASH.test(target) ? target.slice(0, 8) : target })
     }
     case 'branch': {
