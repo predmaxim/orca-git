@@ -952,9 +952,13 @@ function unchanged(scope: Scope, onHead = false): boolean {
 /** This panel's changes, by the request id the worker echoes in `action.done`. */
 const late = lateResults<BranchActionResult>()
 
-/** After Orca stopped waiting for change `id` (it gives up after 120 s): `finish` shows its result once it comes. */
-function awaitLate(id: string, finish: (result: BranchActionResult) => void): void {
-  if (late.wait(id, finish)) showBanner(t('stillRunning'), 'info', [], true)
+/** After Orca stopped waiting for change `id` (it gives up after 120 s): `finish` shows its result once it comes. Whether it is still to come. */
+function awaitLate(id: string, finish: (result: BranchActionResult) => void): boolean {
+  const state = late.wait(id, finish)
+  if (state === 'later') showBanner(t('stillRunning'), 'info', [], true)
+  // The worker restarted while the request was in flight: the result is never posted.
+  else if (state === 'lost') showBanner(t('workerRestarted'), 'error')
+  return state === 'later'
 }
 
 /** `text`, naming the repository at `root` when it is not the one shown: a late result can come after a switch. */
