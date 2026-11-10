@@ -1212,6 +1212,20 @@ test('create patch refuses the git dir under a name other than .git', async () =
   assert.equal(existsSync(join(root, 'meta', 'x.patch')), false)
 })
 
+test('create patch saves with git 2.30, which prints --path-format back as one more path', async () => {
+  const w = world()
+  const real = createGit(w.root)
+  const git: Git = {
+    ...real,
+    out: async (args, options) => {
+      const out = await real.out(args.filter((arg) => arg !== '--path-format=absolute'), options)
+      return args.includes('--path-format=absolute') ? `--path-format=absolute\n${out}` : out
+    }
+  }
+  const saved = await createPatch(git, w.root, [w.c2], 'out/c2.patch')
+  assert.ok(saved.ok, JSON.stringify(saved))
+})
+
 test('create patch refuses a FIFO or another file that is not a regular one, without blocking', async () => {
   const w = world()
   try {

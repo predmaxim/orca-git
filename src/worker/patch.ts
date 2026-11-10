@@ -86,11 +86,12 @@ export async function createPatch(git: Git, root: string, hashes: string[], path
   // Inside the work tree and outside any .git.
   if (path.includes('\0') || !inside || parts[0] === '..' || isAbsolute(inside) || parts.some((part) => part.toLowerCase() === '.git')) return refused('patchPathRefused')
   // The git dir and the common dir, wherever they are: a separate git dir in the work tree, or on NTFS `.git.`,
-  // `GIT~1` and `.git::$INDEX_ALLOCATION`, reach them under a name the check above does not catch.
-  const gitDirs = (await git.out(['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir']))
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map(folderAt)
+  // `GIT~1` and `.git::$INDEX_ALLOCATION`, reach them under a name the check above does not catch. No --path-format:
+  // git before 2.31 prints it back as one more path. git prints each relative to the root it runs in, or absolute;
+  // anything but exactly the two paths saves nothing.
+  const lines = (await git.out(['rev-parse', '--git-dir', '--git-common-dir'])).replace(/\r?\n$/, '').split(/\r?\n/)
+  if (lines.length !== 2 || lines.some((line) => !line)) return { ok: false, reason: t('gitOutputUnreadable', { command: 'rev-parse' }) }
+  const gitDirs = lines.map((line) => folderAt(resolve(git.root, line)))
   if (gitDirs.includes(null)) return refused('patchPathRefused')
   try {
     // Through no link a repository could carry that leads elsewhere, and never onto a folder.
