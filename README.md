@@ -59,14 +59,24 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
 - **Multi-select**: click, Ctrl/⌘-click, Shift-click, arrows, Page Up/Down, Home/End, Ctrl+A.
 - **Keyboard, like lazygit**: keys while focus is in the panel and not in a field, menu or dialog.
   They go by the physical key, so they work in any keyboard layout; `?` lists them all, and tooltips
-  name them ("User (Shift+U)"). The rule: Shift+letter acts on the panel itself (filters, toggles,
-  folding, Refresh, Fetch), and pressing it again undoes it. No key changes your branches, commits or
-  files; Fetch only downloads from the remotes.
+  name them ("User (Shift+U)"), and so does the right edge of each menu item. The rule: a letter acts
+  on the commits or the branch under the cursor (it runs that menu item), Shift+letter acts on the
+  panel itself (filters, toggles, folding, Refresh, Fetch) and pressing it again undoes it, and Space
+  opens the menu of what is under the cursor (on a folder row Space opens or closes it). A letter
+  whose item is greyed out says why, as the menu's tooltip does; one the menu leaves out says it does
+  not apply.
   - Anywhere in the panel: `1` `2` `3` `4` go to Branches, Commits, Files and Details (a folded
     section opens first); `0` brings up the Diff tab as it was left (or, if the repository has none
     yet, opens the current file of the selection); `Shift+Z` folds or unfolds the current section;
     `/` searches it (Branches and Commits have a search field); `Shift+R` Refresh (the banner says
     when it is done); `Shift+F` Fetch.
+  - Branches (the row under the cursor): `o` Checkout (a remote branch: as a local one; a tag:
+    its revision), `n` New Branch from it, `l` Show Only it / Show All, `y` Copy Name, `r` Rename,
+    `d` Delete, `m` Merge into Current, `b` Rebase Current onto it, `g` Restore to a backup.
+  - Commits (the selection): `y` Copy Revision Number (also Ctrl+C), `c` Cherry-Pick, `p` Create
+    Patch, `o` Checkout Revision, `g` Reset Current Branch to Here, `v` Revert, `z` Undo Commit, `r`
+    Edit Message, `f` Fixup, `s` Squash, `d` Drop, `i` Interactively Rebase from Here, `n` New Branch,
+    `t` New Tag.
   - Commits: `Shift+B` `Shift+U` `Shift+D` `Shift+P` open the Branch, User, Date and Paths filters,
     and clear a filter that is set; `Shift+X` regex, `Shift+C` match case. In an open filter ↑ / ↓
     move through its options (Date: through its presets), Space or Enter picks one, and Esc closes it
@@ -78,8 +88,8 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
     Orca gives plugins no way to move keyboard focus between the panel and the tab.
   - Esc in a search clears it; in an empty search it goes back to the list. A thin line along the left
     edge marks the section the keys act on and stays there while focus is outside the panel.
-- **Right-click menu** with icons (or Shift+F10):
-  - Copy Revision Number (Ctrl+C), Cherry-Pick, Create Patch… (`git format-patch` of the selection,
+- **Right-click menu** with icons (or Space, Shift+F10), each item with its key:
+  - Copy Revision Number (`y`, Ctrl+C), Cherry-Pick, Create Patch… (`git format-patch` of the selection,
     oldest first, copied to the clipboard or saved to a file inside the repository only: a path
     outside it (such as `~/Downloads`), inside `.git` (under any name that reaches it) or through a
     link is refused; the file gets git's bytes as they are, and a patch with file content that is not

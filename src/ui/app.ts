@@ -642,8 +642,16 @@ function reveal(full: string): void {
   tree.querySelector('.node-row.active')?.scrollIntoView({ block: 'nearest' })
 }
 
-function branchMenu(event: MouseEvent, ref: BranchRef & { kind: 'local' | 'remote' | 'tag' | 'head' }): void {
-  if (!repo) return
+type MenuRef = BranchRef & { kind: 'local' | 'remote' | 'tag' | 'head' }
+
+function branchMenu(event: MouseEvent, ref: MenuRef): void {
+  const entries = branchEntries(ref)
+  if (entries) showMenu(event.clientX, event.clientY, entries)
+}
+
+/** The branch menu's items, for a right-click and for the branch letters. */
+function branchEntries(ref: MenuRef): MenuEntry[] | null {
+  if (!repo) return null
   const scope = scopeOf(repo)
   const current = ref.kind === 'local' && ref.name === repo.head.branch
   const localName = ref.kind === 'remote' ? ref.name.slice(ref.name.indexOf('/') + 1) : ref.name
@@ -652,27 +660,29 @@ function branchMenu(event: MouseEvent, ref: BranchRef & { kind: 'local' | 'remot
   const hintBusy = operation ? t('hintOperation', { operation }) : undefined
   const entries: MenuEntry[] = [
     ref.kind === 'local'
-      ? { label: t('checkout'), icon: 'checkout', disabled: current || Boolean(operation), hint: hintBusy ?? t('checkoutAlready'), run: () => void moveHead(scope, { kind: 'checkout', target: ref.name }, t('checkingOut', { name: ref.name })) }
+      ? { label: t('checkout'), key: 'branchCheckout', icon: 'checkout', disabled: current || Boolean(operation), hint: hintBusy ?? t('checkoutAlready'), run: () => void moveHead(scope, { kind: 'checkout', target: ref.name }, t('checkingOut', { name: ref.name })) }
       : ref.kind === 'remote'
         ? {
             label: t('checkoutAs', { name: localName }),
+            key: 'branchCheckout',
             icon: 'checkout',
             disabled: Boolean(operation) || Boolean(refs?.locals.some((l) => l.name === localName)),
             hint: hintBusy ?? t('localBranchExists', { name: localName }),
             run: () => void moveHead(scope, { kind: 'checkout', target: localName, track: ref.full }, t('checkingOut', { name: localName }))
           }
-        : { label: t('checkoutRevision'), icon: 'checkout', disabled: ref.kind === 'head' || Boolean(operation), hint: hintBusy, run: () => void moveHead(scope, { kind: 'checkout', target: ref.hash, detach: true }, t('checkingOutBare')) },
-    { label: t('newBranchFrom', { name: ref.name }), icon: 'branch', run: () => void newBranch(scope, ref.hash) },
+        : { label: t('checkoutRevision'), key: 'branchCheckout', icon: 'checkout', disabled: ref.kind === 'head' || Boolean(operation), hint: hintBusy, run: () => void moveHead(scope, { kind: 'checkout', target: ref.hash, detach: true }, t('checkingOutBare')) },
+    { label: t('newBranchFrom', { name: ref.name }), key: 'branchNew', icon: 'branch', run: () => void newBranch(scope, ref.hash) },
     'separator',
-    { icon: 'search', label: filter.branches?.includes(ref.full) ? t('showAllBranches') : t('showOnly', { name: ref.name }), run: () => applyFilter({ branches: filter.branches?.includes(ref.full) ? [] : [ref.full] }) },
-    { label: t('copyName'), icon: 'copy', run: () => copyText(ref.name) }
+    { icon: 'search', key: 'branchShowOnly', label: filter.branches?.includes(ref.full) ? t('showAllBranches') : t('showOnly', { name: ref.name }), run: () => applyFilter({ branches: filter.branches?.includes(ref.full) ? [] : [ref.full] }) },
+    { label: t('copyName'), key: 'branchCopy', icon: 'copy', run: () => copyText(ref.name) }
   ]
   const backup = (ref.kind === 'local' || ref.kind === 'tag') && ref.name.startsWith('backup/')
-  const deleteBackupEntry: MenuEntry = { label: t('backupDelete'), icon: 'drop', run: () => void removeBackup(scope, ref) }
+  const deleteBackupEntry: MenuEntry = { label: t('backupDelete'), key: 'branchDelete', icon: 'drop', run: () => void removeBackup(scope, ref) }
   if (backup) {
     entries.unshift(
       {
         label: t('backupRestore', { name: repo.head.branch ?? 'HEAD' }),
+        key: 'branchRestore',
         icon: 'reset',
         disabled: current || Boolean(operation),
         hint: hintBusy ?? t('checkoutAlready'),
@@ -685,18 +695,18 @@ function branchMenu(event: MouseEvent, ref: BranchRef & { kind: 'local' | 'remot
   if (ref.kind === 'local' || ref.kind === 'remote') {
     entries.push('separator')
     if (ref.kind === 'local') {
-      entries.push({ label: t('branchRename'), icon: 'edit', run: () => void renameBranch(scope, ref.name) })
-      if (!current) entries.push(backup ? deleteBackupEntry : { label: t('branchDelete'), icon: 'drop', run: () => void deleteBranch(scope, ref.name, ref.hash) })
+      entries.push({ label: t('branchRename'), key: 'branchRename', icon: 'edit', run: () => void renameBranch(scope, ref.name) })
+      if (!current) entries.push(backup ? deleteBackupEntry : { label: t('branchDelete'), key: 'branchDelete', icon: 'drop', run: () => void deleteBranch(scope, ref.name, ref.hash) })
     }
     if (!current) {
       entries.push(
         // The worker takes the full ref: a short name can mean another ref (heads/x, tags/x, a tag named like the branch).
-        { label: t('branchMerge'), icon: 'branch', disabled: Boolean(operation), hint: hintBusy, run: () => void act(scope, { kind: 'merge', name: ref.full, tip: ref.hash }, t('branchMerging', { name: ref.name })) },
-        { label: t('branchRebase'), icon: 'rebase', disabled: Boolean(operation), hint: hintBusy, run: () => void rebaseOnto(scope, ref) }
+        { label: t('branchMerge'), key: 'branchMerge', icon: 'branch', disabled: Boolean(operation), hint: hintBusy, run: () => void act(scope, { kind: 'merge', name: ref.full, tip: ref.hash }, t('branchMerging', { name: ref.name })) },
+        { label: t('branchRebase'), key: 'branchRebase', icon: 'rebase', disabled: Boolean(operation), hint: hintBusy, run: () => void rebaseOnto(scope, ref) }
       )
     }
   }
-  showMenu(event.clientX, event.clientY, entries)
+  return entries
 }
 
 // ---------- Selection ----------
@@ -814,15 +824,6 @@ viewport.addEventListener('keydown', (event) => {
       if (!mod || !selected.size) return
       copyHashes()
       break
-    case 'F10':
-      if (!event.shiftKey) return
-    // falls through
-    case 'ContextMenu': {
-      if (!selected.size) return
-      const rect = viewport.getBoundingClientRect()
-      commitMenu(rect.left + 40, rect.top + Math.max(0, (cursor + 1) * rowH - viewport.scrollTop))
-      break
-    }
     case 'Escape':
       if (!selected.size) return
       selected.clear()
@@ -1302,7 +1303,13 @@ async function createPatch(scope: Scope, hashes: string[]): Promise<void> {
 }
 
 function commitMenu(x: number, y: number): void {
-  if (!repo) return
+  const entries = commitEntries()
+  if (entries) showMenu(x, y, entries, viewport)
+}
+
+/** The commit menu's items for the selection, for a right-click and for the commit letters; null with none selected. */
+function commitEntries(): MenuEntry[] | null {
+  if (!repo || !selected.size) return null
   const scope = scopeOf(repo)
   const hashes = selectedHashes()
   const commits = hashes.map((hash) => rows[indexByHash.get(hash)!])
@@ -1316,9 +1323,10 @@ function commitMenu(x: number, y: number): void {
   const fixupHint = operation ? rewriteHint : rewriteBlocker(hashes, n === 1)
 
   const entries: MenuEntry[] = [
-    { label: t('cmCopyRevision', { count: n }), icon: 'copy', shortcut: 'Ctrl+C', run: copyHashes },
+    { label: t('cmCopyRevision', { count: n }), key: 'commitCopy', icon: 'copy', run: copyHashes },
     {
       label: t('cmCherryPick'),
+      key: 'commitCherryPick',
       icon: 'cherry',
       disabled: Boolean(operation) || (!isFiltered() && hashes.some((hash) => reachable.has(hash))) || merges,
       hint: hintBusy ?? (merges ? t('hintCherryMerge') : t('hintInCurrent')),
@@ -1326,13 +1334,14 @@ function commitMenu(x: number, y: number): void {
     },
     {
       label: t('cmCreatePatch'),
+      key: 'commitPatch',
       icon: 'patch',
       disabled: merges,
       hint: t('hintPatchMerge'),
       run: () => void createPatch(scope, hashes)
     },
     'separator',
-    { label: t('checkoutRevision'), icon: 'checkout', disabled: !single || Boolean(operation), hint: hintBusy ?? t('hintSelectOne'), run: () => void moveHead(scope, { kind: 'checkout', target: single!.hash, detach: true }, t('checkingOutBare')) }
+    { label: t('checkoutRevision'), key: 'commitCheckout', icon: 'checkout', disabled: !single || Boolean(operation), hint: hintBusy ?? t('hintSelectOne'), run: () => void moveHead(scope, { kind: 'checkout', target: single!.hash, detach: true }, t('checkingOutBare')) }
   ]
   if (single) {
     for (const label of refLabels(single.refs, repo.head.branch)) {
@@ -1351,6 +1360,7 @@ function commitMenu(x: number, y: number): void {
     'separator',
     {
       label: t('cmResetHere'),
+      key: 'commitReset',
       icon: 'reset',
       disabled: !single || Boolean(operation),
       hint: hintBusy ?? t('hintSelectOne'),
@@ -1358,6 +1368,7 @@ function commitMenu(x: number, y: number): void {
     },
     {
       label: t('cmRevert', { count: n }),
+      key: 'commitRevert',
       icon: 'revert',
       disabled: Boolean(operation) || merges,
       hint: hintBusy ?? t('hintRevertMerge'),
@@ -1365,28 +1376,30 @@ function commitMenu(x: number, y: number): void {
     },
     {
       label: t('cmUndoCommit'),
+      key: 'commitUndo',
       icon: 'undo',
       disabled: !single || single.hash !== repo.head.hash || Boolean(operation),
       hint: hintBusy ?? t('hintOnlyLatest'),
       run: () => void undoCommit(scope, single!.hash)
     },
     'separator',
-    { label: t('cmEditMessage'), icon: 'edit', disabled: !single || rewriteOff, hint: rewriteHint ?? t('hintSelectOne'), run: () => void reword(scope, single!.hash) },
-    { label: n > 1 ? t('cmFixupMany') : t('cmFixupPrev'), icon: 'fixup', disabled: Boolean(fixupHint), hint: fixupHint, run: () => void fixup(scope, hashes) },
-    { label: t('cmSquash'), icon: 'squash', disabled: n < 2 || rewriteOff, hint: rewriteHint ?? t('hintSelectTwo'), run: () => void squash(scope, hashes) },
-    { label: t('cmDrop', { count: n }), icon: 'drop', disabled: rewriteOff, hint: rewriteHint, run: () => void drop(scope, hashes) },
+    { label: t('cmEditMessage'), key: 'commitReword', icon: 'edit', disabled: !single || rewriteOff, hint: rewriteHint ?? t('hintSelectOne'), run: () => void reword(scope, single!.hash) },
+    { label: n > 1 ? t('cmFixupMany') : t('cmFixupPrev'), key: 'commitFixup', icon: 'fixup', disabled: Boolean(fixupHint), hint: fixupHint, run: () => void fixup(scope, hashes) },
+    { label: t('cmSquash'), key: 'commitSquash', icon: 'squash', disabled: n < 2 || rewriteOff, hint: rewriteHint ?? t('hintSelectTwo'), run: () => void squash(scope, hashes) },
+    { label: t('cmDrop', { count: n }), key: 'commitDrop', icon: 'drop', disabled: rewriteOff, hint: rewriteHint, run: () => void drop(scope, hashes) },
     {
       label: t('cmRebase'),
+      key: 'commitRebase',
       icon: 'rebase',
       disabled: !single || rewriteOff,
       hint: rewriteHint ?? t('hintSelectOne'),
       run: () => void rebaseFrom(scope, single!.hash)
     },
     'separator',
-    { label: t('cmNewBranch'), icon: 'branch', disabled: !single, hint: t('hintSelectOne'), run: () => void newBranch(scope, single!.hash) },
-    { label: t('cmNewTag'), icon: 'tag', disabled: !single, hint: t('hintSelectOne'), run: () => void newTag(scope, single!.hash) }
+    { label: t('cmNewBranch'), key: 'commitBranch', icon: 'branch', disabled: !single, hint: t('hintSelectOne'), run: () => void newBranch(scope, single!.hash) },
+    { label: t('cmNewTag'), key: 'commitTag', icon: 'tag', disabled: !single, hint: t('hintSelectOne'), run: () => void newTag(scope, single!.hash) }
   )
-  showMenu(x, y, entries, viewport)
+  return entries
 }
 
 // ---------- Toolbar & host events ----------
@@ -1460,20 +1473,52 @@ async function goToDiff(): Promise<void> {
 function showKeys(): void {
   const group = (title: string, scope: KeyScope) =>
     h('div', { class: 'keys' }, h('h3', null, title), ...KEYS.filter((k) => k.scope === scope).map((k) => h('div', { class: 'key' }, h('kbd', null, k.shown), h('span', null, t(k.label)))))
+  const nav = (['keysNavArrows', 'keysNavEnter', 'keysNavSpace', 'keysNavEsc'] as const).map((key) => h('div', { class: 'key' }, h('span', null, t(key))))
   void dialog<null>({
     title: t('keyHelp'),
     body: [
+      h('p', { class: 'keys-note' }, t('keysRule')),
       group(t('keysAnywhere'), 'anywhere'),
+      group(t('sectionBranches'), 'branches'),
       group(t('sectionCommits'), 'commits'),
       group(t('sectionFiles'), 'files'),
       group(t('keyDiffTab'), 'diff'),
-      h('p', { class: 'keys-note' }, t('keysDiffNote'))
+      h('p', { class: 'keys-note' }, t('keysDiffNote')),
+      h('div', { class: 'keys' }, h('h3', null, t('keysNav')), ...nav)
     ],
     buttons: [{ label: t('dismiss'), value: null }]
   })
 }
 
 const treeStop = (container: HTMLElement) => container.querySelector<HTMLElement>('[role=treeitem][tabindex="0"]')
+
+/** The branch or tag a row of the branch tree stands for, by its `data-key` (the full ref). */
+function refByFull(full: string | undefined): MenuRef | null {
+  if (!refs || !full) return null
+  if (full === 'HEAD') return refs.head.hash ? { name: 'HEAD', full: 'HEAD', hash: refs.head.hash, kind: 'head' } : null
+  const local = refs.locals.find((r) => r.full === full)
+  if (local) return { ...local, kind: 'local' }
+  const remote = refs.remotes.find((r) => r.full === full)
+  if (remote) return { ...remote, kind: 'remote' }
+  const tag = refs.tags.find((r) => r.full === full)
+  return tag ? { ...tag, kind: 'tag' } : null
+}
+
+/** The menu a letter or Space acts on: the selected commits, or the branch row with focus (a folder row has none). */
+function areaMenu(id: SectionId) {
+  if (id === 'commits') {
+    const entries = commitEntries()
+    const rect = viewport.getBoundingClientRect()
+    return entries && { entries, x: rect.left + 40, y: rect.top + Math.max(0, (cursor + 1) * rowH - viewport.scrollTop), restore: viewport }
+  }
+  if (id !== 'branches') return null
+  const row = document.activeElement
+  if (!(row instanceof HTMLElement) || !tree.contains(row) || !row.matches('[role=treeitem]:not([aria-expanded])')) return null
+  const ref = refByFull(row.dataset.key)
+  const entries = ref && branchEntries(ref)
+  const rect = row.getBoundingClientRect()
+  return entries && { entries, x: rect.left + 40, y: rect.bottom, restore: row }
+}
 const area = (id: SectionId, target: () => HTMLElement | null, search?: HTMLInputElement) => {
   const { root, body, toggle } = column.section(id)
   return { root, body, toggle, target, search }
@@ -1488,6 +1533,8 @@ mountPanelKeys({
   isOpen: (id) => !prefs.sections.collapsed[id],
   // The header's own click: it keeps the last open section open and saves the layout.
   toggle: (id) => column.section(id).header.click(),
+  menu: areaMenu,
+  notice: (text) => showBanner(text, 'info'),
   run: {
     refresh: () => refreshButton.click(),
     fetch: () => fetchButton.click(),

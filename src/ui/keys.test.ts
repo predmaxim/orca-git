@@ -73,3 +73,8 @@ test('pickByKey finds the entry whose key was pressed', () => {
   assert.equal(pickByKey(entries, press('KeyZ', { shiftKey: true, ctrlKey: true })), undefined)
   assert.equal(pickByKey([{}], press('KeyZ', { shiftKey: true })), undefined)
 })
+
+test('letters act only on commits and branches', () => {
+  for (const k of KEYS.filter((k) => k.menu)) assert.ok(k.scope === 'commits' || k.scope === 'branches', k.id)
+  assert.ok(KEYS.some((k) => k.menu && k.scope === 'commits') && KEYS.some((k) => k.menu && k.scope === 'branches'))
+})

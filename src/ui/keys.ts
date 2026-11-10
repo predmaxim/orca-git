@@ -23,6 +23,29 @@ export type KeyId =
   | 'folders'
   | 'layout'
   | 'wholeFile'
+  | 'commitCopy'
+  | 'commitCherryPick'
+  | 'commitPatch'
+  | 'commitCheckout'
+  | 'commitReset'
+  | 'commitRevert'
+  | 'commitUndo'
+  | 'commitReword'
+  | 'commitFixup'
+  | 'commitSquash'
+  | 'commitDrop'
+  | 'commitRebase'
+  | 'commitBranch'
+  | 'commitTag'
+  | 'branchCheckout'
+  | 'branchNew'
+  | 'branchShowOnly'
+  | 'branchCopy'
+  | 'branchRename'
+  | 'branchDelete'
+  | 'branchMerge'
+  | 'branchRebase'
+  | 'branchRestore'
 
 /**
  * `code` is the physical key (`event.code`), so a letter works in any keyboard layout. The rule: a letter without
@@ -59,8 +82,32 @@ export const KEYS: readonly KeyBinding[] = [
   { id: 'matchCase', code: 'KeyC', shift: true, scope: 'commits', label: 'matchCaseTip', shown: 'Shift+C' },
   { id: 'folders', code: 'KeyE', shift: true, scope: 'files', label: 'keyFolders', shown: 'Shift+E' },
   { id: 'layout', code: 'KeyS', shift: true, scope: 'diff', label: 'keyLayout', shown: 'Shift+S' },
-  { id: 'wholeFile', code: 'KeyW', shift: true, scope: 'diff', label: 'diffWholeFile', shown: 'Shift+W' }
+  { id: 'wholeFile', code: 'KeyW', shift: true, scope: 'diff', label: 'diffWholeFile', shown: 'Shift+W' },
+  { id: 'commitCopy', code: 'KeyY', menu: true, scope: 'commits', label: 'keyCopyRevision', shown: 'y' },
+  { id: 'commitCherryPick', code: 'KeyC', menu: true, scope: 'commits', label: 'cmCherryPick', shown: 'c' },
+  { id: 'commitPatch', code: 'KeyP', menu: true, scope: 'commits', label: 'cmCreatePatch', shown: 'p' },
+  { id: 'commitCheckout', code: 'KeyO', menu: true, scope: 'commits', label: 'checkoutRevision', shown: 'o' },
+  { id: 'commitReset', code: 'KeyG', menu: true, scope: 'commits', label: 'cmResetHere', shown: 'g' },
+  { id: 'commitRevert', code: 'KeyV', menu: true, scope: 'commits', label: 'keyRevert', shown: 'v' },
+  { id: 'commitUndo', code: 'KeyZ', menu: true, scope: 'commits', label: 'cmUndoCommit', shown: 'z' },
+  { id: 'commitReword', code: 'KeyR', menu: true, scope: 'commits', label: 'cmEditMessage', shown: 'r' },
+  { id: 'commitFixup', code: 'KeyF', menu: true, scope: 'commits', label: 'keyFixup', shown: 'f' },
+  { id: 'commitSquash', code: 'KeyS', menu: true, scope: 'commits', label: 'cmSquash', shown: 's' },
+  { id: 'commitDrop', code: 'KeyD', menu: true, scope: 'commits', label: 'keyDrop', shown: 'd' },
+  { id: 'commitRebase', code: 'KeyI', menu: true, scope: 'commits', label: 'cmRebase', shown: 'i' },
+  { id: 'commitBranch', code: 'KeyN', menu: true, scope: 'commits', label: 'cmNewBranch', shown: 'n' },
+  { id: 'commitTag', code: 'KeyT', menu: true, scope: 'commits', label: 'cmNewTag', shown: 't' },
+  { id: 'branchCheckout', code: 'KeyO', menu: true, scope: 'branches', label: 'checkout', shown: 'o' },
+  { id: 'branchNew', code: 'KeyN', menu: true, scope: 'branches', label: 'cmNewBranch', shown: 'n' },
+  { id: 'branchShowOnly', code: 'KeyL', menu: true, scope: 'branches', label: 'keyShowOnly', shown: 'l' },
+  { id: 'branchCopy', code: 'KeyY', menu: true, scope: 'branches', label: 'copyName', shown: 'y' },
+  { id: 'branchRename', code: 'KeyR', menu: true, scope: 'branches', label: 'branchRename', shown: 'r' },
+  { id: 'branchDelete', code: 'KeyD', menu: true, scope: 'branches', label: 'branchDelete', shown: 'd' },
+  { id: 'branchMerge', code: 'KeyM', menu: true, scope: 'branches', label: 'branchMerge', shown: 'm' },
+  { id: 'branchRebase', code: 'KeyB', menu: true, scope: 'branches', label: 'branchRebase', shown: 'b' },
+  { id: 'branchRestore', code: 'KeyG', menu: true, scope: 'branches', label: 'keyRestoreBackup', shown: 'g' }
 ]
+// Kept for the file actions to come: o (open in the editor), y (copy the path), v (viewed), h (history).
 
 type Press = Pick<KeyboardEvent, 'code' | 'shiftKey' | 'ctrlKey' | 'altKey' | 'metaKey'>
 
