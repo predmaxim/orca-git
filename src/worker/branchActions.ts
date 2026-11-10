@@ -71,13 +71,28 @@ async function integrate(git: Git, kind: 'merge' | 'rebase', target: string): Pr
   const args = kind === 'merge' ? ['merge', '--no-edit', '--autostash', name] : ['rebase', '--autostash', name]
   const result = await git.run(args, { timeoutMs: NETWORK_TIMEOUT_MS })
   if (!result.ok) {
+    let kept = false
     if (await operationInProgress(git)) await git.run([kind, '--abort'])
+    else if (kind === 'merge') kept = await returnAutostash(git)
     const reason = lastLines(result.stderr || result.stdout, 4)
-    throw new Error(`${t(kind === 'merge' ? 'mergeFailed' : 'rebaseFailed')}${reason ? `\n${reason}` : ''}`)
+    throw new Error(`${t(kind === 'merge' ? 'mergeFailed' : 'rebaseFailed')}${kept ? ` ${t('changesInStash')}` : ''}${reason ? `\n${reason}` : ''}`)
   }
   const message = t(kind === 'merge' ? 'merged' : 'rebased', { name })
   if (await autostashConflict(git)) return { ok: true, warning: true, message: `${message} ${t('autostashConflict')}` }
   return { ok: true, message, ...(previousHead ? { previousHead } : {}) }
+}
+
+/**
+ * Gives back the local changes of a merge git stopped after stashing them but before it began (no committer
+ * identity): they are left under MERGE_AUTOSTASH, which `merge --quit` saves to the stash list. True when they stay there.
+ */
+async function returnAutostash(git: Git): Promise<boolean> {
+  const autostash = (await git.run(['rev-parse', '-q', '--verify', 'MERGE_AUTOSTASH'])).stdout.trim()
+  if (!autostash) return false
+  await git.run(['merge', '--quit'])
+  // Pop only the entry --quit just saved, never one of the user's own.
+  const top = (await git.run(['rev-parse', '-q', '--verify', 'refs/stash'])).stdout.trim()
+  return !(top === autostash && (await git.run(['stash', 'pop', '--index'])).ok)
 }
 
 /** `git fetch --all` without pruning; never throws. */

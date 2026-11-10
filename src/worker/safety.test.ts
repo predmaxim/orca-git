@@ -209,6 +209,30 @@ test('rewritten messages keep lines that start with #', async () => {
   assert.match(sh(w.root, 'log', '-1', '--format=%B'), /^#12 is fixed by this$/m)
 })
 
+test('a merge git stops before it starts gives the local changes back', async () => {
+  const w = world()
+  commit(w.root, 'a.txt', 'topic\n', 'match topic')
+  writeFileSync(join(w.root, 'b.txt'), 'local b\n')
+  writeFileSync(join(w.root, 'c.txt'), 'staged c\n')
+  sh(w.root, 'add', 'c.txt')
+  // No committer identity: git has already stashed the changes when it finds out.
+  sh(w.root, 'config', 'user.useConfigOnly', 'true')
+  sh(w.root, 'config', '--unset', 'user.name')
+  sh(w.root, 'config', '--unset', 'user.email')
+  const before = snapshot(w.root)
+  const keys = ['GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM', 'EMAIL', 'GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL']
+  const saved = keys.map((key) => process.env[key])
+  keys.forEach((key) => delete process.env[key])
+  Object.assign(process.env, { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' })
+  try {
+    const result = await runBranchAction(createGit(w.root), { kind: 'merge', name: 'topic' })
+    assert.equal(result.ok, false, result.message)
+  } finally {
+    keys.forEach((key, i) => (saved[i] === undefined ? delete process.env[key] : (process.env[key] = saved[i])))
+  }
+  assert.deepEqual(snapshot(w.root), before)
+})
+
 // ---------- 6. An operation left in progress in a terminal ----------
 
 const resolve = (w: World) => {
