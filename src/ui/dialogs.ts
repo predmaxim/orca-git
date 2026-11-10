@@ -50,7 +50,7 @@ export function dialog<T>(options: DialogOptions<T>): Promise<T | null> {
       try {
         return (await check) ?? null
       } catch (failure) {
-        return failure instanceof Error ? failure.message : String(failure)
+        return messageOf(failure)
       } finally {
         checking = false
         for (const el of frozen) el.disabled = false
@@ -62,7 +62,13 @@ export function dialog<T>(options: DialogOptions<T>): Promise<T | null> {
     const press = async (button: Button<T>) => {
       if (button.value === null) return finish(null)
       if (checking) return
-      let problem = options.validate?.() ?? null
+      // A check that throws keeps the dialog open with its message, like one that fails.
+      let problem: string | null | Promise<string | null>
+      try {
+        problem = options.validate?.() ?? null
+      } catch (failure) {
+        problem = messageOf(failure)
+      }
       if (problem instanceof Promise) problem = await waitFor(problem)
       if (closed) return
       if (problem) {
@@ -108,6 +114,8 @@ export function dialog<T>(options: DialogOptions<T>): Promise<T | null> {
 }
 
 const cancel = <T>(): Button<T> => ({ label: t('cancel'), value: null as T })
+
+const messageOf = (failure: unknown) => (failure instanceof Error ? failure.message : String(failure))
 
 export function pushedWarning(pushed: string[]): HTMLElement {
   const list = pushed.slice(0, 4).join(', ') + (pushed.length > 4 ? t('pushedMore', { count: pushed.length - 4 }) : '')
