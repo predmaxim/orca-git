@@ -59,21 +59,25 @@ const PATHSPECS_MAX = 8000
 /** What `ls-files -o` with `options` finds at `paths`, ignored files included, in calls of at most PATHSPECS_MAX characters. */
 async function untrackedAt(git: Git, options: string[], paths: string[]): Promise<string[]> {
   const found: string[] = []
-  let batch: string[] = []
-  let size = 0
-  const flush = async () => {
-    if (batch.length) found.push(...(await git.out(['ls-files', '-z', '-o', ...options, '--', ...batch])).split('\0').filter(Boolean))
-    batch = []
-    size = 0
+  for (const batch of batches(paths.map((path) => `:(literal)${path}`))) {
+    found.push(...(await git.out(['ls-files', '-z', '-o', ...options, '--', ...batch])).split('\0').filter(Boolean))
   }
-  for (const path of paths) {
-    const spec = `:(literal)${path}`
-    if (batch.length && size + spec.length > PATHSPECS_MAX) await flush()
-    batch.push(spec)
-    size += spec.length + 1
-  }
-  await flush()
   return found
+}
+
+/** `args` cut into runs of at most PATHSPECS_MAX characters; a longer argument gets a run of its own. */
+function batches(args: string[]): string[][] {
+  const runs: string[][] = []
+  let size = 0
+  for (const arg of args) {
+    if (!runs.length || (runs[runs.length - 1].length && size + arg.length > PATHSPECS_MAX)) {
+      runs.push([])
+      size = 0
+    }
+    runs[runs.length - 1].push(arg)
+    size += arg.length + 1
+  }
+  return runs
 }
 
 /** Whether anything, a dangling link included, is at `path`. */
@@ -141,6 +145,28 @@ function realFolder(root: string, path: string): boolean {
   }
 }
 
+/** Whether `path` is a regular file reached through real folders only. */
+function realFile(root: string, path: string): boolean {
+  const folder = path.split('/').slice(0, -1).join('/')
+  try {
+    return lstatSync(`${root}/${path}`).isFile() && (!folder || realFolder(root, folder))
+  } catch {
+    return false
+  }
+}
+
+/** Of `files`, those that no longer hash to their index `hash`, or that git could not hash: never passed unchecked. */
+async function editedFiles(git: Git, files: { hash: string; path: string }[]): Promise<string[]> {
+  const indexed = new Map(files.map(({ path, hash }) => [path, hash]))
+  const edited: string[] = []
+  for (const batch of batches([...indexed.keys()])) {
+    // Read-only without -w: git hashes each file as it would store it, through its filters.
+    const hashes = await git.out(['hash-object', '--', ...batch]).then((out) => out.split('\n'), () => [])
+    edited.push(...batch.filter((path, i) => hashes[i] !== indexed.get(path)))
+  }
+  return edited
+}
+
 /** The entries of `folder`, links not followed; null when it cannot be read. */
 function entriesOf(folder: string): { name: string; isDirectory(): boolean }[] | null {
   try {
@@ -175,8 +201,9 @@ function repositoriesIn(root: string, path: string, budget: { left: number }): {
  * needs a folder; and, as `name/`, every repository inside a folder it replaces with a file, at any depth,
  * which it deletes whole. `unchecked`: such folders too large or unreadable to search completely. A folder
  * where the target has a submodule is kept, unless submodule.recurse is set: then the reset checks the
- * submodule out there, and `submodules` lists the populated ones it resets or removes. `root` is the
- * repository's top level.
+ * submodule out there, and `submodules` lists the populated ones it resets or removes. `assumeUnchanged`:
+ * files git assumes unchanged that were edited, which the reset writes back. `indexUnchecked`: the index
+ * or the target's tree could not be read, so neither of those was checked. `root` is the repository's top level.
  */
 export async function checkReset(git: Git, root: string, target: unknown): Promise<ResetCheck> {
   if (typeof target !== 'string' || !HASH.test(target)) throw new Error(t('invalidCommit'))
@@ -184,8 +211,23 @@ export async function checkReset(git: Git, root: string, target: unknown): Promi
   // reset --hard follows submodule.recurse from the user's git config; exit 1 means it is not set.
   const recurse = await git.run(['config', '--type=bool', '--get', 'submodule.recurse'])
   const recursive = recurse.ok && recurse.stdout.trim() === 'true'
+  // A huge index or tree passes git.out's output buffer: then what needs it goes unchecked, with a warning, and the check still answers.
+  let indexUnchecked = false
+  const lines = async (args: string[]) => {
+    try {
+      return (await git.out(args)).split('\0').filter(Boolean)
+    } catch {
+      indexUnchecked = true
+      return []
+    }
+  }
   // `<tag> <mode> <hash> <stage>\t<path>`; a lowercase tag marks a file git assumes unchanged, which git diff skips.
-  const index = (await git.out(['ls-files', '-z', '-s', '-v'])).split('\0').filter(Boolean).map((line) => ({ tag: line[0], mode: line.slice(2, 8), path: line.slice(line.indexOf('\t') + 1) }))
+  const index = (await lines(['ls-files', '-z', '-s', '-v'])).map((line) => {
+    const tab = line.indexOf('\t')
+    const [tag, mode, hash] = line.slice(0, tab).split(' ')
+    return { tag, mode, hash, path: line.slice(tab + 1) }
+  })
+  const assumed = index.filter(({ tag, mode }) => tag !== tag.toUpperCase() && mode !== '160000')
   // The target against the index and work tree, so no commit is needed on HEAD: D and T are the paths the
   // reset writes, with something else there or nothing. --ignore-submodules=none: config must not hide submodules.
   const fields = (await git.out(['diff', '-z', '--raw', '--no-renames', '--ignore-submodules=none', '--diff-filter=DT', target, '--'])).split('\0')
@@ -196,7 +238,9 @@ export async function checkReset(git: Git, root: string, target: unknown): Promi
     if (fields[i - 1].startsWith(':160000 ')) gitlinks.add(fields[i])
   }
   // A folder where such a file is tracked is not seen by git diff, but the reset deletes it to put the file back.
-  for (const { tag, mode, path } of index) if (tag !== tag.toUpperCase() && mode !== '160000' && realFolder(root, path)) paths.add(path)
+  for (const { path } of assumed) if (realFolder(root, path)) paths.add(path)
+  // An edit to such a file is skipped by git status and the stash too, but the reset writes the file back.
+  const assumeUnchanged = await editedFiles(git, assumed.filter(({ mode, path }) => (mode === '100644' || mode === '100755') && realFile(root, path)))
   const folders = new Set([...paths].flatMap((path) => path.split('/').slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join('/'))))
   // --directory lists an untracked folder as one `name/` line, so only a file named like a folder matches it.
   const blocking = (await untrackedAt(git, ['--directory'], [...folders])).filter((path) => folders.has(path))
@@ -220,12 +264,15 @@ export async function checkReset(git: Git, root: string, target: unknown): Promi
     if (!complete) unchecked.push(path)
   }
   const listed = [...repositories].sort()
-  // With submodule.recurse the reset also resets every populated submodule of the index or the target, or removes it.
+  // With submodule.recurse the reset also resets every populated submodule of the index or the target (one
+  // holding .git), or removes it. An unpopulated one is an empty folder, so anything else there is mine and is
+  // checked out over: listed too, unless its files are listed already (where only the target has the submodule).
+  const populated = (path: string) => present(`${root}/${path}/.git`) || (!paths.has(path) && entriesOf(`${root}/${path}`)?.length !== 0)
   const submodules = recursive
     ? [...new Set([
         ...index.filter(({ mode }) => mode === '160000').map(({ path }) => path),
-        ...(await git.out(['ls-tree', '-r', '-z', target])).split('\0').filter((line) => line.startsWith('160000 ')).map((line) => line.slice(line.indexOf('\t') + 1))
-      ])].filter((path) => realFolder(root, path) && present(`${root}/${path}/.git`)).map((path) => `${path}/`).filter((path) => !repositories.has(path)).sort()
+        ...(await lines(['ls-tree', '-r', '-z', target])).filter((line) => line.startsWith('160000 ')).map((line) => line.slice(line.indexOf('\t') + 1))
+      ])].filter((path) => realFolder(root, path) && populated(path)).map((path) => `${path}/`).filter((path) => !repositories.has(path)).sort()
     : []
   return {
     dirty,
@@ -233,7 +280,9 @@ export async function checkReset(git: Git, root: string, target: unknown): Promi
     overwritten: found.filter((path) => !isRepository(path) && !listed.some((repository) => path.startsWith(repository))),
     repositories: listed,
     ...(unchecked.length ? { unchecked } : {}),
-    ...(submodules.length ? { submodules } : {})
+    ...(submodules.length ? { submodules } : {}),
+    ...(assumeUnchanged.length ? { assumeUnchanged } : {}),
+    ...(indexUnchecked ? { indexUnchecked } : {})
   }
 }
 

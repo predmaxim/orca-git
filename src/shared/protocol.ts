@@ -205,6 +205,10 @@ export interface ResetCheck {
   unchecked?: string[]
   /** With submodule.recurse set: populated submodules, as `name/`, the reset also resets or removes; nothing in them is checked. */
   submodules?: string[]
+  /** Files git assumes unchanged that were edited, or could not be hashed: the reset writes them back. */
+  assumeUnchanged?: string[]
+  /** The index or the target's tree could not be read (too large), so neither of those two lists was checked. */
+  indexUnchecked?: boolean
 }
 
 /** Sent with `action.run` and `branch.run`: the HEAD the confirmation showed, and the backup to make first. */

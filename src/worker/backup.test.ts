@@ -379,8 +379,8 @@ test('with submodule.recurse the reset check names the submodules a hard reset a
   const git = createGit(root)
   const source = repo()
   const add = (path: string) => sh(root, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', source, path)
-  add('sub')
-  sh(root, 'commit', '-q', '-m', 'add sub')
+  for (const path of ['sub', 'emptied', 'idle']) add(path)
+  sh(root, 'commit', '-q', '-m', 'add submodules')
   sh(root, 'checkout', '-q', '-b', 'other')
   add('plain')
   sh(root, 'commit', '-q', '-m', 'add plain')
@@ -393,12 +393,34 @@ test('with submodule.recurse the reset check names the submodules a hard reset a
   mkdirSync(join(root, 'plain'))
   writeFileSync(join(root, 'plain', 'c1.txt'), 'mine\n')
   writeFileSync(join(root, 'plain', 'mine.txt'), 'mine\n')
+  // My file in emptied, a submodule without its .git; idle, deinitialised, is an empty folder.
+  rmSync(join(root, 'emptied', '.git'))
+  writeFileSync(join(root, 'emptied', 'c1.txt'), 'mine\n')
+  sh(root, 'submodule', 'deinit', '-q', '-f', 'idle')
   sh(root, 'config', 'submodule.recurse', 'true')
-  assert.deepEqual(await checkReset(git, root, target), { dirty: true, overwritten: ['plain/c1.txt', 'plain/mine.txt'], repositories: [], submodules: ['sub/'] })
+  assert.deepEqual(await checkReset(git, root, target), { dirty: true, overwritten: ['plain/c1.txt', 'plain/mine.txt'], repositories: [], submodules: ['emptied/', 'sub/'] })
   // The reset follows the setting: it discards the edit in sub and checks plain out over my file.
   sh(root, 'reset', '-q', '--hard', target)
   assert.equal(readFileSync(join(root, 'sub', 'c1.txt'), 'utf8'), 'c1\n')
   assert.equal(readFileSync(join(root, 'plain', 'c1.txt'), 'utf8'), 'c1\n')
+  assert.equal(readFileSync(join(root, 'emptied', 'c1.txt'), 'utf8'), 'c1\n')
+})
+
+test('the reset check names edits to files git assumes unchanged, and warns when it cannot check them', async () => {
+  const root = repo()
+  const real = createGit(root)
+  const target = rev(root, 'HEAD')
+  // git status and the stash do not see an edit to such a file, but a hard reset writes the file back.
+  sh(root, 'update-index', '--assume-unchanged', 'c1.txt', 'c2.txt')
+  writeFileSync(join(root, 'c1.txt'), 'my local edit\n')
+  const clean = { dirty: false, overwritten: [], repositories: [] }
+  assert.deepEqual(await checkReset(real, root, target), { ...clean, assumeUnchanged: ['c1.txt'] })
+  // A read that fails (a huge index passes the output buffer) leaves files unchecked and says so, never passes them.
+  const failing = (match: (args: string[]) => boolean): Git => ({ ...real, out: (args, options) => (match(args) ? Promise.reject(new Error('stdout maxBuffer length exceeded')) : real.out(args, options)) })
+  assert.deepEqual(await checkReset(failing((args) => args[0] === 'hash-object'), root, target), { ...clean, assumeUnchanged: ['c1.txt', 'c2.txt'] })
+  assert.deepEqual(await checkReset(failing((args) => args.includes('-v')), root, target), { ...clean, indexUnchecked: true })
+  sh(root, 'reset', '-q', '--hard', target)
+  assert.equal(readFileSync(join(root, 'c1.txt'), 'utf8'), 'c1\n')
 })
 
 test('the reset check searches a folder standing where a file git assumes unchanged is tracked', async () => {

@@ -202,11 +202,13 @@ const resetModes = (): { mode: ResetMode; label: string; help: string }[] => [
 /**
  * What a hard reset destroys besides tracked changes, at most 10 paths per list: nested repositories it
  * deletes whole first, then folders it deletes that could not be fully checked for them, then submodules
- * submodule.recurse makes it reset, then untracked files; null when there is none. `stash`: the dialog
- * offers the stash, which does not keep the files.
+ * submodule.recurse makes it reset, then edited files git assumes unchanged (or that the index was too large
+ * to check), then untracked files; null when there is none. `stash`: the dialog offers the stash, which
+ * does not keep the files.
  */
-export function overwrittenWarning({ overwritten, repositories, unchecked = [], submodules = [] }: ResetCheck, stash: boolean): HTMLElement | null {
-  if (!overwritten.length && !repositories.length && !unchecked.length && !submodules.length) return null
+export function overwrittenWarning(state: ResetCheck, stash: boolean): HTMLElement | null {
+  const { overwritten, repositories, unchecked = [], submodules = [], assumeUnchanged = [], indexUnchecked } = state
+  if (!overwritten.length && !repositories.length && !unchecked.length && !submodules.length && !assumeUnchanged.length && !indexUnchecked) return null
   const list = (paths: string[]) => [
     h('ul', { class: 'file-list mono' }, ...paths.slice(0, 10).map((path) => h('li', null, path))),
     paths.length > 10 ? t('pushedMore', { count: paths.length - 10 }).trim() : null
@@ -221,6 +223,8 @@ export function overwrittenWarning({ overwritten, repositories, unchecked = [], 
       ...(repositories.length ? [h('strong', null, t('hardResetRepositories', { count: repositories.length })), ...list(repositories)] : []),
       ...(unchecked.length ? [h('strong', null, t('hardResetUnchecked', { count: unchecked.length })), ...list(unchecked)] : []),
       ...(submodules.length ? [h('strong', null, t('hardResetSubmodules', { count: submodules.length })), ...list(submodules)] : []),
+      ...(assumeUnchanged.length ? [h('strong', null, t('hardResetAssumeUnchanged', { count: assumeUnchanged.length })), ...list(assumeUnchanged)] : []),
+      indexUnchecked ? h('div', null, h('strong', null, t('hardResetIndexUnchecked'))) : null,
       ...(overwritten.length ? [t(stash ? 'hardResetOverwrittenStash' : 'hardResetOverwritten', { count: overwritten.length }), ...list(overwritten)] : [])
     )
   )
