@@ -90,7 +90,8 @@ async function integrate(git: Git, kind: 'merge' | 'rebase', target: string): Pr
     short !== 'FETCH_HEAD' &&
     (await git.run(['rev-parse', '--verify', '-q', '--symbolic-full-name', '--end-of-options', short])).stdout.trim() === name &&
     (await commitOf(short)) === (await commitOf(name))
-  const args = kind === 'merge' ? ['merge', '--no-edit', '--autostash', exact ? short : name] : ['rebase', '--autostash', name]
+  // --no-update-refs: under rebase.updateRefs git would also move other branches in the run, which Undo does not restore.
+  const args = kind === 'merge' ? ['merge', '--no-edit', '--autostash', exact ? short : name] : ['rebase', '--no-update-refs', '--autostash', name]
   const result = await git.run(args, { timeoutMs: NETWORK_TIMEOUT_MS })
   if (!result.ok) {
     let kept: string | null = null

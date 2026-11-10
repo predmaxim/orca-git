@@ -63,7 +63,9 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   - Reset Current Branch to Here… (soft / mixed / hard / keep), Revert Commits, Undo Commit
   - Edit Commit Message…, Fixup, Squash Commits…, Drop Commits, Interactively Rebase from Here…
   - New Branch…, New Tag…
-- **Undo** banner after each rewrite (resets back to the previous HEAD with `--keep`).
+- **Undo** banner after each rewrite (resets back to the previous HEAD with `--keep`). Rewrites and rebase
+  onto move only the current branch, whatever `rebase.updateRefs` says, so Undo restores every branch
+  they moved.
 - **Backup before risky operations**: the confirmation offers to save a backup branch or tag first (see
   [Backups](#backups-before-risky-operations)).
 - Commits already pushed to a remote branch trigger a warning before they are rewritten: by Edit Commit
