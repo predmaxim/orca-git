@@ -1352,7 +1352,9 @@ fetchButton.addEventListener('click', async () => {
   if (!repo) return
   const root = repo.root
   const id = late.start()
-  const show = (result: ActionResult) => showBanner(about(root, result.message), result.ok ? 'success' : 'error')
+  // git's own warnings, one per line, as after any other change.
+  const show = (result: ActionResult) =>
+    showBanner(about(root, [result.message, ...(result.gitWarnings ?? [])].join('\n')), result.ok ? 'success' : 'error', [], Boolean(result.gitWarnings?.length))
   fetchButton.disabled = true
   try {
     const result = await api.fetch(root, id)
