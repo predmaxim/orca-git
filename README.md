@@ -123,9 +123,15 @@ orca plugin install https://github.com/predmaxim/orca-git
 ```
 
 Installed from the Git URL the plugin gets the id `predmaxim.git-log`. Orca first lists the access it
-asks for and prints the command to re-run with `--approve <fingerprint>`. If the original plugin is
+asks for and prints the command to re-run with `--approve <fingerprint>`. Check that the listing names
+"Git" with the version you expect before you approve. If the original plugin is
 installed too, turn it off so the two do not both show: `orca plugin disable emamalet.git-log` or
 `orca plugin uninstall emamalet.git-log`.
+
+Without a version Orca installs the newest `vX.Y.Z` tag of the repository, and only falls back to the
+default branch when there is none. This fork keeps the upstream tags `v0.1.5` and `v0.1.6`, which hold
+the original "Git Log" plugin; this plugin starts at `v0.2.0`. To install one version, name its tag:
+`orca plugin install predmaxim/orca-git@v0.2.0`.
 
 Requires Orca 1.4.248 or later and git 2.31 or later on the `PATH` (or set **Git executable** in the
 plugin settings): the Files list, and so the Diff tab, need `git log --diff-merges` (2.31), and the
@@ -148,7 +154,20 @@ orca plugin test .              # worker and graph tests on temporary repositori
 orca plugin validate .
 orca plugin shot local.git-log --panel log
 orca plugin shot local.git-log --editor <repo>/.orca-git-log.gitdiff   # the Diff tab, once a file was opened from the panel
+orca plugin dev unload local.git-log   # back to the installed predmaxim.git-log, so two "Git" panels do not show
 ```
+
+### Release
+
+Orca installs the newest `vX.Y.Z` tag, not the newest commit, so a release is a tag:
+
+1. Raise `version` in `orca-plugin.json`, commit it with the changes, and push the branch.
+2. Tag that commit with the same version and push the tag:
+   `git tag -a v0.2.1 -m "Git 0.2.1" && git push origin v0.2.1`.
+3. Check what Orca would install: `orca plugin install https://github.com/predmaxim/orca-git` lists the
+   version and the commit before anything is written.
+
+Without the tag, an install from the URL keeps getting the previous tagged version.
 
 ## How history rewriting works
 
