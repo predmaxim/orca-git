@@ -1,0 +1,12 @@
+File-type and folder icons from the New UI (expui) icon set of JetBrains IntelliJ Platform.
+
+Source: https://github.com/JetBrains/intellij-community
+Commit: 2775e0a0c688336d89062d6dbf46f79f79b99c6a (master when fetched, 2026-11-10)
+Paths:  platform/icons/src/expui/fileTypes/*.svg and platform/icons/src/expui/nodes/folder.svg, each with its _dark variant where one exists
+The SVG files are byte for byte the originals; each carries the header "Use of this source code is governed by the Apache 2.0 license".
+
+License: Apache License 2.0, text in the LICENSE file next to this one. Copyright JetBrains s.r.o. and contributors.
+The LICENSE file is the Apache 2.0 text from LICENSE.txt of that repository at commit 7aaea6b2d21dab83cd022a4b8f9b15658375bef0 (2024-03-04), its last revision that was the plain Apache text.
+Since commit 9691014c2d11e46a999c1ff04987498589b256bb (2026-06-10) LICENSE.txt holds the "JetBrains Open-Source Build Terms", which state that the open-source parts are subject to the Apache 2.0 license.
+
+src/ui/fileicons-data.ts embeds these SVGs as strings (frames can only import code); scripts/gen-fileicons.mjs regenerates it.

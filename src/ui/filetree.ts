@@ -1,6 +1,7 @@
 // The files changed by a commit selection as a folder tree. Pure tree building on top, DOM below.
 import type { SelectionFile } from '../shared/protocol.ts'
 import { h, icon } from './dom.ts'
+import { fileIcon, folderIcon } from './fileicons.ts'
 import { statusName } from './format.ts'
 
 export type FileNode =
@@ -96,7 +97,7 @@ export function renderFileTree(container: HTMLElement, nodes: FileNode[], host: 
               }
             },
             icon(open ? 'chevronDown' : 'chevronRight'),
-            icon('folder'),
+            folderIcon(),
             h('span', { class: 'name' }, node.name),
             h('span', { class: 'ft-count' }, String(node.count))
           )
@@ -124,7 +125,7 @@ export function renderFileTree(container: HTMLElement, nodes: FileNode[], host: 
               }
             },
             h('span', { class: 'status-letter' }, letter),
-            icon('file'),
+            fileIcon(node.name),
             h('span', { class: 'name' }, node.name)
           )
         )

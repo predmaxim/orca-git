@@ -2,6 +2,7 @@ import type { DiffHunk, DiffLine, FileDiff, SelectionFile } from '../shared/prot
 import { api, errorMessage } from './api.ts'
 import { h, icon } from './dom.ts'
 import { changedRange, changeStarts, splitRows } from './diffmodel.ts'
+import { fileIcon } from './fileicons.ts'
 import { shortHash, statusName } from './format.ts'
 import { t } from '../shared/i18n.ts'
 import { highlightLines, languageFor, markRange } from './highlight.ts'
@@ -159,6 +160,7 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { dispo
     const path = file.oldPath && file.oldPath !== file.path ? `${file.oldPath} → ${file.path}` : file.path
     title.replaceChildren(
       h('span', { class: `status-letter st-${letter}`, title: statusName(letter) ?? file.status }, letter),
+      fileIcon(file.path),
       h('span', { class: 'path', title: path }, path)
     )
     info.textContent = `${file.from ? shortHash(file.from) : t('diffFromEmpty')}..${shortHash(file.to)}  ${path}`
