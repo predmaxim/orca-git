@@ -126,9 +126,10 @@ installed too, turn it off so the two do not both show: `orca plugin disable ema
 `orca plugin uninstall emamalet.git-log`.
 
 Requires Orca 1.4.248 or later and git 2.31 or later on the `PATH` (or set **Git executable** in the
-plugin settings): git 2.30 does not know `rev-parse --path-format`, and older git was not checked.
-With older git the panel still shows the log and diffs, but refuses every action that changes the
-repository, backups included, and says which version it found; if `git version` cannot be read,
+plugin settings): the Files list, and so the Diff tab, need `git log --diff-merges` (2.31), and the
+actions were not checked on older git. With git 2.30 the panel still shows the log and commit
+details and saves patches, but the Files list fails, and the panel refuses every action that changes
+the repository, backups included, and says which version it found; if `git version` cannot be read,
 nothing is refused. The plugin runs as a `trusted-worker`: it starts `git` with your user account.
 It starts git by its full path: a bare name is looked up only in the
 absolute folders of `PATH`, never in the repository or through an empty or `.` entry, and a relative

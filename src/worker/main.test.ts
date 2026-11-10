@@ -134,7 +134,7 @@ test('with git older than 2.31 the panel reads the repository but changes nothin
   const root = fixture()
   const bin = mkdtempSync(join(tmpdir(), 'git-log-old-git-'))
   try {
-    // git 2.30 as far as its version goes: it cannot tell the panel about a rebase or merge in progress.
+    // git 2.30 as far as its version goes: older than the panel supports.
     const gitPath = join(bin, 'git')
     writeFileSync(gitPath, '#!/bin/sh\nfor a; do last=$a; done\nif [ "$last" = version ]; then echo "git version 2.30.6"; exit 0; fi\nexec git "$@"\n')
     chmodSync(gitPath, 0o755)

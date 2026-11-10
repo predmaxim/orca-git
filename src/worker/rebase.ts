@@ -261,8 +261,9 @@ export function emptyOption(version: string): '--empty=stop' | '--empty=ask' {
 }
 
 /**
- * Why the panel must not change the repository with this git: before 2.31 git does not know `rev-parse --path-format`,
- * so a rebase or merge in progress would go unseen. Null when it is new enough, or when its version cannot be read.
+ * Why the panel must not change the repository with this git: 2.31 is the oldest it supports (the Files list reads
+ * `--diff-merges`), and its guards were not checked on older git. Null when it is new enough, or when its version
+ * cannot be read.
  */
 export async function gitTooOld(git: Git): Promise<string | null> {
   const text = (await git.run(['version'])).stdout.trim()
