@@ -291,21 +291,33 @@ test('merge and rebase onto take the full name of a branch, never a ref its shor
 })
 
 test('a merge commit names the branch by its short name, or by its full ref when the short one means another ref', async () => {
-  const cases: [string, (w: World) => void, string][] = [
-    ['refs/heads/topic', nothing, "Merge branch 'topic'"],
-    ['refs/remotes/origin/topic', (w) => {
+  const cases: ((w: World) => [string, string])[] = [
+    () => ['refs/heads/topic', "Merge branch 'topic'"],
+    (w) => {
       sh(w.root, 'remote', 'add', 'origin', join(w.root, 'nowhere.git'))
       sh(w.root, 'update-ref', 'refs/remotes/origin/topic', w.t2)
-    }, "Merge remote-tracking branch 'origin/topic'"],
-    ['refs/heads/heads/evil', (w) => {
+      return ['refs/remotes/origin/topic', "Merge remote-tracking branch 'origin/topic'"]
+    },
+    (w) => {
       sh(w.root, 'branch', 'heads/evil', w.t2)
       sh(w.root, 'branch', 'evil', w.c1)
-    }, "Merge branch 'refs/heads/heads/evil'"]
+      return ['refs/heads/heads/evil', "Merge branch 'refs/heads/heads/evil'"]
+    },
+    // A branch named with another commit's full hash: git merge would take that commit.
+    (w) => {
+      sh(w.root, 'branch', w.c1, w.t2)
+      return [`refs/heads/${w.c1}`, `Merge branch 'refs/heads/${w.c1}'`]
+    },
+    // git merge FETCH_HEAD reads .git/FETCH_HEAD, not the branch.
+    (w) => {
+      sh(w.root, 'branch', 'FETCH_HEAD', w.t2)
+      return ['refs/heads/FETCH_HEAD', "Merge branch 'refs/heads/FETCH_HEAD'"]
+    }
   ]
-  for (const [name, prepare, subject] of cases) {
+  for (const prepare of cases) {
     const w = world()
     commit(w.root, 'a.txt', 'topic\n', 'match topic')
-    prepare(w)
+    const [name, subject] = prepare(w)
     const result = await runBranchAction(createGit(w.root), { kind: 'merge', name })
     assert.equal(result.ok, true, `${name}: ${result.message}`)
     assert.equal(sh(w.root, 'log', '-1', '--format=%s'), subject, name)
