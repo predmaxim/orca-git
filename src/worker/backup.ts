@@ -3,6 +3,7 @@ import { assertName } from './actions.ts'
 import type { Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
 import { readHead } from './log.ts'
+import { operationRefusal } from './rebase.ts'
 
 const HASH = /^[0-9a-f]{40}$/
 
@@ -90,6 +91,9 @@ export async function runGuarded<R extends ActionResult>(git: Git, guard: Guard,
   try {
     const head = (await readHead(git)).hash
     if (expectHead !== undefined && (typeof expectHead !== 'string' || !HASH.test(expectHead) || expectHead !== head)) throw new Error(t('repoChanged'))
+    // Every guarded action on HEAD refuses while an operation is stopped: say so before a backup or stash is made for nothing.
+    const busy = tip === 'HEAD' ? await operationRefusal(git) : null
+    if (busy) throw new Error(busy)
     if (backup !== undefined) {
       const target = tip === 'HEAD' ? head : await tipOf(git, `refs/heads/${await assertName(git, tip.branch, 'branch')}`)
       if (!target || (backup as { target?: unknown })?.target !== target) throw new Error(t('repoChanged'))

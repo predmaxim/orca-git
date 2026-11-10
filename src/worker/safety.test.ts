@@ -620,6 +620,21 @@ for (const [state, start] of IN_PROGRESS) {
   })
 }
 
+test('an action on HEAD that an operation in progress refuses makes no backup and no stash first', async () => {
+  const w = world()
+  terminal(w.root, ['rebase', '-i', w.c1], { GIT_SEQUENCE_EDITOR: 'sed -i s/^pick/edit/' })
+  writeFileSync(join(w.root, 'b.txt'), 'local b\n')
+  const before = snapshot(w.root)
+  const head = sh(w.root, 'rev-parse', 'HEAD')
+  const git = createGit(w.root)
+  const backup = { kind: 'branch', name: 'backup/main-1', target: head, stash: true }
+  const result = await runGuarded(git, { expectHead: head, backup }, 'HEAD', () => runAction(git, { kind: 'reset', hash: w.c1, mode: 'hard' }))
+  assert.equal(result.ok, false)
+  assert.match(result.message, /in progress/)
+  assert.equal(result.backup, undefined)
+  assert.deepEqual(snapshot(w.root), before)
+})
+
 test('a cherry-pick that left only its todo list is reported as such, with --quit as the way out', async () => {
   const w = world()
   // Refused at the first commit by a staged change, as earlier versions of the plugin left it.
