@@ -175,3 +175,5 @@ The diff is highlighted with [highlight.js](https://highlightjs.org) 11.12.0 (BS
 ## License
 
 MIT
+
+File and folder icons are the New UI (expui) file-type icons of [JetBrains intellij-community](https://github.com/JetBrains/intellij-community) (Apache-2.0, `platform/icons/src/expui/fileTypes` and `nodes/folder.svg`, commit 2775e0a), vendored byte for byte in `src/vendor/jetbrains-icons/` (84 SVG files, 137 KiB, `LICENSE` and `NOTICE` next to them). Frames can only import code, so `scripts/gen-fileicons.mjs` embeds them into `src/ui/fileicons-data.ts` (142 KiB), which the file tree and the Diff tab draw as data URIs, the light or the dark variant by the `light`/`dark` class on `<html>`.

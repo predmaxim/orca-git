@@ -1519,6 +1519,7 @@ input[type='radio']:focus-visible {
 
 .ft-row.current {
   background: var(--selected);
+  color: var(--accent-fg);
 }
 
 .ft:focus-within .ft-row.current {
@@ -1536,6 +1537,24 @@ input[type='radio']:focus-visible {
 
 .ft-row .icon {
   color: var(--muted-fg);
+}
+
+.file-icon {
+  display: inline-flex;
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.file-icon .fi {
+  width: 16px;
+  height: 16px;
+}
+
+html.dark .fi-light,
+html.light .fi-dark,
+html:not(.dark):not(.light) .fi-dark {
+  display: none;
 }
 
 .ft-row .name {
