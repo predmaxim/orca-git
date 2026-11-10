@@ -334,6 +334,16 @@ test('create patch exports the selected commits oldest first, applies cleanly an
   assert.equal((await createPatch(git, root, [hashes[3]], 'out/last.patch', true)).ok, true)
   await assert.rejects(createPatch(git, root, ['HEAD']), /Invalid commit/)
 })
+
+test('create patch offers no clipboard text past the response cap, counted in bytes', async () => {
+  const { root } = repo(0)
+  // 453,000 characters, but 903,000 bytes in UTF-8 (and more as JSON): counted in characters it would pass.
+  writeFileSync(join(root, 'ru.txt'), `${'я'.repeat(150)}\n`.repeat(3000))
+  sh(root, 'add', '.')
+  sh(root, 'commit', '-q', '-m', 'ru')
+  const preview = await createPatch(createGit(root), root, [sh(root, 'rev-parse', 'HEAD')])
+  assert.deepEqual(preview.ok && [preview.tooLarge, preview.text], [true, undefined])
+})
 test('squash and reword todo lines amend with the configured git executable', () => {
   const hash = 'a'.repeat(40)
   const todo = buildTodo([{ hash, action: 'reword', message: 'New' }], new Map(), () => '/tmp/message.txt', '/opt/my git/bin/git')

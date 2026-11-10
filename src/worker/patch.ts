@@ -6,7 +6,7 @@ import { t } from '../shared/i18n.ts'
 
 const { O_WRONLY, O_CREAT, O_TRUNC, O_NOFOLLOW = 0, O_NONBLOCK = 0 } = constants
 
-/** Frame responses are capped at 1 MiB; bigger patches can only be saved. */
+/** Frame responses are capped at 1 MiB; bigger patches can only be saved. Bytes of the text as JSON, in UTF-8. */
 export const MAX_PATCH_TEXT = 900_000
 
 const slug = (subject: string) =>
@@ -75,7 +75,9 @@ export async function createPatch(git: Git, root: string, hashes: string[], path
   const size = bytes.length
   if (!path) {
     if (text === null) return { ok: true, name, size, notUtf8: true }
-    return text.length > MAX_PATCH_TEXT ? { ok: true, name, size, tooLarge: true } : { ok: true, name, size, text }
+    // Bytes, not UTF-16 code units: a character outside ASCII takes up to 4, and JSON escapes a quote, a backslash or a newline.
+    const large = size > MAX_PATCH_TEXT || new TextEncoder().encode(JSON.stringify(text)).length > MAX_PATCH_TEXT
+    return large ? { ok: true, name, size, tooLarge: true } : { ok: true, name, size, text }
   }
   if (typeof path !== 'string' || !path.trim()) return { ok: false, reason: t('enterFilePath') }
   const target = resolve(root, path.trim())
