@@ -197,7 +197,7 @@ export default function activate(orca: OrcaWorkerApi): void {
 
   handle('backup.check', async ({ root, kind, name }) => checkBackup(await gitFor(root), kind, name))
 
-  handle('reset.check', async ({ root, target }) => checkReset(await gitFor(root), target))
+  handle('reset.check', async ({ root, target }) => checkReset(await gitFor(root), root, target))
 
   handle('backup.delete', async ({ root, action }) => {
     const result = await deleteBackup(await gitFor(root), action)

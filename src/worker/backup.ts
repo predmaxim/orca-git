@@ -1,3 +1,4 @@
+import { lstatSync } from 'node:fs'
 import type { ActionResult, BackupDelete } from '../shared/protocol.ts'
 import { assertName } from './actions.ts'
 import { lastLines, type Git } from './git.ts'
@@ -75,12 +76,55 @@ async function untrackedAt(git: Git, options: string[], paths: string[]): Promis
   return found
 }
 
+/** Whether anything, a dangling link included, is at `path`. */
+const present = (path: string) => {
+  try {
+    lstatSync(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The paths in `added` that already exist inside a nested repository (a real folder holding `.git`):
+ * git's listing does not look into one, but a hard reset writes through it. Links are not followed.
+ */
+function insideNestedRepos(root: string, added: string[]): string[] {
+  // Per folder: a nested repository, a plain folder, or null when there is no real folder to look into.
+  const folders = new Map<string, boolean | null>()
+  const kind = (dir: string) => {
+    let known = folders.get(dir)
+    if (known === undefined) {
+      let folder = false
+      try {
+        folder = lstatSync(`${root}/${dir}`).isDirectory()
+      } catch {
+        // Nothing there.
+      }
+      known = folder ? present(`${root}/${dir}/.git`) : null
+      folders.set(dir, known)
+    }
+    return known
+  }
+  return added.filter((path) => {
+    const parts = path.split('/')
+    for (let i = 1; i < parts.length; i++) {
+      const state = kind(parts.slice(0, i).join('/'))
+      if (state === null) return false
+      if (state) return present(`${root}/${path}`)
+    }
+    return false
+  })
+}
+
 /**
  * What a hard reset to `target` would lose: whether tracked files have uncommitted changes, and the
  * untracked files, ignored ones included, it overwrites: those at a path `target` tracks and HEAD does
- * not (or inside a folder there), and those standing where `target` needs a folder.
+ * not (or inside a folder there, or inside a nested repository), and those standing where `target` needs
+ * a folder. `root` is the repository's top level.
  */
-export async function checkReset(git: Git, target: unknown): Promise<{ dirty: boolean; overwritten: string[] }> {
+export async function checkReset(git: Git, root: string, target: unknown): Promise<{ dirty: boolean; overwritten: string[] }> {
   if (typeof target !== 'string' || !HASH.test(target)) throw new Error(t('invalidCommit'))
   const dirty = (await git.out(['status', '--porcelain', '-z', '--untracked-files=no'])) !== ''
   // On a branch with no commits yet, every file of the target is new.
@@ -91,7 +135,7 @@ export async function checkReset(git: Git, target: unknown): Promise<{ dirty: bo
   const folders = new Set(added.flatMap((path) => path.split('/').slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join('/'))))
   // --directory lists an untracked folder as one `name/` line, so only a file named like a folder matches it.
   const blocking = (await untrackedAt(git, ['--directory'], [...folders])).filter((path) => folders.has(path))
-  const overwritten = [...new Set([...(await untrackedAt(git, [], added)), ...blocking])].sort()
+  const overwritten = [...new Set([...(await untrackedAt(git, [], added)), ...blocking, ...insideNestedRepos(root, added)])].sort()
   return { dirty, overwritten }
 }
 
