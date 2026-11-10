@@ -1,4 +1,5 @@
-import type { ActionRequest, ActionResult, CheckResult, RewriteKind } from '../shared/protocol.ts'
+import type { ActionRequest, ActionResult, CheckoutRisk, CheckResult, RewriteKind } from '../shared/protocol.ts'
+import { checkoutRisk, stashForCheckout, trimRisk } from './checkout.ts'
 import { lastLines, type Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
 import { readHead } from './log.ts'
@@ -109,6 +110,12 @@ interface Warned {
   warning: string
 }
 
+/** A checkout that first moved the changes into the stash `stash` (its commit). */
+interface Stashed {
+  message: string
+  stash: string
+}
+
 async function rewrite(git: Git, action: Extract<ActionRequest, { kind: 'squash' | 'fixup' | 'drop' | 'reword' | 'rebase' }>): Promise<string | Warned> {
   const history = await readFirstParentHistory(git)
   const messages = messagesOf(history)
@@ -173,17 +180,67 @@ async function attempt(git: Git, action: ActionRequest): Promise<ActionResult> {
   const previousHead = (await readHead(git)).hash ?? undefined
   try {
     const done = await perform(git, action)
-    const message = typeof done === 'string' ? done : done.warning
+    const message = typeof done === 'string' ? done : 'warning' in done ? done.warning : done.message
     // A rewrite runs with --autostash; with its conflicts in the tree, Undo's reset --keep would refuse anyway.
     if (REWRITES.has(action.kind) && (await autostashConflict(git))) return { ok: true, warning: true, message: `${message} ${t('autostashConflict')}` }
-    return { ok: true, message, ...(typeof done === 'string' ? {} : { warning: true }), ...(previousHead ? { previousHead } : {}) }
+    const extra = typeof done === 'string' ? {} : 'warning' in done ? { warning: true } : { stash: done.stash }
+    return { ok: true, message, ...extra, ...(previousHead ? { previousHead } : {}) }
   } catch (error) {
     if (error instanceof LeavesCommits) return { ok: false, message: error.message, leaves: error.commits }
+    if (error instanceof CheckoutAtRisk) return { ok: false, message: error.message, atRisk: trimRisk(error.risk) }
+    if (error instanceof StashKept) return { ok: false, message: error.message, stash: error.stash }
     return { ok: false, message: error instanceof Error ? error.message : String(error) }
   }
 }
 
-async function perform(git: Git, action: ActionRequest): Promise<string | Warned> {
+/** Moving HEAD would touch `risk`; nothing ran. The panel asks, then sends `stash` or `carry`. */
+class CheckoutAtRisk extends Error {
+  risk: CheckoutRisk
+  constructor(risk: CheckoutRisk) {
+    super(t('checkoutAtRisk'))
+    this.risk = risk
+  }
+}
+
+/** The changes went into the stash, then the checkout failed: they are safe there. */
+class StashKept extends Error {
+  stash: string
+  constructor(error: unknown, stashed: { hash: string; name: string }) {
+    super(`${error instanceof Error ? error.message : String(error)}\n${t('stashKept', { name: stashed.name })}`)
+    this.stash = stashed.hash
+  }
+}
+
+/**
+ * Before HEAD moves to `ref` (a full ref or a 40-hex commit, never a name a user typed): what it would touch goes as
+ * the request says, into a new stash (`stash: true`) or along with git (`carry: true`, refused when anything would be
+ * lost). Neither said: throws CheckoutAtRisk, so the panel asks. Resolves to the stash it made, if any.
+ */
+async function putAside(git: Git, action: { stash?: unknown; carry?: unknown }, ref: string, to: string) {
+  const commit = (await git.run(['rev-parse', '--verify', '-q', `${ref}^{commit}`])).stdout.trim()
+  // An unknown target: the checkout itself says so.
+  const risk = HASH.test(commit) ? await checkoutRisk(git, commit) : null
+  if (!risk) return null
+  if (action.stash !== true && action.carry !== true) throw new CheckoutAtRisk(risk)
+  if (action.stash !== true) {
+    if (!risk.carry) throw new Error(t('carryRefused'))
+    return null
+  }
+  const head = await readHead(git)
+  return stashForCheckout(git, risk, head.branch ?? head.hash?.slice(0, 8) ?? 'HEAD', to)
+}
+
+/** Runs the command that moves HEAD; when it fails after a stash, the error names the stash. */
+async function moveWith(stashed: { hash: string; name: string } | null, run: () => Promise<unknown>, message: string): Promise<string | Stashed> {
+  try {
+    await run()
+  } catch (error) {
+    throw stashed ? new StashKept(error, stashed) : error
+  }
+  return stashed ? { message: `${message} ${t('stashedAs', { name: stashed.name })}`, stash: stashed.hash } : message
+}
+
+async function perform(git: Git, action: ActionRequest): Promise<string | Warned | Stashed> {
   // A rebase, merge, cherry-pick or revert stopped in a terminal: only adding a ref leaves HEAD, the index and the files alone.
   if (action.kind !== 'tag' && !(action.kind === 'branch' && action.checkout !== true)) {
     const busy = await operationRefusal(git)
@@ -204,19 +261,25 @@ async function perform(git: Git, action: ActionRequest): Promise<string | Warned
           throw new Error(t('notBranchOrCommit', { name: String(track) }))
         }
         const name = await assertName(git, target, 'branch')
+        const stashed = await putAside(git, action, track, name)
         // git branch checks the tracking before it writes; `switch --create --track` would update the index and files
         // first, then fail on a ref no remote's fetch refspec maps and leave the remote branch staged on HEAD.
-        await git.out(['branch', '--track', name, track])
-        const switched = await git.run(['switch', '--end-of-options', name])
-        if (!switched.ok) throw new Error(`${t('branchMadeNotSwitched', { name, upstream: track.slice(13) })}\n${lastLines(switched.stderr || switched.stdout, 4)}`)
-      } else if (commit) {
+        return moveWith(stashed, async () => {
+          await git.out(['branch', '--track', name, track])
+          const switched = await git.run(['switch', '--end-of-options', name])
+          if (!switched.ok) throw new Error(`${t('branchMadeNotSwitched', { name, upstream: track.slice(13) })}\n${lastLines(switched.stderr || switched.stdout, 4)}`)
+        }, t('checkedOut', { target }))
+      }
+      if (commit) {
+        const stashed = await putAside(git, action, action.target, target.slice(0, 8))
         // <hash>^{commit}: git checkout reads a bare 40-hex argument as a branch of that name first.
-        await git.out(['checkout', '--detach', `${action.target}^{commit}`, '--'])
+        return moveWith(stashed, () => git.out(['checkout', '--detach', `${action.target}^{commit}`, '--']), t('checkedOut', { target: target.slice(0, 8) }))
       }
       // Anything else must be a local branch: git switch refuses a tag, a remote branch, the stash or a revision, and with
       // --no-guess a name only a remote branch has, which it would otherwise make into a new branch tracking that one.
-      else await git.out(['switch', '--no-guess', '--end-of-options', await assertName(git, target, 'branch')])
-      return t('checkedOut', { target: commit ? target.slice(0, 8) : target })
+      const name = await assertName(git, target, 'branch')
+      const stashed = await putAside(git, action, `refs/heads/${name}`, name)
+      return moveWith(stashed, () => git.out(['switch', '--no-guess', '--end-of-options', name]), t('checkedOut', { target: name }))
     }
     case 'branch': {
       const [hash] = assertHashes([action.hash])
@@ -224,9 +287,10 @@ async function perform(git: Git, action: ActionRequest): Promise<string | Warned
       // Exactly true, as main.ts's onHead reads it: only then was the HEAD the dialog showed checked.
       const checkout = action.checkout === true
       if (checkout) await guardLeaving(git, action.leave, hash)
+      const stashed = checkout ? await putAside(git, action, hash, name) : null
       // <hash>^{commit}: git checkout -b and git branch read a bare 40-hex start as a branch of that name first.
-      await git.out(checkout ? ['checkout', '-b', name, `${hash}^{commit}`, '--'] : ['branch', name, `${hash}^{commit}`])
-      return t(checkout ? 'createdCheckedOut' : 'createdBranch', { name })
+      const args = checkout ? ['checkout', '-b', name, `${hash}^{commit}`, '--'] : ['branch', name, `${hash}^{commit}`]
+      return moveWith(stashed, () => git.out(args), t(checkout ? 'createdCheckedOut' : 'createdBranch', { name }))
     }
     case 'tag': {
       const [hash] = assertHashes([action.hash])

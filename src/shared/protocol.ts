@@ -143,9 +143,11 @@ export type ActionRequest =
    * `target`: a local branch, or with `detach: true` a full commit hash (a branch can be named like one).
    * `track`: a remote branch (full ref) to make `target` from, as a new local branch tracking it.
    * `leave`: move HEAD even though commits only a detached HEAD holds are left behind (asked first; see `leaves`).
+   * `stash` / `carry`: what to do with what the checkout would touch (asked first; see `atRisk`): put it in a new
+   * stash first, or take the changes along as git does (refused when something would be lost).
    */
-  | { kind: 'checkout'; target: string; track?: string; detach?: boolean; leave?: boolean }
-  | { kind: 'branch'; hash: string; name: string; checkout: boolean; leave?: boolean }
+  | { kind: 'checkout'; target: string; track?: string; detach?: boolean; leave?: boolean; stash?: boolean; carry?: boolean }
+  | { kind: 'branch'; hash: string; name: string; checkout: boolean; leave?: boolean; stash?: boolean; carry?: boolean }
   | { kind: 'tag'; hash: string; name: string }
   | { kind: 'cherryPick'; hashes: string[] }
   | { kind: 'revert'; hashes: string[] }
@@ -167,6 +169,21 @@ export type CheckResult =
   | { ok: true; pushed: string[]; commits: RangeCommit[] }
   | { ok: false; reason: string }
 
+/**
+ * What moving HEAD to another commit would touch. `changed`: tracked files with changes in the index or the files;
+ * `conflicts`: those of them the target changes too (git refuses); `untracked` / `ignored`: files where the target
+ * writes a file (git refuses an untracked one and silently deletes an ignored one). `carry`: git can take the changes
+ * along without losing any. Each list holds at most 50 paths in a reply; `more` counts the rest.
+ */
+export interface CheckoutRisk {
+  changed: string[]
+  conflicts: string[]
+  untracked: string[]
+  ignored: string[]
+  carry: boolean
+  more: number
+}
+
 export interface ActionResult {
   ok: boolean
   message: string
@@ -174,8 +191,10 @@ export interface ActionResult {
   previousHead?: string
   /** The backup branch or tag made before the action, even when the action then failed. */
   backup?: string
-  /** The stash commit holding the uncommitted changes saved with the backup. */
+  /** The stash commit holding the uncommitted changes saved with the backup, or before a checkout. */
   stash?: string
+  /** Nothing ran: the checkout would touch these; send it again with `stash` or `carry`. */
+  atRisk?: CheckoutRisk
   /** HEAD after an action sent with `expectHead` or a backup ran, for its Undo to expect. */
   head?: string
   /** It ran, but left something for the user to sort out (the message says what); Undo only with `previousHead`. */

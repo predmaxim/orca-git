@@ -57,7 +57,7 @@ export async function checkBackup(git: Git, kind: unknown, name: unknown): Promi
 const PATHSPECS_MAX = 8000
 
 /** What `ls-files -o` with `options` finds at `paths`, ignored files included, in calls of at most PATHSPECS_MAX characters. */
-async function untrackedAt(git: Git, options: string[], paths: string[]): Promise<string[]> {
+export async function untrackedAt(git: Git, options: string[], paths: string[]): Promise<string[]> {
   const found: string[] = []
   for (const batch of batches(paths.map((path) => `:(literal)${path}`))) {
     found.push(...(await git.out(['ls-files', '-z', '-o', ...options, '--', ...batch])).split('\0').filter(Boolean))
@@ -146,7 +146,7 @@ function realFolder(root: string, path: string): boolean {
 }
 
 /** Whether `path` is a regular file reached through real folders only. */
-function realFile(root: string, path: string): boolean {
+export function realFile(root: string, path: string): boolean {
   const folder = path.split('/').slice(0, -1).join('/')
   try {
     return lstatSync(`${root}/${path}`).isFile() && (!folder || realFolder(root, folder))
@@ -156,7 +156,7 @@ function realFile(root: string, path: string): boolean {
 }
 
 /** Of `files`, those that no longer hash to their index `hash`, or that git could not hash: never passed unchecked. */
-async function editedFiles(git: Git, files: { hash: string; path: string }[]): Promise<string[]> {
+export async function editedFiles(git: Git, files: { hash: string; path: string }[]): Promise<string[]> {
   const indexed = new Map(files.map(({ path, hash }) => [path, hash]))
   const edited: string[] = []
   for (const batch of batches([...indexed.keys()])) {

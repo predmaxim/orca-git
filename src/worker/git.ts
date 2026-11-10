@@ -16,6 +16,8 @@ export interface GitOptions {
   timeoutMs?: number
   /** Also keep stdout as bytes (`GitResult.bytes`): output that need not be UTF-8, such as a patch. */
   bytes?: boolean
+  /** Written to git's stdin, which is then closed. */
+  input?: string
 }
 
 export interface Git {
@@ -62,7 +64,7 @@ export function createGit(root: string, gitPath = 'git'): Git {
   const env = gitEnv(file)
   const run = (args: string[], options: GitOptions = {}) =>
     new Promise<GitResult>((resolve) => {
-      execFile(
+      const child = execFile(
         file,
         ['-c', 'core.quotepath=off', '-c', 'color.ui=false', '-c', 'log.showSignature=false', ...args],
         {
@@ -85,6 +87,7 @@ export function createGit(root: string, gitPath = 'git'): Git {
           resolve({ ok: !error, code, stdout: String(stdout), stderr: note, ...(options.bytes ? { bytes: stdout } : {}) })
         }
       )
+      if (options.input !== undefined) child.stdin?.end(options.input)
     })
   return {
     gitPath: file,
