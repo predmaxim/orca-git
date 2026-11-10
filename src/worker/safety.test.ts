@@ -4,6 +4,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, 
 import { tmpdir } from 'node:os'
 import { join, relative, sep } from 'node:path'
 import { after, test } from 'node:test'
+import { pathToFileURL } from 'node:url'
 import type { ActionRequest, ActionResult, PlanItem } from '../shared/protocol.ts'
 import { checkRewrite, runAction } from './actions.ts'
 import { createBackup, deleteBackup, runGuarded } from './backup.ts'
@@ -689,6 +690,50 @@ test('a first-parent history that is not one chain of distinct commits is refuse
     await assert.rejects(readFirstParentHistory(splice(records)), /could not read/)
   }
   assert.deepEqual((await readFirstParentHistory(real)).map((e) => e.hash), [w.c3, w.c2, w.c1])
+})
+
+test('the oldest commit of a shallow clone is never rewritten, reverted or cherry-picked as a first commit', async () => {
+  const origin = repo()
+  const [, , c3, c4] = ['one', 'two', 'three', 'four'].map((name) => commit(origin, `${name}.txt`, `${name}\n`, name))
+  // Two commits deep: git shows c3 with no parent, though its object has one.
+  const root = join(tempDir('git-log-shallow-'), 'clone')
+  sh(origin, 'clone', '-q', '--depth', '2', pathToFileURL(origin).href, root)
+  sh(root, 'config', 'user.name', 'Tester')
+  sh(root, 'config', 'user.email', 'tester@example.com')
+  sh(root, 'config', 'commit.gpgsign', 'false')
+  assert.equal(sh(root, 'log', '-1', '--format=%P', c3), '')
+  const git = createGit(root)
+  // From --root, a drop of c3 would delete one.txt and two.txt, and every rewrite would cut the branch off its history.
+  for (const [kind, list] of [['drop', [c3]], ['reword', [c3]], ['squash', [c4, c3]], ['fixup', [c4]], ['rebase', [c3]]] as const) {
+    const check = await checkRewrite(git, kind, [...list])
+    assert.equal(check.ok, false, kind)
+    assert.match(check.ok ? '' : check.reason, /git fetch --unshallow/, kind)
+  }
+  const shallow = as<World>({ root })
+  const refusals: [string, ActionRequest][] = [
+    ['drop', { kind: 'drop', hashes: [c3] }],
+    ['reword', { kind: 'reword', hash: c3, message: 'three, reworded' }],
+    ['squash', { kind: 'squash', hashes: [c4, c3], message: 'squashed' }],
+    ['fixup', { kind: 'fixup', hashes: [c4] }],
+    ['interactive rebase', { kind: 'rebase', plan: [{ hash: c3, action: 'pick' }, { hash: c4, action: 'pick' }] }],
+    // Against the empty tree: the revert would delete one.txt, two.txt and three.txt.
+    ['revert', { kind: 'revert', hashes: [c4, c3] }],
+    ['cherry-pick', { kind: 'cherryPick', hashes: [c3] }]
+  ]
+  for (const [label, action] of refusals) {
+    await refusedBeforeGit(shallow, label, async (git) => {
+      const result = await runAction(git, action)
+      assert.match(result.message, /git fetch --unshallow/, label)
+      return result
+    })
+  }
+  // Above the oldest commit a rewrite and a revert run as in a full clone.
+  const reworded = await runAction(git, { kind: 'reword', hash: c4, message: 'four, reworded' })
+  assert.equal(reworded.ok, true, reworded.message)
+  assert.equal(sh(root, 'log', '-1', '--format=%P'), c3)
+  const reverted = await runAction(git, { kind: 'revert', hashes: [sh(root, 'rev-parse', 'HEAD')] })
+  assert.equal(reverted.ok, true, reverted.message)
+  assert.deepEqual(readdirSync(root).filter((name) => name !== '.git').sort(), ['one.txt', 'three.txt', 'two.txt'])
 })
 
 test('rewritten messages keep lines that start with #', async () => {

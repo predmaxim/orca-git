@@ -14,6 +14,7 @@ import {
   readFirstParentHistory,
   runRebase,
   selectRange,
+  shallowBoundary,
   todoOnly,
   type HistoryEntry
 } from './rebase.ts'
@@ -48,6 +49,15 @@ export async function oldestFirst(git: Git, hashes: string[]): Promise<string[]>
   return out.split(/\r?\n/).filter((hash) => wanted.has(hash))
 }
 
+/** Refuses a commit where a shallow clone's history starts: git would revert or cherry-pick its whole tree. */
+async function refuseShallow(git: Git, hashes: string[]): Promise<void> {
+  // Only a commit git shows without parents can be one.
+  const shown = (await git.out(['rev-list', '--no-walk', '--parents', ...hashes, '--'])).split('\n').map((line) => line.split(' '))
+  for (const [hash, ...parents] of shown) {
+    if (hash && !parents.length && (await shallowBoundary(git, hash))) throw new Error(t('shallowBoundary', { hash: hash.slice(0, 8) }))
+  }
+}
+
 async function sequencer(git: Git, verb: 'cherry-pick' | 'revert', args: string[]): Promise<void> {
   const start = (await readHead(git)).hash
   const result = await git.run([verb, ...args])
@@ -78,7 +88,7 @@ export async function checkRewrite(git: Git, kind: RewriteKind, hashes: string[]
     const history = await readFirstParentHistory(git)
     if (kind === 'undo') {
       if (hashes.length !== 1 || hashes[0] !== head.hash) return { ok: false, reason: t('undoOnlyHead') }
-      if (!history[0]?.parents.length) return { ok: false, reason: t('undoFirstCommit') }
+      if (!history[0]?.parents.length) return { ok: false, reason: history[0]?.shallow ? t('shallowBoundary', { hash: head.hash.slice(0, 8) }) : t('undoFirstCommit') }
       return { ok: true, pushed: await pushedTo(git, head.hash), commits: [history[0]] }
     }
     if (kind === 'squash' && hashes.length < 2) return { ok: false, reason: t('squashNeedTwo') }
@@ -223,11 +233,13 @@ async function perform(git: Git, action: ActionRequest): Promise<string | Warned
     }
     case 'cherryPick': {
       const hashes = await oldestFirst(git, assertHashes(action.hashes))
+      await refuseShallow(git, hashes)
       await sequencer(git, 'cherry-pick', hashes)
       return t('cherryPicked', { count: hashes.length })
     }
     case 'revert': {
       const hashes = (await oldestFirst(git, assertHashes(action.hashes))).reverse()
+      await refuseShallow(git, hashes)
       await sequencer(git, 'revert', ['--no-edit', ...hashes])
       return t('reverted', { count: hashes.length })
     }

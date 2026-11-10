@@ -7,6 +7,8 @@ import { t } from '../shared/i18n.ts'
 
 export interface HistoryEntry extends RangeCommit {
   parents: string[]
+  /** Shown with no parents, though the commit has one: where a shallow clone's history starts (`shallowBoundary`). */
+  shallow?: boolean
 }
 
 /** How far back the first-parent history is read for a rewrite. */
@@ -29,7 +31,19 @@ export async function readFirstParentHistory(git: Git, limit = HISTORY_LIMIT): P
   if (fields.length % 4 !== 1 || !chained || new Set(entries.map((entry) => entry.hash)).size !== entries.length) {
     throw new Error(t('gitOutputUnreadable', { command: 'log' }))
   }
+  const oldest = entries.at(-1)
+  if (oldest && !oldest.parents.length) oldest.shallow = await shallowBoundary(git, oldest.hash)
   return entries
+}
+
+/**
+ * Whether `hash`, which git shows with no parents, has one in its object: where a shallow clone's history starts. git
+ * takes it for a first commit: a rewrite from it would run from --root and cut the branch off its history (a drop also
+ * deletes the files of the commits before it), and a revert or cherry-pick would take its whole tree for its change.
+ */
+export async function shallowBoundary(git: Git, hash: string): Promise<boolean> {
+  // The header ends at the first empty line; a line of the message may start with "parent " too.
+  return /^parent /m.test((await git.out(['cat-file', 'commit', hash])).split('\n\n')[0])
 }
 
 export interface Range {
@@ -51,6 +65,7 @@ export function selectRange(history: HistoryEntry[], hashes: string[]): Range {
   const commits = history.slice(0, oldest + 1).reverse()
   const merge = commits.find((entry) => entry.parents.length > 1)
   if (merge) throw new Error(t('rewriteAcrossMergeError', { hash: merge.hash.slice(0, 8) }))
+  if (commits[0].shallow) throw new Error(t('shallowBoundary', { hash: commits[0].hash.slice(0, 8) }))
   return { base: commits[0].parents[0] ?? null, commits }
 }
 
@@ -59,7 +74,7 @@ export function rangeHashes(kind: RewriteKind, hashes: string[], history: Histor
   if (kind === 'fixup' && hashes.length === 1) {
     const entry = history.find((e) => e.hash === hashes[0])
     const parent = entry?.parents[0]
-    if (!parent) throw new Error(t('noPreviousCommit'))
+    if (!parent) throw new Error(entry?.shallow ? t('shallowBoundary', { hash: entry.hash.slice(0, 8) }) : t('noPreviousCommit'))
     return [hashes[0], parent]
   }
   return hashes
