@@ -79,7 +79,7 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   such an action, and Undo runs only while HEAD is still where the action left it. Merge, rebase onto
   and deleting an unmerged branch run only while that branch is still at the commit the menu showed.
   New branch, rename and checkout refuse names git would expand, like `@{-1}`, names under `refs/`
-  and names shaped like a full commit hash; checkout takes only a branch (`git switch`) or, for
+  and names shaped like a full commit hash; checkout takes only a local branch (`git switch --no-guess`) or, for
   Checkout Revision, a full commit hash given as `<hash>^{commit}` so that a branch named like the
   hash cannot take its place, and merge and rebase onto take the branch's full ref. Warnings git
   prints while an action succeeds show in the banner under its message.

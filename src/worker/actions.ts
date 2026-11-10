@@ -213,8 +213,9 @@ async function perform(git: Git, action: ActionRequest): Promise<string | Warned
         // <hash>^{commit}: git checkout reads a bare 40-hex argument as a branch of that name first.
         await git.out(['checkout', '--detach', `${action.target}^{commit}`, '--'])
       }
-      // Anything else must be a local branch: git switch refuses a tag, a remote branch, the stash or a revision.
-      else await git.out(['switch', '--end-of-options', await assertName(git, target, 'branch')])
+      // Anything else must be a local branch: git switch refuses a tag, a remote branch, the stash or a revision, and with
+      // --no-guess a name only a remote branch has, which it would otherwise make into a new branch tracking that one.
+      else await git.out(['switch', '--no-guess', '--end-of-options', await assertName(git, target, 'branch')])
       return t('checkedOut', { target: commit ? target.slice(0, 8) : target })
     }
     case 'branch': {

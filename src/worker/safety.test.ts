@@ -182,12 +182,15 @@ test('checkout refuses anything but a branch or a full commit hash', async () =>
   }
   // Names that pass as branch names but are a tag, the stash, ORIG_HEAD, a remote branch, a ref path or an abbreviated hash: git switch refuses them.
   sh(w.root, 'tag', 'v1', w.c1)
+  sh(w.root, 'remote', 'add', 'origin', join(w.root, 'nowhere.git'))
   sh(w.root, 'update-ref', 'refs/remotes/origin/main', w.c1)
+  // A name only a remote branch has: git switch would guess a new branch that tracks it.
+  sh(w.root, 'update-ref', 'refs/remotes/origin/feature', w.t2)
   sh(w.root, 'update-ref', 'ORIG_HEAD', w.c1)
   writeFileSync(join(w.root, 'a.txt'), 'stashed\n')
   sh(w.root, 'stash', '-q')
   const before = snapshot(w.root)
-  for (const target of ['v1', 'tags/v1', 'stash', 'ORIG_HEAD', 'origin/main', 'heads/topic', w.c1.slice(0, 12), 'HEAD']) {
+  for (const target of ['v1', 'tags/v1', 'stash', 'ORIG_HEAD', 'origin/main', 'feature', 'heads/topic', w.c1.slice(0, 12), 'HEAD']) {
     const result = await runAction(createGit(w.root), { kind: 'checkout', target })
     assert.equal(result.ok, false, `checkout ${target}: ${result.message}`)
     assert.deepEqual(snapshot(w.root), before, `checkout ${target}`)
