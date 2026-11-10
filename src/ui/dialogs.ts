@@ -281,6 +281,8 @@ export async function askRebasePlan(commits: RangeCommit[], pushed: string[], ba
               item.action = (event.target as HTMLSelectElement).value as RebaseAction
               selected = index
               render()
+              // The rows were drawn again: the keyboard stays on this row's select.
+              list.children[index].querySelector('select')?.focus()
             },
             onclick: (event: Event) => event.stopPropagation()
           },
@@ -315,6 +317,8 @@ export async function askRebasePlan(commits: RangeCommit[], pushed: string[], ba
     render()
   }
   list.addEventListener('keydown', (event) => {
+    // Keys on a row's select are the select's own, not the highlighted row's.
+    if (event.target !== list) return
     if (event.altKey && event.key === 'ArrowUp') move(-1)
     else if (event.altKey && event.key === 'ArrowDown') move(1)
     else if (event.key === 'ArrowUp') selected = Math.max(0, selected - 1)
