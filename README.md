@@ -87,10 +87,11 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   the way out.
 - Every git command the worker runs, where its input comes from and how it is checked is listed in
   [docs/git-safety.md](docs/git-safety.md).
-- **Refresh** re-reads the log and branches; **Fetch** runs `git fetch --all --no-prune --no-prune-tags`
-  (so `fetch.prune`, `remote.<name>.prune` and `fetch.pruneTags` in your config delete neither remote
-  branches nor local tags such as backups) and reports the result in the banner. It never asks for a
-  password: it works through the SSH agent and git's credential helpers.
+- **Refresh** re-reads the log and branches; **Fetch** runs
+  `git -c fetch.parallel=2 fetch --all --no-prune --no-prune-tags` (so `fetch.prune`,
+  `remote.<name>.prune` and `fetch.pruneTags` in your config delete neither remote branches nor local
+  tags such as backups) and reports the result in the banner. It never asks for a password: it works
+  through the SSH agent and git's credential helpers.
 - Live refresh when the repository changes (commits, checkouts, fetches, rebases from a terminal).
 
 ## Where it shows
