@@ -1,7 +1,7 @@
 import { realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { ActionRequest, ActionResult, CheckoutRisk, CheckResult, RewriteKind } from '../shared/protocol.ts'
-import { checkoutRisk, stashForCheckout, trimRisk } from './checkout.ts'
+import { checkoutRisk, stashForCheckout, trimRisk, type Stash } from './checkout.ts'
 import { lastLines, type Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
 import { readHead } from './log.ts'
@@ -207,7 +207,7 @@ class CheckoutAtRisk extends Error {
 /** The changes went into the stash, then the checkout failed: they are safe there. */
 class StashKept extends Error {
   stash: string
-  constructor(error: unknown, stashed: { hash: string; name: string }) {
+  constructor(error: unknown, stashed: Stash) {
     super(`${error instanceof Error ? error.message : String(error)}\n${t('stashKept', { name: stashed.name })}`)
     this.stash = stashed.hash
   }
@@ -237,7 +237,9 @@ async function putAside(git: Git, action: { stash?: unknown; carry?: unknown }, 
     if (where && !samePath(where, git.root)) throw new Error(t('branchInWorktree', { name: ref.slice(11), path: where }))
   }
   const head = await readHead(git)
-  return stashForCheckout(git, risk, head.branch ?? head.hash?.slice(0, 8) ?? 'HEAD', to)
+  const stash = await stashForCheckout(git, risk, head.branch ?? head.hash?.slice(0, 8) ?? 'HEAD', to)
+  if (stash?.error) throw new StashKept(new Error(stash.error), stash)
+  return stash
 }
 
 /** Whether two folders are one, links resolved. */
@@ -250,7 +252,7 @@ function samePath(a: string, b: string): boolean {
 }
 
 /** Runs the command that moves HEAD; when it fails after a stash, the error names the stash. */
-async function moveWith(stashed: { hash: string; name: string } | null, run: () => Promise<unknown>, message: string): Promise<string | Stashed> {
+async function moveWith(stashed: Stash | null, run: () => Promise<unknown>, message: string): Promise<string | Stashed> {
   try {
     await run()
   } catch (error) {

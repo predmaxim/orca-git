@@ -168,7 +168,11 @@ const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(ma
 
 let bannerTimer: ReturnType<typeof setTimeout> | undefined
 
+/** What the banner shows now, to bring back after a key's notice covers it; null when hidden. */
+let shownBanner: Parameters<typeof showBanner> | null = null
+
 function showBanner(text: string, kind: 'success' | 'error' | 'info', actions: { label: string; run: () => void }[] = [], sticky = false): void {
+  shownBanner = [text, kind, actions, sticky]
   clearTimeout(bannerTimer)
   banner.className = `banner show ${kind}`
   bannerText.textContent = text
@@ -190,7 +194,20 @@ function showBanner(text: string, kind: 'success' | 'error' | 'info', actions: {
   if (!sticky && kind !== 'error') bannerTimer = setTimeout(hideBanner, actions.length ? 15_000 : 6_000)
 }
 
+/**
+ * A key's notice (why a letter did nothing). It covers an error, an Undo or a stash name only for a moment: that
+ * banner comes back after it.
+ */
+function showNotice(text: string): void {
+  const covered = shownBanner && (shownBanner[1] === 'error' || shownBanner[3] || shownBanner[2]?.length) ? shownBanner : null
+  showBanner(text, 'info')
+  if (!covered) return
+  clearTimeout(bannerTimer)
+  bannerTimer = setTimeout(() => showBanner(...covered), 3000)
+}
+
 function hideBanner(): void {
+  shownBanner = null
   clearTimeout(bannerTimer)
   banner.className = 'banner'
   if (repo?.operation) showOperationBanner()
@@ -1059,7 +1076,7 @@ async function report(root: string, action: ActionRequest | BranchAction | Backu
     const undo = here && previous && result.head && UNDOABLE.has(action.kind)
       ? [{ label: t('undo'), run: () => void act({ root, head: result.head, reported: true }, { kind: 'reset', hash: previous, mode: 'keep' }, t('progUndoing')).then((r) => r?.ok && showBanner(t('restoredHead', { hash: shortHash(previous) }), 'success')) }]
       : []
-    showBanner(text, result.warning ? 'info' : 'success', [...undo, ...show], result.warning || Boolean(result.gitWarnings?.length))
+    showBanner(text, result.warning ? 'info' : 'success', [...undo, ...show], result.warning || Boolean(result.gitWarnings?.length) || Boolean(result.stash))
   } else if (afterTimeout || (!result.needsForce && !result.leaves && !result.atRisk)) showBanner(text, 'error', show)
   await refreshAll()
   return result
@@ -1350,7 +1367,9 @@ function commitEntries(): MenuEntry[] | null {
   if (!repo || !selected.size) return null
   const scope = scopeOf(repo)
   const hashes = selectedHashes()
-  const commits = hashes.map((hash) => rows[indexByHash.get(hash)!])
+  const commits = hashes.map((hash) => rows[indexByHash.get(hash) ?? -1])
+  // While the log reloads (a filter changed), the selection is kept but its rows are not there yet.
+  if (commits.some((commit) => !commit)) return null
   const n = hashes.length
   const single = n === 1 ? commits[0] : null
   const merges = commits.some((c) => c.parents.length > 1)
@@ -1574,7 +1593,7 @@ mountPanelKeys({
   // The header's own click: it keeps the last open section open and saves the layout.
   toggle: (id) => column.section(id).header.click(),
   menu: areaMenu,
-  notice: (text) => showBanner(text, 'info'),
+  notice: showNotice,
   run: {
     refresh: () => refreshButton.click(),
     fetch: () => fetchButton.click(),

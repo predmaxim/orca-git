@@ -105,7 +105,8 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
     detached HEAD that holds commits on no branch asks first and offers a backup branch. A checkout (or
     a new branch checked out at another commit) that would touch uncommitted changes asks first and
     lists them: **Stash and Switch** puts the changes, every untracked file and the ignored files the
-    target would overwrite into a new stash named `git-log: <from> → <to>, <time>`, then switches;
+    target would overwrite into a new stash named `git-log: <from> → <to>, <time>`, then switches (the
+    banner naming the stash stays until you close it);
     **Switch with Changes** takes them along as git does, only when nothing would be lost (an ignored
     file where the target puts one is deleted by git without asking, so that case needs the stash).
     A repository of its own (a clone, not a submodule) where the target puts files refuses the checkout:

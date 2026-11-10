@@ -10,9 +10,13 @@ import { readHead } from './log.ts'
 const LISTED = 50
 const split = (out: string) => out.split('\0').filter(Boolean)
 
-const STATUS = ['status', '--porcelain=v1', '-z', '--untracked-files=no', '--ignore-submodules=dirty']
+// Submodules left out: git switch never writes into one unless submodule.recurse is on, and then refuses a changed one.
+const STATUS = ['status', '--porcelain=v1', '-z', '--untracked-files=no', '--ignore-submodules=all']
 
-/** Paths of `git status --porcelain=v1 -z`: a rename or copy gives its old path too. `gone`: deleted from the index. */
+/**
+ * Paths of `git status --porcelain=v1 -z`: a rename or copy, in the index or in the files, gives its old path too.
+ * `gone`: deleted from the index (a staged deletion, the old path of a staged rename).
+ */
 function statusPaths(out: string): { paths: string[]; gone: Set<string> } {
   const entries = out.split('\0')
   const paths: string[] = []
@@ -22,7 +26,7 @@ function statusPaths(out: string): { paths: string[]; gone: Set<string> } {
     if (entry.length < 4) continue
     paths.push(entry.slice(3))
     if (entry[0] === 'D') gone.add(entry.slice(3))
-    if (entry[0] !== 'R' && entry[0] !== 'C') continue
+    if (!/[RC]/.test(entry.slice(0, 2))) continue
     paths.push(entries[++i])
     if (entry[0] === 'R') gone.add(entries[i])
   }
@@ -88,9 +92,11 @@ export async function checkoutRisk(git: Git, commit: string): Promise<CheckoutRi
 /** The risk as a reply carries it: at most 50 paths in each list, the rest counted in `more`. */
 export function trimRisk(risk: CheckoutRisk): CheckoutRisk {
   const lists = [risk.changed, risk.conflicts, risk.untracked, risk.ignored]
-  const more = lists.reduce((sum, list) => sum + Math.max(0, list.length - LISTED), risk.more)
   const [changed, conflicts, untracked, ignored] = lists.map((list) => list.slice(0, LISTED))
-  return { changed, conflicts, untracked, ignored, carry: risk.carry, more }
+  // Each path counted once: a conflict is among the changed files too.
+  const all = new Set(lists.flat())
+  const listed = new Set([changed, conflicts, untracked, ignored].flat())
+  return { changed, conflicts, untracked, ignored, carry: risk.carry, more: risk.more + all.size - listed.size }
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -111,13 +117,20 @@ async function hiddenEdits(git: Git): Promise<boolean> {
   return hidden.length > 0 && (await editedFiles(git, hidden)).length > 0
 }
 
+/** A stash made for a checkout; `error` when git failed after making it, so the checkout must not run. */
+export interface Stash {
+  hash: string
+  name: string
+  error?: string
+}
+
 const stashTop = async (git: Git) => (await git.run(['rev-parse', '--verify', '-q', 'refs/stash'])).stdout.trim()
 
 /**
  * Moves into one new stash, named `git-log: <from> → <to>, <local time>`: the changes of tracked files, every
  * untracked file, and the ignored files in the target's way (`risk`, full lists); other ignored files stay.
  */
-export async function stashForCheckout(git: Git, risk: CheckoutRisk, from: string, to: string): Promise<{ hash: string; name: string } | null> {
+export async function stashForCheckout(git: Git, risk: CheckoutRisk, from: string, to: string): Promise<Stash | null> {
   const name = `git-log: ${from} → ${to}, ${stamp(new Date())}`
   const before = await stashTop(git)
   let result
@@ -138,6 +151,10 @@ export async function stashForCheckout(git: Git, risk: CheckoutRisk, from: strin
     })
   }
   const hash = await stashTop(git)
-  if (!result.ok || !hash || hash === before) throw new Error(`${t('stashFailed')}\n${lastLines(result.stderr || result.stdout, 4)}`.trim())
-  return { hash, name }
+  const made = Boolean(hash) && hash !== before
+  if (result.ok && made) return { hash, name }
+  const error = `${t('stashFailed')}\n${lastLines(result.stderr || result.stdout, 4)}`.trim()
+  if (!made) throw new Error(error)
+  // git can fail after it recorded the stash (cleaning the files, say): then that stash holds what it saved.
+  return { hash, name, error }
 }

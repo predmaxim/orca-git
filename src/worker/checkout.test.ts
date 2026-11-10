@@ -303,6 +303,64 @@ test('stash is refused before it is made when git would refuse the move anyway',
   assert.equal(branch(root), 'main')
 })
 
+test('a rename made in the files (intent to add) lists both paths, no stray ones', async () => {
+  const root = newRepo()
+  sh(root, 'mv', 'same.txt', 'renamed.txt')
+  sh(root, 'reset', '-q', '--', 'same.txt', 'renamed.txt')
+  sh(root, 'add', '-N', 'renamed.txt')
+  const asked = await runAction(createGit(root), toTopic)
+  assert.deepEqual([...(asked.atRisk?.changed ?? [])].sort(), ['renamed.txt', 'same.txt'])
+})
+
+test('a submodule at another commit is not a change: no question, and the checkout runs', async () => {
+  const sub = mkdtempSync(join(tmpdir(), 'git-log-sub-'))
+  dirs.push(sub)
+  sh(sub, 'init', '-q', '-b', 'main')
+  sh(sub, 'config', 'user.name', 'Tester')
+  sh(sub, 'config', 'user.email', 'tester@example.com')
+  write(sub, 's.txt', 'v1\n')
+  sh(sub, 'add', '-A')
+  sh(sub, 'commit', '-q', '-m', 's1')
+  write(sub, 's.txt', 'v2\n')
+  sh(sub, 'commit', '-q', '-am', 's2')
+  const root = newRepo()
+  sh(root, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', sub, 'sm')
+  sh(root, 'commit', '-q', '-m', 'sm')
+  sh(root, 'switch', '-q', '-c', 'later')
+  write(root, 'later.txt', 'later\n')
+  sh(root, 'add', '-A')
+  sh(root, 'commit', '-q', '-m', 'later')
+  sh(root, 'switch', '-q', 'main')
+  sh(join(root, 'sm'), 'switch', '-q', '--detach', 'HEAD~1')
+  const result = await runAction(createGit(root), { kind: 'checkout', target: 'later' })
+  assert.equal(result.ok, true, result.message)
+  assert.equal(result.atRisk, undefined)
+  assert.equal(read(root, 'sm/s.txt'), 'v1\n')
+})
+
+test('a stash git made but then reported as failed is named, and HEAD stays', async () => {
+  const root = newRepo()
+  write(root, 'same.txt', 'mine\n')
+  const real = createGit(root)
+  // git records the stash, then fails to clean the files: the push exits non-zero after the stash exists.
+  const git = { ...real, run: async (args: string[], options?: any) => {
+    const result = await real.run(args, options)
+    return args[0] === 'stash' && args[1] === 'push' ? { ...result, ok: false, code: 1, stderr: 'error: cleanup failed' } : result
+  } }
+  const result = await runAction(git, { ...toTopic, stash: true })
+  assert.equal(result.ok, false)
+  assert.match(result.stash ?? '', /^[0-9a-f]{40}$/)
+  assert.ok(result.message.includes('git-log: main → topic'), result.message)
+  assert.ok(result.message.includes('cleanup failed'), result.message)
+  assert.equal(branch(root), 'main')
+})
+
+test('trimRisk counts each hidden path once', () => {
+  const many = Array.from({ length: 60 }, (_, i) => `f${i}`)
+  const trimmed = trimRisk({ changed: many, conflicts: many, untracked: [], ignored: [], carry: false, more: 0 })
+  assert.equal(trimmed.more, 10)
+})
+
 test('trimRisk keeps 50 paths of each list and counts the rest', () => {
   const many = Array.from({ length: 60 }, (_, i) => `f${i}`)
   const trimmed = trimRisk({ changed: many, conflicts: [], untracked: many.slice(0, 5), ignored: [], carry: true, more: 0 })
