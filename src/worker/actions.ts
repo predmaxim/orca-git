@@ -174,7 +174,7 @@ async function perform(git: Git, action: ActionRequest): Promise<string> {
     case 'tag': {
       const [hash] = assertHashes([action.hash])
       const name = await assertName(git, action.name, 'tag')
-      await git.out(['tag', name, hash])
+      await git.out(['tag', '--no-sign', name, hash])
       return t('createdTag', { name })
     }
     case 'cherryPick': {

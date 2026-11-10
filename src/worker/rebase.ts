@@ -233,7 +233,7 @@ export async function runRebase(git: Git, base: string | null, plan: PlanItem[],
         base ?? '--root'
       ],
       {
-        env: { GIT_SEQUENCE_EDITOR: `cp ${shQuote(todoFile)}`, GIT_EDITOR: ':' },
+        env: { GIT_SEQUENCE_EDITOR: `cp ${shQuote(todoFile)}` },
         timeoutMs: 120_000
       }
     )

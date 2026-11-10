@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { after, test } from 'node:test'
 import { checkRewrite, runAction } from './actions.ts'
+import { createBackup } from './backup.ts'
 import { createGit } from './git.ts'
 import { gitCandidates, resolveGit } from './launch.ts'
 import { readDetails, readLogPage, readRefs } from './log.ts'
@@ -278,6 +279,24 @@ test('an inherited GIT_DIR or config from the environment never reaches git', as
   } finally {
     for (const key of Object.keys(inherited)) delete process.env[key]
   }
+})
+
+test('new tags and backup tags are made unsigned, without an editor, under tag.gpgSign', async () => {
+  const { root, hashes } = repo(1)
+  sh(root, 'config', 'tag.gpgSign', 'true')
+  const editor = process.env.GIT_EDITOR
+  // An editor that fails at once: a real one would wait for a terminal the worker does not have.
+  process.env.GIT_EDITOR = 'false'
+  try {
+    const git = createGit(root)
+    const tagged = await runAction(git, { kind: 'tag', hash: hashes[0], name: 'v1' })
+    assert.equal(tagged.ok, true, tagged.message)
+    assert.deepEqual(await createBackup(git, { kind: 'tag', name: 'backup/main-1', target: hashes[0] }), { ok: true, name: 'backup/main-1' })
+  } finally {
+    if (editor === undefined) delete process.env.GIT_EDITOR
+    else process.env.GIT_EDITOR = editor
+  }
+  assert.equal(sh(root, 'cat-file', '-t', 'v1'), 'commit')
 })
 
 test('a bare git name is looked up only in absolute PATH entries; a relative path is refused', { skip: process.platform === 'win32' }, () => {

@@ -297,7 +297,7 @@ export async function createBackup(git: Git, request: unknown): Promise<Made | R
     const checked = await backupName(git, kind, name)
     // stash create writes only objects; the stash ref changes after the backup ref exists.
     const snapshot = stash === true ? (await git.out(['stash', 'create'])).trim() : ''
-    await git.out(kind === 'branch' ? ['branch', '--no-track', checked, target] : ['tag', checked, target])
+    await git.out(kind === 'branch' ? ['branch', '--no-track', checked, target] : ['tag', '--no-sign', checked, target])
     if (!snapshot) return { ok: true, name: checked }
     const branch = (await readHead(git)).branch ?? 'HEAD'
     const stored = await git.run(['stash', 'store', '-m', `Git plugin backup before reset --hard (${branch})`, snapshot])

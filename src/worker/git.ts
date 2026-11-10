@@ -43,7 +43,8 @@ export function createGit(root: string, gitPath = 'git'): Git {
         ['-c', 'core.quotepath=off', '-c', 'color.ui=false', '-c', 'log.showSignature=false', ...args],
         {
           cwd: root,
-          env: { ...env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C', ...options.env },
+          // Every message goes in with -m or -F; with the editor ":" git never waits for one.
+          env: { ...env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C', GIT_EDITOR: ':', ...options.env },
           maxBuffer: 64 * 1024 * 1024,
           timeout: options.timeoutMs ?? 60_000,
           windowsHide: true
