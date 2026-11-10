@@ -206,7 +206,7 @@ test('new branch and tag names under refs/ are refused before git runs', async (
 test('names shaped like a full commit hash are refused, and a hash reaches git as that commit, never as a branch so named', async () => {
   const w = world()
   // git checkout and git branch read a bare 40-hex argument as a branch of that name before the commit.
-  for (const name of [w.c2, 'a'.repeat(64)]) {
+  for (const name of [w.c2, w.c2.toUpperCase(), 'a'.repeat(64), 'A'.repeat(64)]) {
     for (const checkout of [false, true]) await refusedBeforeGit(w, `branch ${name}`, (git) => runAction(git, { kind: 'branch', hash: w.c1, name, checkout }))
     await refusedBeforeGit(w, `tag ${name}`, (git) => runAction(git, { kind: 'tag', hash: w.c1, name }))
     await refusedBeforeGit(w, `rename to ${name}`, (git) => runBranchAction(git, { kind: 'rename', name: 'topic', newName: name }))

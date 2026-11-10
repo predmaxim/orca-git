@@ -19,7 +19,7 @@ import {
 } from './rebase.ts'
 
 const HASH = /^[0-9a-f]{40}$/
-const FULL_HASH = /^([0-9a-f]{40}|[0-9a-f]{64})$/
+const FULL_HASH = /^([0-9a-f]{40}|[0-9a-f]{64})$/i
 const REWRITES = new Set<string>(['squash', 'fixup', 'drop', 'reword', 'rebase'])
 
 function assertHashes(hashes: unknown): string[] {
