@@ -110,6 +110,26 @@ test('action.run and branch.run check the HEAD the dialog showed and make the ba
   }
 })
 
+test('a flag that gates a check counts only as true: checkout: 1 makes the branch alone, overwrite: 1 keeps the file', async () => {
+  const root = fixture()
+  try {
+    const worker = await mountWorker(main, { host: host(root) })
+    const [head, parent] = sh(root, 'rev-list', '-2', 'HEAD').split('\n')
+    // Checked out, the branch would need the HEAD the dialog showed; this request sends none.
+    const loose = await worker.request('action.run', { root, action: { kind: 'branch', hash: parent, name: 'loose', checkout: 1 } })
+    assert.equal(loose.ok, true, loose.message)
+    assert.equal(sh(root, 'symbolic-ref', '--short', 'HEAD'), 'main')
+    assert.equal(sh(root, 'rev-parse', 'HEAD'), head)
+    writeFileSync(join(root, 'mine.patch'), 'mine\n')
+    const kept = await worker.request('patch.create', { root, hashes: [head], path: 'mine.patch', overwrite: 1 })
+    assert.equal(kept.exists, true)
+    assert.equal(readFileSync(join(root, 'mine.patch'), 'utf8'), 'mine\n')
+    await worker.deactivate()
+  } finally {
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
+})
+
 test('with git older than 2.31 the panel reads the repository but changes nothing, not even a backup', async () => {
   const root = fixture()
   const bin = mkdtempSync(join(tmpdir(), 'git-log-old-git-'))

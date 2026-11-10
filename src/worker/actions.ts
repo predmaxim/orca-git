@@ -185,7 +185,7 @@ async function attempt(git: Git, action: ActionRequest): Promise<ActionResult> {
 
 async function perform(git: Git, action: ActionRequest): Promise<string | Warned> {
   // A rebase, merge, cherry-pick or revert stopped in a terminal: only adding a ref leaves HEAD, the index and the files alone.
-  if (action.kind !== 'tag' && !(action.kind === 'branch' && !action.checkout)) {
+  if (action.kind !== 'tag' && !(action.kind === 'branch' && action.checkout !== true)) {
     const busy = await operationRefusal(git)
     if (busy) throw new Error(busy)
   }
@@ -220,10 +220,12 @@ async function perform(git: Git, action: ActionRequest): Promise<string | Warned
     case 'branch': {
       const [hash] = assertHashes([action.hash])
       const name = await assertName(git, action.name, 'branch')
-      if (action.checkout) await guardLeaving(git, action.leave, hash)
+      // Exactly true, as main.ts's onHead reads it: only then was the HEAD the dialog showed checked.
+      const checkout = action.checkout === true
+      if (checkout) await guardLeaving(git, action.leave, hash)
       // <hash>^{commit}: git checkout -b and git branch read a bare 40-hex start as a branch of that name first.
-      await git.out(action.checkout ? ['checkout', '-b', name, `${hash}^{commit}`, '--'] : ['branch', name, `${hash}^{commit}`])
-      return t(action.checkout ? 'createdCheckedOut' : 'createdBranch', { name })
+      await git.out(checkout ? ['checkout', '-b', name, `${hash}^{commit}`, '--'] : ['branch', name, `${hash}^{commit}`])
+      return t(checkout ? 'createdCheckedOut' : 'createdBranch', { name })
     }
     case 'tag': {
       const [hash] = assertHashes([action.hash])

@@ -205,7 +205,7 @@ export default function activate(orca: OrcaWorkerApi): void {
   )
 
   handle('patch.create', async ({ root, hashes, path, overwrite }) =>
-    createPatch(await gitFor(root), root, hashes, path, Boolean(overwrite))
+    createPatch(await gitFor(root), root, hashes, path, overwrite === true)
   )
 
   handle('action.check', async ({ root, kind, hashes }) => checkRewrite(await gitFor(root), kind, hashes))
