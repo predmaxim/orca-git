@@ -1,6 +1,6 @@
 # Drafts of issues for stablyai/orca
 
-Not published. Each draft is meant for https://github.com/stablyai/orca/issues after review.
+Published 2026-11-11 (by the user's decision): 1 as a comment on stablyai/orca#19826 ("Let plugin panels render in the workspace area", which it overlaps): https://github.com/stablyai/orca/issues/19826#issuecomment-6780278191; 2 as stablyai/orca#40879; a third, on a terminal's busy state and unsaved editor tabs (backlog item 15), as stablyai/orca#40880. Earlier: stablyai/orca#40813 (moving focus between the plugin's tab and panel).
 
 ## 1. Plugin API: open a plugin's own view in an editor tab without a file
 
