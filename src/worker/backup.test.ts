@@ -374,6 +374,48 @@ test('the reset check names a folder too large to search for repositories instea
   assert.deepEqual(await checkReset(git, root, target), { dirty: false, overwritten: [], repositories: [], unchecked: ['big'] })
 })
 
+test('with submodule.recurse the reset check names the submodules a hard reset also resets', async () => {
+  const root = repo()
+  const git = createGit(root)
+  const source = repo()
+  const add = (path: string) => sh(root, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', source, path)
+  add('sub')
+  sh(root, 'commit', '-q', '-m', 'add sub')
+  sh(root, 'checkout', '-q', '-b', 'other')
+  add('plain')
+  sh(root, 'commit', '-q', '-m', 'add plain')
+  const target = rev(root, 'HEAD')
+  rmSync(join(root, 'plain'), { recursive: true, force: true })
+  sh(root, 'checkout', '-q', 'main')
+  // An edit and an untracked file in the submodule sub; a plain folder of mine where the target has the submodule plain.
+  writeFileSync(join(root, 'sub', 'c1.txt'), 'edited\n')
+  writeFileSync(join(root, 'sub', 'untracked.txt'), 'mine\n')
+  mkdirSync(join(root, 'plain'))
+  writeFileSync(join(root, 'plain', 'c1.txt'), 'mine\n')
+  writeFileSync(join(root, 'plain', 'mine.txt'), 'mine\n')
+  sh(root, 'config', 'submodule.recurse', 'true')
+  assert.deepEqual(await checkReset(git, root, target), { dirty: true, overwritten: ['plain/c1.txt', 'plain/mine.txt'], repositories: [], submodules: ['sub/'] })
+  // The reset follows the setting: it discards the edit in sub and checks plain out over my file.
+  sh(root, 'reset', '-q', '--hard', target)
+  assert.equal(readFileSync(join(root, 'sub', 'c1.txt'), 'utf8'), 'c1\n')
+  assert.equal(readFileSync(join(root, 'plain', 'c1.txt'), 'utf8'), 'c1\n')
+})
+
+test('the reset check searches a folder standing where a file git assumes unchanged is tracked', async () => {
+  const root = repo()
+  const git = createGit(root)
+  const target = rev(root, 'HEAD')
+  // git status and git diff do not look at c1.txt any more, but a hard reset still puts the file back.
+  sh(root, 'update-index', '--assume-unchanged', 'c1.txt')
+  rmSync(join(root, 'c1.txt'))
+  mkdirSync(join(root, 'c1.txt'))
+  writeFileSync(join(root, 'c1.txt', 'f'), 'mine\n')
+  sh(root, 'init', '-q', 'c1.txt/r')
+  assert.deepEqual(await checkReset(git, root, target), { dirty: false, overwritten: ['c1.txt/f'], repositories: ['c1.txt/r/'] })
+  sh(root, 'reset', '-q', '--hard', target)
+  assert.ok(lstatSync(join(root, 'c1.txt')).isFile())
+})
+
 test('the reset check splits a long list of paths over several git calls', async () => {
   const root = repo()
   const real = createGit(root)

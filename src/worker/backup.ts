@@ -174,47 +174,66 @@ function repositoriesIn(root: string, path: string, budget: { left: number }): {
  * tree lacks (or inside a folder there, or inside a nested repository), and those standing where `target`
  * needs a folder; and, as `name/`, every repository inside a folder it replaces with a file, at any depth,
  * which it deletes whole. `unchecked`: such folders too large or unreadable to search completely. A folder
- * where the target has a submodule is kept. `root` is the repository's top level.
+ * where the target has a submodule is kept, unless submodule.recurse is set: then the reset checks the
+ * submodule out there, and `submodules` lists the populated ones it resets or removes. `root` is the
+ * repository's top level.
  */
 export async function checkReset(git: Git, root: string, target: unknown): Promise<ResetCheck> {
   if (typeof target !== 'string' || !HASH.test(target)) throw new Error(t('invalidCommit'))
   const dirty = (await git.out(['status', '--porcelain', '-z', '--untracked-files=no'])) !== ''
+  // reset --hard follows submodule.recurse from the user's git config; exit 1 means it is not set.
+  const recurse = await git.run(['config', '--type=bool', '--get', 'submodule.recurse'])
+  const recursive = recurse.ok && recurse.stdout.trim() === 'true'
+  // `<tag> <mode> <hash> <stage>\t<path>`; a lowercase tag marks a file git assumes unchanged, which git diff skips.
+  const index = (await git.out(['ls-files', '-z', '-s', '-v'])).split('\0').filter(Boolean).map((line) => ({ tag: line[0], mode: line.slice(2, 8), path: line.slice(line.indexOf('\t') + 1) }))
   // The target against the index and work tree, so no commit is needed on HEAD: D and T are the paths the
   // reset writes, with something else there or nothing. --ignore-submodules=none: config must not hide submodules.
   const fields = (await git.out(['diff', '-z', '--raw', '--no-renames', '--ignore-submodules=none', '--diff-filter=DT', target, '--'])).split('\0')
-  const paths: string[] = []
-  const submodules = new Set<string>()
+  const paths = new Set<string>()
+  const gitlinks = new Set<string>()
   for (let i = 1; i < fields.length; i += 2) {
-    paths.push(fields[i])
-    if (fields[i - 1].startsWith(':160000 ')) submodules.add(fields[i])
+    paths.add(fields[i])
+    if (fields[i - 1].startsWith(':160000 ')) gitlinks.add(fields[i])
   }
-  const folders = new Set(paths.flatMap((path) => path.split('/').slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join('/'))))
+  // A folder where such a file is tracked is not seen by git diff, but the reset deletes it to put the file back.
+  for (const { tag, mode, path } of index) if (tag !== tag.toUpperCase() && mode !== '160000' && realFolder(root, path)) paths.add(path)
+  const folders = new Set([...paths].flatMap((path) => path.split('/').slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join('/'))))
   // --directory lists an untracked folder as one `name/` line, so only a file named like a folder matches it.
   const blocking = (await untrackedAt(git, ['--directory'], [...folders])).filter((path) => folders.has(path))
-  // At a submodule the reset keeps any folder, so only a file or link there is overwritten.
+  // Without submodule.recurse the reset keeps any folder at a submodule, so only a file or link there is
+  // overwritten. With it, the reset checks the submodule out there: only a repository is left out, as a submodule.
   const kept = (path: string) => {
     const bare = path.replace(/\/$/, '')
-    return submodules.has(bare) ? realFolder(root, bare) : [...submodules].some((submodule) => bare.startsWith(`${submodule}/`))
+    if (gitlinks.has(bare)) return recursive ? realFolder(root, bare) && present(`${root}/${bare}/.git`) : realFolder(root, bare)
+    return !recursive && [...gitlinks].some((link) => bare.startsWith(`${link}/`))
   }
-  const found = [...new Set([...(await untrackedAt(git, [], paths)), ...blocking, ...insideNestedRepos(root, paths)])].filter((path) => !kept(path)).sort()
+  const found = [...new Set([...(await untrackedAt(git, [], [...paths])), ...blocking, ...insideNestedRepos(root, [...paths])])].filter((path) => !kept(path)).sort()
   // Git lists a nested repository as `name/`; the walk lists one without the slash.
   const isRepository = (path: string) => foundAt(`${root}/${path.replace(/\/$/, '')}`) === 'repository'
   const repositories = new Set(found.filter(isRepository).map((path) => path.replace(/\/?$/, '/')))
   const budget = { left: SEARCH_MAX }
   const unchecked: string[] = []
   for (const path of paths) {
-    if (submodules.has(path) || !realFolder(root, path)) continue
+    if (gitlinks.has(path) || !realFolder(root, path)) continue
     const { found: inside, complete } = repositoriesIn(root, path, budget)
     inside.forEach((repository) => repositories.add(repository))
     if (!complete) unchecked.push(path)
   }
   const listed = [...repositories].sort()
+  // With submodule.recurse the reset also resets every populated submodule of the index or the target, or removes it.
+  const submodules = recursive
+    ? [...new Set([
+        ...index.filter(({ mode }) => mode === '160000').map(({ path }) => path),
+        ...(await git.out(['ls-tree', '-r', '-z', target])).split('\0').filter((line) => line.startsWith('160000 ')).map((line) => line.slice(line.indexOf('\t') + 1))
+      ])].filter((path) => realFolder(root, path) && present(`${root}/${path}/.git`)).map((path) => `${path}/`).filter((path) => !repositories.has(path)).sort()
+    : []
   return {
     dirty,
     // A path inside a listed repository goes with it.
     overwritten: found.filter((path) => !isRepository(path) && !listed.some((repository) => path.startsWith(repository))),
     repositories: listed,
-    ...(unchecked.length ? { unchecked } : {})
+    ...(unchecked.length ? { unchecked } : {}),
+    ...(submodules.length ? { submodules } : {})
   }
 }
 

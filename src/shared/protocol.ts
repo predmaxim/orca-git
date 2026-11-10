@@ -203,6 +203,8 @@ export interface ResetCheck {
   repositories: string[]
   /** Folders the reset deletes that were too large or unreadable to search for repositories completely. */
   unchecked?: string[]
+  /** With submodule.recurse set: populated submodules, as `name/`, the reset also resets or removes; nothing in them is checked. */
+  submodules?: string[]
 }
 
 /** Sent with `action.run` and `branch.run`: the HEAD the confirmation showed, and the backup to make first. */
