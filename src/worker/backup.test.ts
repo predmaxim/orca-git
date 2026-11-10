@@ -11,6 +11,9 @@ import { runBranchAction } from './branchActions.ts'
 import { createGit, type Git } from './git.ts'
 
 const dirs: string[] = []
+const [major, minor] = (execFileSync('git', ['--version'], { encoding: 'utf8' }).match(/(\d+)\.(\d+)/) ?? []).slice(1).map(Number)
+/** `git init --ref-format` came in git 2.45. */
+const noRefFormat = major > 2 || (major === 2 && minor >= 45) ? false : 'git init --ref-format needs git 2.45 or later'
 after(() => dirs.forEach((dir) => rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })))
 
 function sh(cwd: string, ...args: string[]): string {
@@ -143,7 +146,7 @@ test('a stash is refused unless the action is a hard reset', async () => {
   assert.equal(refs(root), before)
 })
 
-test('a stash that cannot be stored names the backup already made, and the action does not run', async () => {
+test('a stash that cannot be stored names the backup already made, and the action does not run', { skip: noRefFormat }, async () => {
   // The lock below blocks only the files ref backend, whatever git's default is.
   const root = repo('--ref-format=files')
   const git = createGit(root)
