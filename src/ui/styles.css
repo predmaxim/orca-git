@@ -187,11 +187,11 @@ input[type='radio'] {
 .toolbar {
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 4px 6px;
+  gap: 4px;
+  padding: 6px 8px;
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
-  min-height: 34px;
+  min-height: 38px;
 }
 
 .toolbar .spacer {
@@ -202,28 +202,26 @@ input[type='radio'] {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 24px;
-  min-width: 24px;
+  height: 26px;
+  min-width: 26px;
   justify-content: center;
   padding: 0 6px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--fg);
+  color: var(--muted-fg);
   cursor: default;
   white-space: nowrap;
 }
 
 .tool:hover {
-  background: var(--hover);
+  background: var(--accent);
+  color: var(--accent-fg);
 }
 
 .tool.on {
-  background: color-mix(in srgb, var(--primary) 22%, transparent);
-}
-
-.tool .icon {
-  opacity: 0.85;
+  background: var(--toggle-on);
+  color: var(--fg);
 }
 
 .tool.filter {
@@ -231,8 +229,8 @@ input[type='radio'] {
 }
 
 .tool.filter.set {
-  color: var(--fg);
-  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  color: var(--accent-fg);
+  background: var(--accent);
 }
 
 .tool.filter .clear {
@@ -248,12 +246,12 @@ input[type='radio'] {
 .search {
   display: flex;
   align-items: center;
-  gap: 2px;
-  height: 26px;
-  padding: 0 2px 0 6px;
+  gap: 4px;
+  height: 28px;
+  padding: 0 3px 0 8px;
   border: 1px solid var(--input);
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--bg) 70%, var(--muted));
+  border-radius: var(--radius-sm);
+  background: var(--field-bg);
   flex: 0 1 260px;
   min-width: 120px;
   margin-right: 4px;
@@ -261,7 +259,7 @@ input[type='radio'] {
 
 .search:focus-within {
   border-color: var(--ring);
-  box-shadow: 0 0 0 1px var(--ring);
+  box-shadow: var(--focus-ring);
 }
 
 .search input {
@@ -280,9 +278,9 @@ input[type='radio'] {
 .toggle {
   height: 20px;
   min-width: 22px;
-  padding: 0 3px;
+  padding: 0 4px;
   border: 0;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   background: transparent;
   color: var(--muted-fg);
   font-size: 11px;
@@ -290,7 +288,8 @@ input[type='radio'] {
 }
 
 .toggle:hover {
-  background: var(--hover);
+  background: var(--accent);
+  color: var(--accent-fg);
 }
 
 .toggle.on {
@@ -298,13 +297,20 @@ input[type='radio'] {
   background: var(--primary);
 }
 
+/* Outside the button: an inset ring would vanish into the --primary fill of an active toggle. */
+.toggle:focus-visible {
+  outline-offset: 1px;
+}
+
 .banner {
   display: none;
   align-items: center;
   gap: 8px;
-  padding: 5px 10px;
-  border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--c1) 14%, var(--bg));
+  margin: 6px 8px 0;
+  padding: 4px 4px 4px 10px;
+  border: 1px solid var(--success-border);
+  border-radius: var(--radius-sm);
+  background: var(--success-bg);
   white-space: pre-wrap;
   user-select: text;
 }
@@ -314,11 +320,13 @@ input[type='radio'] {
 }
 
 .banner.error {
-  background: color-mix(in srgb, var(--danger) 16%, var(--bg));
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--bg));
+  background: color-mix(in srgb, var(--danger) 14%, var(--bg));
 }
 
 .banner.info {
-  background: color-mix(in srgb, var(--c0) 14%, var(--bg));
+  border-color: color-mix(in srgb, var(--primary) 40%, var(--bg));
+  background: color-mix(in srgb, var(--primary) 14%, var(--bg));
 }
 
 .banner .text {
@@ -328,14 +336,20 @@ input[type='radio'] {
 
 .link {
   border: 0;
+  border-radius: var(--radius-xs);
   background: none;
   padding: 0;
   color: var(--primary);
+  font-weight: 500;
   cursor: pointer;
 }
 
 .link:hover {
   text-decoration: underline;
+}
+
+.link:focus-visible {
+  outline-offset: 2px;
 }
 
 .pane {
@@ -346,7 +360,9 @@ input[type='radio'] {
 }
 
 .tool:disabled {
-  opacity: 0.45;
+  opacity: 0.5;
+  background: transparent;
+  color: var(--muted-fg);
 }
 
 /* ---------- Sections ---------- */
@@ -393,35 +409,29 @@ input[type='radio'] {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 24px;
-  padding: 0 6px 0 2px;
-  background: var(--muted);
-  color: var(--muted-fg);
+  height: 30px;
+  padding: 0 6px 0 4px;
+  color: var(--fg);
   white-space: nowrap;
-}
-
-.col-section:not(.collapsed) > .sec-head {
-  border-bottom: 1px solid var(--border);
 }
 
 .sec-toggle {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
-  height: 100%;
-  padding: 0;
+  height: 24px;
+  padding: 0 6px 0 2px;
   border: 0;
+  border-radius: var(--radius-sm);
   background: none;
   color: inherit;
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
-.sec-toggle:focus-visible {
-  outline: 1px solid var(--ring);
+.sec-toggle .icon {
+  color: var(--muted-fg);
 }
 
 .sec-summary {
@@ -429,7 +439,8 @@ input[type='radio'] {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 11px;
+  font-size: 12px;
+  color: var(--muted-fg);
 }
 
 .sec-body {
@@ -444,14 +455,14 @@ input[type='radio'] {
 }
 
 .sec-note {
-  padding: 8px 10px;
+  padding: 8px 12px;
   color: var(--muted-fg);
 }
 
 /* ---------- Branches tree ---------- */
 
 .branches .tree-search {
-  margin: 6px;
+  margin: 2px 8px 6px;
   flex: none;
 }
 
@@ -464,9 +475,11 @@ input[type='radio'] {
 .node-row {
   display: flex;
   align-items: center;
-  gap: 4px;
-  height: 22px;
+  gap: 6px;
+  height: 24px;
+  margin: 1px 6px;
   padding-right: 8px;
+  border-radius: var(--radius-sm);
   white-space: nowrap;
   cursor: default;
 }
@@ -475,8 +488,10 @@ input[type='radio'] {
   background: var(--hover);
 }
 
-.node-row.active {
-  background: var(--selection-inactive);
+.node-row.active,
+.node-row.filtered {
+  background: var(--selected);
+  color: var(--accent-fg);
 }
 
 .node-row .twisty {
@@ -492,13 +507,13 @@ input[type='radio'] {
 .node-row .count {
   margin-left: auto;
   color: var(--muted-fg);
-  font-size: 11px;
+  font-size: 12px;
   padding-left: 6px;
 }
 
 .node-row .track {
   color: var(--muted-fg);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .node-row.group > .label {
@@ -519,11 +534,6 @@ input[type='radio'] {
 
 .node-row .ic-head {
   color: var(--ref-head);
-}
-
-.node-row.filtered .label {
-  color: var(--primary);
-  font-weight: 600;
 }
 
 /* ---------- Log table ---------- */
@@ -556,11 +566,12 @@ input[type='radio'] {
 
 .header {
   flex: none;
-  height: 26px;
+  height: 28px;
   align-items: center;
+  padding: 0 6px;
   border-bottom: 1px solid var(--border);
   color: var(--muted-fg);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .header > div {
@@ -587,12 +598,14 @@ input[type='radio'] {
   width: 100%;
 }
 
+/* Rows sit flush top to bottom so the graph runs through them; a run of selected rows reads as one rounded block. */
 .row {
   position: absolute;
-  left: 0;
-  right: 0;
+  left: 6px;
+  right: 6px;
   height: var(--row-h);
   align-items: center;
+  border-radius: var(--radius-sm);
 }
 
 .row:hover {
@@ -600,11 +613,27 @@ input[type='radio'] {
 }
 
 .row.selected {
-  background: var(--selection-inactive);
+  background: var(--selected);
+  color: var(--accent-fg);
+}
+
+.row.selected:has(+ .row.selected) {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.row.selected + .row.selected {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 
 .viewport:focus .row.selected {
-  background: var(--selection);
+  background: var(--selected-focus);
+}
+
+/* Keyboard focus shows on the row the arrows move from, never around the list. */
+.viewport:focus .row.cursor:not(.selected) {
+  box-shadow: inset 0 0 0 1px var(--ring);
 }
 
 .row.dim .text,
@@ -636,10 +665,6 @@ input[type='radio'] {
   padding-left: 2px;
 }
 
-.row.head .cell.subject .text {
-  font-weight: 600;
-}
-
 .cell.author.me {
   font-weight: 600;
 }
@@ -647,7 +672,7 @@ input[type='radio'] {
 .cell.date,
 .cell.hash,
 .cell.author {
-  color: color-mix(in srgb, var(--fg) 80%, var(--bg));
+  color: var(--muted-fg);
 }
 
 .graph {
@@ -694,7 +719,7 @@ input[type='radio'] {
 
 .refs {
   display: flex;
-  gap: 8px;
+  gap: 4px;
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -706,10 +731,14 @@ input[type='radio'] {
   display: inline-flex;
   align-items: center;
   gap: 3px;
+  height: 18px;
+  padding: 0 6px 0 4px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
   white-space: nowrap;
   min-width: 0;
-  color: color-mix(in srgb, var(--fg) 85%, var(--bg));
-  font-size: 11.5px;
+  color: var(--muted-fg);
+  font-size: 12px;
 }
 
 .ref span {
@@ -740,12 +769,12 @@ input[type='radio'] {
 }
 
 .ref.current span {
-  font-weight: 600;
+  color: var(--fg);
 }
 
 .empty {
   position: absolute;
-  inset: 26px 0 0;
+  inset: 28px 0 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -769,9 +798,9 @@ input[type='radio'] {
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: transparent;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-sm);
+  background: var(--field-bg);
   color: var(--fg);
   font: inherit;
   text-align: left;
@@ -779,9 +808,15 @@ input[type='radio'] {
   white-space: nowrap;
 }
 
-.choice:hover,
+.choice:hover {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
 .choice:focus-visible {
-  background: var(--hover);
+  outline: 0;
+  border-color: var(--ring);
+  box-shadow: var(--focus-ring);
 }
 
 .choice-path {
@@ -863,7 +898,7 @@ input[type='radio'] {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted-fg);
 }
 
@@ -879,36 +914,40 @@ input[type='radio'] {
 }
 
 .cl-note {
-  padding: 8px 10px;
+  padding: 8px 12px;
   color: var(--muted-fg);
 }
 
 .cl-list {
   flex: none;
+  padding: 2px 0 6px;
 }
 
 .cl-head {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 24px;
-  padding: 0 10px 0 6px;
+  height: 26px;
+  margin: 1px 6px;
+  padding: 0 8px 0 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   user-select: none;
 }
 
 .cl-head:hover {
-  background: var(--muted);
+  background: var(--hover);
 }
 
 .cl-head:focus-visible {
-  outline: 1px solid var(--primary);
-  outline-offset: -1px;
+  outline: 0;
+  box-shadow: inset 0 0 0 1px var(--ring);
 }
 
 .cl-chevron {
   flex: none;
   display: flex;
+  color: var(--muted-fg);
 }
 
 .cl-subject {
@@ -930,7 +969,7 @@ input[type='radio'] {
 .cl-body {
   display: grid;
   gap: 2px;
-  padding: 4px 10px 8px 28px;
+  padding: 4px 12px 8px 30px;
   overflow-wrap: anywhere;
 }
 
@@ -940,60 +979,51 @@ input[type='radio'] {
 }
 
 .hash-link {
+  border-radius: var(--radius-xs);
   color: var(--primary);
   cursor: pointer;
   text-decoration: none;
 }
 
-.file {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 22px;
-  white-space: nowrap;
-  min-width: 0;
-}
-
-.file .name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.file .dir {
-  color: var(--muted-fg);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-.file .icon {
-  color: var(--muted-fg);
-}
-
-.file.st-A .name {
-  color: var(--c1);
-}
-
-.file.st-D .name {
-  color: var(--muted-fg);
-  text-decoration: line-through;
-}
-
-.file.st-M .name {
-  color: var(--c0);
-}
-
-.file.st-R .name,
-.file.st-C .name {
-  color: var(--c5);
+.hash-link:hover {
+  text-decoration: underline;
 }
 
 .status-letter {
   width: 14px;
   text-align: center;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--muted-fg);
+}
+
+/* File status as WebStorm colors it: added and copied green, modified and renamed blue, deleted gray. */
+.st-A .name,
+.st-C .name,
+.st-A .status-letter,
+.st-C .status-letter,
+.status-letter.st-A,
+.status-letter.st-C {
+  color: var(--st-added);
+}
+
+.st-M .name,
+.st-R .name,
+.st-M .status-letter,
+.st-R .status-letter,
+.status-letter.st-M,
+.status-letter.st-R {
+  color: var(--st-modified);
+}
+
+.st-D .name,
+.st-D .status-letter,
+.status-letter.st-D {
+  color: var(--st-deleted);
+}
+
+.st-D .name {
+  text-decoration: line-through;
 }
 
 /* ---------- Menus, popovers, dialogs ---------- */
@@ -1423,15 +1453,17 @@ textarea.field {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 2px 0;
+  padding: 2px 0 6px;
 }
 
 .ft-row {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 22px;
+  height: 24px;
   min-width: 0;
+  margin: 1px 6px;
+  border-radius: var(--radius-sm);
   white-space: nowrap;
   cursor: pointer;
   user-select: none;
@@ -1441,13 +1473,25 @@ textarea.field {
   background: var(--hover);
 }
 
-.ft-row:focus-visible {
-  outline: 1px solid var(--ring);
-  outline-offset: -1px;
+.ft-row.current {
+  background: var(--selected);
 }
 
-.ft-row.current {
-  background: var(--selection);
+.ft:focus-within .ft-row.current {
+  background: var(--selected-focus);
+}
+
+.ft-row:focus-visible {
+  outline: 0;
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.ft-row.current:focus-visible {
+  box-shadow: none;
+}
+
+.ft-row .icon {
+  color: var(--muted-fg);
 }
 
 .ft-row .name {
@@ -1456,34 +1500,14 @@ textarea.field {
   min-width: 0;
 }
 
-.ft .ft-row.file {
-  margin: 0;
-  border-radius: 0;
-}
-
 .ft-count {
   margin-left: auto;
   padding-right: 8px;
   color: var(--muted-fg);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 /* ---------- Diff viewer ---------- */
-
-.file.openable {
-  cursor: pointer;
-  border-radius: 3px;
-  padding: 0 2px;
-  margin: 0 -2px;
-}
-
-.file.openable:hover {
-  background: var(--hover);
-}
-
-.file.openable:focus-visible {
-  outline: 1px solid var(--ring);
-}
 
 .diff-view {
   --add-bg: color-mix(in srgb, var(--c1) 14%, var(--bg));

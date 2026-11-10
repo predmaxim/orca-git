@@ -303,7 +303,7 @@ function rowElement(index: number): HTMLElement {
   return h(
     'div',
     {
-      class: `row ${twoLine ? 'two' : 'columns'}${selected.has(commit.hash) ? ' selected' : ''}${dim ? ' dim' : ''}${isHead ? ' head' : ''}`,
+      class: `row ${twoLine ? 'two' : 'columns'}${selected.has(commit.hash) ? ' selected' : ''}${dim ? ' dim' : ''}${isHead ? ' head' : ''}${index === Math.max(cursor, 0) ? ' cursor' : ''}`,
       style: `top:${index * rowH}px`,
       dataset: { index: String(index) },
       role: 'row',
