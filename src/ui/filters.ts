@@ -136,7 +136,7 @@ function checklist(
 }
 
 export function createFilterBar(host: FilterHost) {
-  // Only when closing dropped focus to body: a click elsewhere already put it where it belongs.
+  // Esc, a picked option and a click outside (the layer takes that click) all leave focus on body: back to the list.
   const closed = () => {
     if (!document.activeElement || document.activeElement === document.body) host.focusList()
   }
