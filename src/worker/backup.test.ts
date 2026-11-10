@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
@@ -209,10 +209,10 @@ test('the reset check reports a dirty tree and the untracked or ignored files th
   sh(root, 'checkout', '-q', 'main')
   writeFileSync(join(root, '.gitignore'), '*.out\n')
   for (const file of ['new.txt', 'build.out', 'stray.txt']) writeFileSync(join(root, file), 'mine\n')
-  assert.deepEqual(await checkReset(git, root, target), { dirty: false, overwritten: ['build.out', 'new.txt'] })
+  assert.deepEqual(await checkReset(git, root, target), { dirty: false, overwritten: ['build.out', 'new.txt'], repositories: [] })
   writeFileSync(join(root, 'c1.txt'), 'edited\n')
-  assert.deepEqual(await checkReset(git, root, target), { dirty: true, overwritten: ['build.out', 'new.txt'] })
-  assert.deepEqual(await checkReset(git, root, rev(root, 'HEAD~1')), { dirty: true, overwritten: [] })
+  assert.deepEqual(await checkReset(git, root, target), { dirty: true, overwritten: ['build.out', 'new.txt'], repositories: [] })
+  assert.deepEqual(await checkReset(git, root, rev(root, 'HEAD~1')), { dirty: true, overwritten: [], repositories: [] })
   await assert.rejects(checkReset(git, root, 'HEAD'))
 })
 
@@ -230,7 +230,7 @@ test('the reset check lists an untracked file standing where the target needs a 
   writeFileSync(join(root, 'build'), 'mine\n')
   mkdirSync(join(root, 'gen'))
   writeFileSync(join(root, 'gen', 'z'), 'mine\n')
-  assert.deepEqual(await checkReset(git, root, target), { dirty: false, overwritten: ['build'] })
+  assert.deepEqual(await checkReset(git, root, target), { dirty: false, overwritten: ['build'], repositories: [] })
 })
 
 test('the reset check looks inside untracked nested repositories, which git does not list', async () => {
@@ -249,7 +249,55 @@ test('the reset check looks inside untracked nested repositories, which git does
   writeFileSync(join(root, 'nested', 'x'), 'mine\n')
   sh(root, 'init', '-q', 'a/nested')
   writeFileSync(join(root, 'a', 'nested', 'y'), 'mine\n')
-  assert.deepEqual(await checkReset(git, root, target), { dirty: false, overwritten: ['a/nested/y', 'nested/x'] })
+  assert.deepEqual(await checkReset(git, root, target), { dirty: false, overwritten: ['a/nested/y', 'nested/x'], repositories: [] })
+})
+
+test('the reset check lists a file or link inside a nested repository where the target needs a folder, without following links', async () => {
+  const root = repo()
+  const git = createGit(root)
+  sh(root, 'checkout', '-q', '-b', 'other')
+  for (const dir of ['file', 'link', 'emptylink', 'plain']) {
+    mkdirSync(join(root, 'nested', dir), { recursive: true })
+    commit(root, `nested/${dir}/x`, 'theirs\n', `add nested/${dir}/x`)
+  }
+  const target = rev(root, 'HEAD')
+  sh(root, 'checkout', '-q', 'main')
+  // In my nested repository: a file, a link to an outside folder holding x, a link to one without x, a plain folder without x.
+  const outside = mkdtempSync(join(tmpdir(), 'git-log-outside-'))
+  dirs.push(outside)
+  writeFileSync(join(outside, 'x'), 'outside\n')
+  mkdirSync(join(outside, 'empty'))
+  sh(root, 'init', '-q', 'nested')
+  writeFileSync(join(root, 'nested', 'file'), 'my precious\n')
+  symlinkSync(outside, join(root, 'nested', 'link'))
+  symlinkSync(join(outside, 'empty'), join(root, 'nested', 'emptylink'))
+  mkdirSync(join(root, 'nested', 'plain'))
+  const listed = ['nested/emptylink', 'nested/file', 'nested/link']
+  assert.deepEqual(await checkReset(git, root, target), { dirty: false, overwritten: listed, repositories: [] })
+  // The reset replaces exactly the listed paths with folders and leaves the outside x alone.
+  sh(root, 'reset', '-q', '--hard', target)
+  for (const path of listed) assert.ok(lstatSync(join(root, path)).isDirectory(), path)
+  assert.equal(readFileSync(join(outside, 'x'), 'utf8'), 'outside\n')
+})
+
+test('the reset check names the nested repositories a hard reset deletes whole', async () => {
+  const root = repo()
+  const git = createGit(root)
+  sh(root, 'checkout', '-q', '-b', 'other')
+  commit(root, 'nested', 'theirs\n', 'add nested')
+  commit(root, 'a', 'theirs\n', 'add a')
+  mkdirSync(join(root, 'outer'))
+  commit(root, 'outer/inner', 'theirs\n', 'add outer/inner')
+  const target = rev(root, 'HEAD')
+  sh(root, 'checkout', '-q', 'main')
+  // Files of the target where my repositories nested/ and outer/inner/ sit, and where a plain folder holds a file and a repository.
+  sh(root, 'init', '-q', 'nested')
+  sh(root, 'init', '-q', 'outer')
+  sh(root, 'init', '-q', 'outer/inner')
+  mkdirSync(join(root, 'a'))
+  writeFileSync(join(root, 'a', 'f'), 'mine\n')
+  sh(root, 'init', '-q', 'a/inner')
+  assert.deepEqual(await checkReset(git, root, target), { dirty: false, overwritten: ['a/f'], repositories: ['a/inner/', 'nested/', 'outer/inner/'] })
 })
 
 test('the reset check splits a long list of paths over several git calls', async () => {
@@ -267,7 +315,7 @@ test('the reset check splits a long list of paths over several git calls', async
   const mine = [names[0], names[75], names[149]]
   mkdirSync(join(root, 'long'))
   for (const name of mine) writeFileSync(join(root, name), 'mine\n')
-  assert.deepEqual(await checkReset(git, root, target), { dirty: false, overwritten: mine })
+  assert.deepEqual(await checkReset(git, root, target), { dirty: false, overwritten: mine, repositories: [] })
   // 150 pathspecs of about 120 characters each do not fit in one command line of at most 8 KB.
   assert.ok(calls > 2, `ls-files ran ${calls} times`)
 })
@@ -279,7 +327,7 @@ test('the reset check works on a branch with no commits yet', async () => {
   sh(root, 'checkout', '-q', '--orphan', 'fresh')
   // The files stay on disk but are no longer tracked: a hard reset to the target overwrites them.
   sh(root, 'rm', '-q', '-r', '--cached', '.')
-  assert.deepEqual(await checkReset(git, root, target), { dirty: false, overwritten: ['c1.txt', 'c2.txt', 'c3.txt', 'c4.txt'] })
+  assert.deepEqual(await checkReset(git, root, target), { dirty: false, overwritten: ['c1.txt', 'c2.txt', 'c3.txt', 'c4.txt'], repositories: [] })
 })
 
 test('a clean tree stores no stash', async () => {

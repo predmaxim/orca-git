@@ -1,5 +1,5 @@
 import { lstatSync } from 'node:fs'
-import type { ActionResult, BackupDelete } from '../shared/protocol.ts'
+import type { ActionResult, BackupDelete, ResetCheck } from '../shared/protocol.ts'
 import { assertName } from './actions.ts'
 import { lastLines, type Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
@@ -86,45 +86,56 @@ const present = (path: string) => {
   }
 }
 
+/** What is at `path`, a link counted as a file and never followed; a nested repository is a real folder holding `.git`. */
+function foundAt(path: string): 'nothing' | 'file' | 'folder' | 'repository' {
+  try {
+    if (!lstatSync(path).isDirectory()) return 'file'
+  } catch {
+    return 'nothing'
+  }
+  return present(`${path}/.git`) ? 'repository' : 'folder'
+}
+
 /**
- * The paths in `added` that already exist inside a nested repository (a real folder holding `.git`):
- * git's listing does not look into one, but a hard reset writes through it. Links are not followed.
+ * What the reset overwrites at the paths in `added` past a nested repository, where git's listing does
+ * not look but a hard reset writes through: a file or link standing where a folder is needed, or
+ * anything at the path itself. Each folder is checked with `lstat`, so no link is followed.
  */
 function insideNestedRepos(root: string, added: string[]): string[] {
-  // Per folder: a nested repository, a plain folder, or null when there is no real folder to look into.
-  const folders = new Map<string, boolean | null>()
-  const kind = (dir: string) => {
-    let known = folders.get(dir)
-    if (known === undefined) {
-      let folder = false
-      try {
-        folder = lstatSync(`${root}/${dir}`).isDirectory()
-      } catch {
-        // Nothing there.
-      }
-      known = folder ? present(`${root}/${dir}/.git`) : null
-      folders.set(dir, known)
-    }
-    return known
+  const seen = new Map<string, ReturnType<typeof foundAt>>()
+  const at = (path: string) => {
+    if (!seen.has(path)) seen.set(path, foundAt(`${root}/${path}`))
+    return seen.get(path)
   }
-  return added.filter((path) => {
+  const listed = new Set<string>()
+  for (const path of added) {
     const parts = path.split('/')
-    for (let i = 1; i < parts.length; i++) {
-      const state = kind(parts.slice(0, i).join('/'))
-      if (state === null) return false
-      if (state) return present(`${root}/${path}`)
+    let inside = false
+    for (let i = 1; i <= parts.length; i++) {
+      const prefix = parts.slice(0, i).join('/')
+      const state = at(prefix)
+      if (state === 'nothing') break
+      // Before the nested repository git's own listing covers it.
+      if (!inside) {
+        if (state === 'file') break
+        inside = state === 'repository'
+      } else if (state === 'file' || i === parts.length) {
+        listed.add(prefix)
+        break
+      }
     }
-    return false
-  })
+  }
+  return [...listed]
 }
 
 /**
  * What a hard reset to `target` would lose: whether tracked files have uncommitted changes, and the
  * untracked files, ignored ones included, it overwrites: those at a path `target` tracks and HEAD does
  * not (or inside a folder there, or inside a nested repository), and those standing where `target` needs
- * a folder. `root` is the repository's top level.
+ * a folder. Nested repositories the reset deletes whole are listed apart, as `name/`. `root` is the
+ * repository's top level.
  */
-export async function checkReset(git: Git, root: string, target: unknown): Promise<{ dirty: boolean; overwritten: string[] }> {
+export async function checkReset(git: Git, root: string, target: unknown): Promise<ResetCheck> {
   if (typeof target !== 'string' || !HASH.test(target)) throw new Error(t('invalidCommit'))
   const dirty = (await git.out(['status', '--porcelain', '-z', '--untracked-files=no'])) !== ''
   // On a branch with no commits yet, every file of the target is new.
@@ -135,8 +146,14 @@ export async function checkReset(git: Git, root: string, target: unknown): Promi
   const folders = new Set(added.flatMap((path) => path.split('/').slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join('/'))))
   // --directory lists an untracked folder as one `name/` line, so only a file named like a folder matches it.
   const blocking = (await untrackedAt(git, ['--directory'], [...folders])).filter((path) => folders.has(path))
-  const overwritten = [...new Set([...(await untrackedAt(git, [], added)), ...blocking, ...insideNestedRepos(root, added)])].sort()
-  return { dirty, overwritten }
+  const found = [...new Set([...(await untrackedAt(git, [], added)), ...blocking, ...insideNestedRepos(root, added)])].sort()
+  // Git lists a nested repository as `name/`; the walk lists one without the slash.
+  const isRepository = (path: string) => foundAt(`${root}/${path.replace(/\/$/, '')}`) === 'repository'
+  return {
+    dirty,
+    overwritten: found.filter((path) => !isRepository(path)),
+    repositories: found.filter(isRepository).map((path) => path.replace(/\/?$/, '/'))
+  }
 }
 
 /**

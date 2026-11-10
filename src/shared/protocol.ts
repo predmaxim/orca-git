@@ -194,6 +194,8 @@ export interface ResetCheck {
   dirty: boolean
   /** Untracked files, ignored ones included, that the target tracks: the reset overwrites them. */
   overwritten: string[]
+  /** Untracked nested repositories, as `name/`, that the reset deletes whole with their own history. */
+  repositories: string[]
 }
 
 /** Sent with `action.run` and `branch.run`: the HEAD the confirmation showed, and the backup to make first. */

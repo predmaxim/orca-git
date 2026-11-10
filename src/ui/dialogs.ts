@@ -199,8 +199,17 @@ const resetModes = (): { mode: ResetMode; label: string; help: string }[] => [
   { mode: 'keep', label: 'Keep', help: t('resetKeepHelp') }
 ]
 
-/** The untracked files a hard reset overwrites, at most 10 listed; `stash`: the dialog offers the stash, which does not keep them. */
-export function overwrittenWarning(files: string[], stash: boolean): HTMLElement {
+/**
+ * What a hard reset destroys besides tracked changes, at most 10 paths per list: nested repositories it
+ * deletes whole first, then untracked files; null when there is neither. `stash`: the dialog offers the
+ * stash, which does not keep the files.
+ */
+export function overwrittenWarning({ overwritten, repositories }: ResetCheck, stash: boolean): HTMLElement | null {
+  if (!overwritten.length && !repositories.length) return null
+  const list = (paths: string[]) => [
+    h('ul', { class: 'file-list mono' }, ...paths.slice(0, 10).map((path) => h('li', null, path))),
+    paths.length > 10 ? t('pushedMore', { count: paths.length - 10 }).trim() : null
+  ]
   return h(
     'div',
     { class: 'warning danger' },
@@ -208,9 +217,8 @@ export function overwrittenWarning(files: string[], stash: boolean): HTMLElement
     h(
       'div',
       null,
-      t(stash ? 'hardResetOverwrittenStash' : 'hardResetOverwritten', { count: files.length }),
-      h('ul', { class: 'file-list mono' }, ...files.slice(0, 10).map((file) => h('li', null, file))),
-      files.length > 10 ? t('pushedMore', { count: files.length - 10 }).trim() : null
+      ...(repositories.length ? [h('strong', null, t('hardResetRepositories', { count: repositories.length })), ...list(repositories)] : []),
+      ...(overwritten.length ? [t(stash ? 'hardResetOverwrittenStash' : 'hardResetOverwritten', { count: overwritten.length }), ...list(overwritten)] : [])
     )
   )
 }
@@ -219,7 +227,7 @@ export function overwrittenWarning(files: string[], stash: boolean): HTMLElement
 export async function askReset(branch: string | null, hash: string, backup?: BackupBlock, state?: ResetCheck): Promise<ResetMode | null> {
   let chosen: ResetMode = 'mixed'
   // The warning shows with Hard, and so does the stash row whenever there is a backup offer and something to stash.
-  const overwritten = state?.overwritten.length ? overwrittenWarning(state.overwritten, Boolean(backup && state.dirty)) : null
+  const overwritten = state ? overwrittenWarning(state, Boolean(backup && state.dirty)) : null
   const choose = (mode: ResetMode) => {
     chosen = mode
     backup?.showStash(mode === 'hard' && Boolean(state?.dirty))

@@ -81,7 +81,7 @@ test('action.run and branch.run check the HEAD the dialog showed and make the ba
     const stashed = await worker.request('action.run', { root, action: { kind: 'drop', hashes: [head] }, expectHead: head, backup: { kind: 'branch', name, target: head, stash: true } })
     assert.equal(stashed.ok, false)
     assert.deepEqual(await worker.request('backup.check', { root, kind: 'branch', name }), { ok: true })
-    assert.deepEqual(await worker.request('reset.check', { root, target: parent }), { dirty: false, overwritten: [] })
+    assert.deepEqual(await worker.request('reset.check', { root, target: parent }), { dirty: false, overwritten: [], repositories: [] })
     assert.equal(sh(root, 'rev-parse', 'HEAD'), head)
     assert.equal(sh(root, 'for-each-ref', 'refs/heads/backup'), '')
     const run = await worker.request('action.run', { root, action: { kind: 'drop', hashes: [head] }, expectHead: head, backup: { kind: 'branch', name, target: head } })
