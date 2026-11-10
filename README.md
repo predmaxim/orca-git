@@ -89,8 +89,9 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   list (`.git/sequencer`) is named as such, with `git cherry-pick --quit` (or `git revert --quit`) as
   the way out.
 - In a shallow clone (`git clone --depth`), the commit the fetched history starts at cannot be
-  rewritten, reverted, cherry-picked or undone: git would take it for the first commit, cut the
-  branch off its history or delete files. The message says to fetch the rest with
+  rewritten, reverted, cherry-picked or undone, and the current branch is not rebased onto a branch
+  whose merge base was not fetched: git would take that commit for the first commit, cut the branch
+  off its history or bring back or delete files. The message says to fetch the rest with
   `git fetch --unshallow` first.
 - Every git command the worker runs, where its input comes from and how it is checked is listed in
   [docs/git-safety.md](docs/git-safety.md).

@@ -697,10 +697,15 @@ test('a first-parent history that is not one chain of distinct commits is refuse
 
 test('the oldest commit of a shallow clone is never rewritten, reverted or cherry-picked as a first commit', async () => {
   const origin = repo()
-  const [, , c3, c4] = ['one', 'two', 'three', 'four'].map((name) => commit(origin, `${name}.txt`, `${name}\n`, name))
+  const [c1, , c3, c4] = ['one', 'two', 'three', 'four'].map((name) => commit(origin, `${name}.txt`, `${name}\n`, name))
+  // A branch from c1 that deletes one.txt: in the clone, its merge base with main is not reachable from main.
+  sh(origin, 'checkout', '-q', '-b', 'other', c1)
+  sh(origin, 'rm', '-q', 'one.txt')
+  sh(origin, 'commit', '-q', '-m', 'no one')
+  sh(origin, 'checkout', '-q', 'main')
   // Two commits deep (--no-local: a local clone ignores --depth): git shows c3 with no parent, though its object has one.
   const root = join(tempDir('git-log-shallow-'), 'clone')
-  sh(origin, 'clone', '-q', '--no-local', '--depth', '2', origin, root)
+  sh(origin, 'clone', '-q', '--no-local', '--no-single-branch', '--depth', '2', origin, root)
   sh(root, 'config', 'user.name', 'Tester')
   sh(root, 'config', 'user.email', 'tester@example.com')
   sh(root, 'config', 'commit.gpgsign', 'false')
@@ -730,6 +735,14 @@ test('the oldest commit of a shallow clone is never rewritten, reverted or cherr
       return result
     })
   }
+  // Rebase onto other would replay c3 as if it added its whole tree: one.txt, which other deleted, would come back.
+  const other = 'refs/remotes/origin/other'
+  await assert.rejects(checkRebaseOnto(git, other), /git fetch --unshallow/)
+  await refusedBeforeGit(shallow, 'rebase onto', async (git) => {
+    const result = await runBranchAction(git, { kind: 'rebaseOnto', name: other, tip: sh(root, 'rev-parse', other) })
+    assert.match(result.message, /git fetch --unshallow/)
+    return result
+  })
   // Above the oldest commit a rewrite and a revert run as in a full clone.
   const reworded = await runAction(git, { kind: 'reword', hash: c4, message: 'four, reworded' })
   assert.equal(reworded.ok, true, reworded.message)

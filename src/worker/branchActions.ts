@@ -3,7 +3,7 @@ import { assertName } from './actions.ts'
 import { lastLines, type Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
 import { readHead } from './log.ts'
-import { abortedReason, abortRebase, autostashConflict, noteUnstaged, operationInProgress, operationRefusal, pushedTo } from './rebase.ts'
+import { abortedReason, abortRebase, autostashConflict, noteUnstaged, operationInProgress, operationRefusal, pushedTo, shallowBoundary } from './rebase.ts'
 import { noteWarnings } from './warnings.ts'
 
 // Under the 120 s a frame waits, so the fetch's own message arrives.
@@ -73,10 +73,22 @@ async function assertTarget(git: Git, target: unknown): Promise<string> {
 /** A full branch name as the panel shows it. */
 const shortName = (name: string) => name.replace(/^refs\/(heads|remotes)\//, '')
 
+/**
+ * The commits a rebase of HEAD onto `name` replays, each with the parents git shows. Refuses one where a shallow clone's
+ * history starts: with the merge base not fetched, git would replay it as if it added its whole tree.
+ */
+async function replayed(git: Git, name: string): Promise<string[][]> {
+  const rows = (await git.out(['rev-list', '--parents', '--end-of-options', `${name}..HEAD`, '--'])).split('\n').filter(Boolean).map((line) => line.split(' '))
+  for (const [hash, ...parents] of rows) {
+    if (!parents.length && (await shallowBoundary(git, hash))) throw new Error(t('shallowBoundary', { hash: hash.slice(0, 8) }))
+  }
+  return rows
+}
+
 /** Remote branches that already hold commits a rebase of HEAD onto `target` would rewrite. */
 export async function checkRebaseOnto(git: Git, target: string): Promise<{ pushed: string[] }> {
   const name = await assertTarget(git, target)
-  const rows = (await git.out(['rev-list', '--parents', '--end-of-options', `${name}..HEAD`, '--'])).split('\n').filter(Boolean).map((line) => line.split(' '))
+  const rows = await replayed(git, name)
   const range = new Set(rows.map(([hash]) => hash))
   // A remote branch holding any of these commits holds one of the oldest too, so only those are checked.
   const pushed = new Set<string>()
@@ -94,6 +106,8 @@ async function integrate(git: Git, kind: 'merge' | 'rebase', target: string, tip
   if (!(await stillAt(git, name, tip))) throw new Error(t('branchMoved', { name: shortName(name) }))
   // The next merge would overwrite (or apply on top) changes an earlier one left under MERGE_AUTOSTASH.
   if (kind === 'merge' && (await git.run(['rev-parse', '-q', '--verify', 'MERGE_AUTOSTASH'])).ok) throw new Error(t('mergeAutostashLeft'))
+  // A merge with no merge base fetched is refused by git itself (unrelated histories); a rebase is not.
+  if (kind === 'rebase') await replayed(git, name)
   const previousHead = (await readHead(git)).hash ?? undefined
   // The merge commit's message names what it merged, for good: the short name, when git merge reads it as exactly this
   // ref. Not a branch named like another commit's full hash, nor FETCH_HEAD, which git merge reads from .git/FETCH_HEAD.
