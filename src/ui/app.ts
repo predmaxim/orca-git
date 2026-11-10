@@ -1,6 +1,7 @@
 import type { ActionRequest, ActionResult, BackupDelete, BackupRequest, BranchAction, BranchActionResult, BranchRef, CommitDetails, CommitRow, LogFilter, RefsResult, RepoInfo, RepoResult, ResetCheck, RewriteKind, SelectionFile, WorkspaceChoice } from '../shared/protocol.ts'
 import { api, copyText, errorMessage, orca, timedOut } from './api.ts'
 import { backupBlock, suggestBackupName, type BackupBlock } from './backup.ts'
+import { lateResults } from './late.ts'
 import { buildFileTree, dirPaths, orderedFiles, renderFileTree, type FileNode } from './filetree.ts'
 import { renderBranches } from './branches.ts'
 import { renderCommitList, renderPlaceholder } from './details.ts'
@@ -948,17 +949,17 @@ function unchanged(scope: Scope, onHead = false): boolean {
   return false
 }
 
-/** The change this panel stopped waiting for (Orca gives up after 120 s); the worker's `action.done` for its root ends it. */
-let waiting: { root: string; finish: (result: BranchActionResult) => void } | null = null
-/** The last `action.done` of each root and when it came: a request can time out just after its change ended. */
-const lastDone = new Map<string, { at: number; result: BranchActionResult }>()
+/** This panel's changes, by the request id the worker echoes in `action.done`. */
+const late = lateResults<BranchActionResult>()
 
-/** Calls `finish` with the result of the change to `root` sent at `since`: now if it has ended, else once it does. */
-function lateResult(root: string, since: number, finish: (result: BranchActionResult) => void): void {
-  const done = lastDone.get(root)
-  if (done && done.at >= since) return finish(done.result)
-  waiting = { root, finish }
-  showBanner(t('stillRunning'), 'info', [], true)
+/** After Orca stopped waiting for change `id` (it gives up after 120 s): `finish` shows its result once it comes. */
+function awaitLate(id: string, finish: (result: BranchActionResult) => void): void {
+  if (late.wait(id, finish)) showBanner(t('stillRunning'), 'info', [], true)
+}
+
+/** `text`, naming the repository at `root` when it is not the one shown: a late result can come after a switch. */
+function about(root: string, text: string): string {
+  return root === repo?.root ? text : t('inRepository', { name: root.split(/[\\/]/).filter(Boolean).pop() ?? root, text })
 }
 
 /**
@@ -971,37 +972,42 @@ async function act(scope: Scope, action: ActionRequest | BranchAction | BackupDe
   const root = scope.root
   const guard = { ...(onHead && scope.head ? { expectHead: scope.head } : {}), ...(backup ? { backup } : {}) }
   const done = busy(progress)
-  const since = Date.now()
+  const id = late.start()
   let result: BranchActionResult
   try {
-    if (action.kind === 'deleteBackup') result = await api.deleteBackup(root, action)
-    else result = BRANCH_KINDS.has(action.kind) ? await api.branch(root, action as BranchAction, guard) : await api.run(root, action as ActionRequest, guard)
+    if (action.kind === 'deleteBackup') result = await api.deleteBackup(root, action, id)
+    else result = BRANCH_KINDS.has(action.kind) ? await api.branch(root, action as BranchAction, guard, id) : await api.run(root, action as ActionRequest, guard, id)
   } catch (error) {
     // Orca stopped waiting, git did not: no failure to report. The worker's action.done brings the result.
     if (timedOut(error)) {
-      lateResult(root, since, (late) => void report(root, action, late, backup))
+      awaitLate(id, (ended) => void report(root, action, ended, backup))
       return null
     }
     result = { ok: false, message: errorMessage(error) }
   } finally {
     done()
   }
+  late.end(id)
   return report(root, action, result, backup)
 }
 
 /** Shows how `action` on `root` ended, with Undo and the backup it made, and refreshes the panel. */
 async function report(root: string, action: ActionRequest | BranchAction | BackupDelete, result: BranchActionResult, backup?: BackupRequest): Promise<BranchActionResult> {
+  // A late result can come after a switch to another repository: then it is named, and this one's filter and buttons stay.
+  const here = root === repo?.root
   // The worker reports a backup it made even when the action then failed.
-  const made = backup && result.backup ? `refs/${backup.kind === 'tag' ? 'tags' : 'heads'}/${result.backup}` : null
+  const made = here && backup && result.backup ? `refs/${backup.kind === 'tag' ? 'tags' : 'heads'}/${result.backup}` : null
   const show = made ? [{ label: t('showBackup'), run: () => reveal(made) }] : []
-  const text = [result.message, result.backup && t('backupMade', { name: result.backup }), result.stash && t('backupStashed', { hash: shortHash(result.stash) })].filter(Boolean).join(' ')
+  const text = about(root, [result.message, result.backup && t('backupMade', { name: result.backup }), result.stash && t('backupStashed', { hash: shortHash(result.stash) })].filter(Boolean).join(' '))
   if (result.ok) {
-    if (action.kind === 'rename') followBranch(action.name, action.newName)
-    else if (action.kind === 'delete') followBranch(action.name)
-    else if (action.kind === 'deleteBackup') dropFilter(`refs/${action.ref === 'tag' ? 'tags' : 'heads'}/${action.name}`)
+    if (here) {
+      if (action.kind === 'rename') followBranch(action.name, action.newName)
+      else if (action.kind === 'delete') followBranch(action.name)
+      else if (action.kind === 'deleteBackup') dropFilter(`refs/${action.ref === 'tag' ? 'tags' : 'heads'}/${action.name}`)
+    }
     const previous = result.previousHead
     // The Undo stays bound to this repository and, through the worker, to the HEAD this action left.
-    const undo = previous && UNDOABLE.has(action.kind)
+    const undo = here && previous && UNDOABLE.has(action.kind)
       ? [{ label: t('undo'), run: () => void act({ root, head: result.head }, { kind: 'reset', hash: previous, mode: 'keep' }, t('progUndoing')).then((r) => r?.ok && showBanner(t('restoredHead', { hash: shortHash(previous) }), 'success')) }]
       : []
     showBanner(text, result.warning ? 'info' : 'success', [...undo, ...show], result.warning)
@@ -1331,14 +1337,19 @@ refreshButton.addEventListener('click', () => void refreshAll())
 fetchButton.addEventListener('click', async () => {
   if (!repo) return
   const root = repo.root
-  const since = Date.now()
-  const show = (result: ActionResult) => showBanner(result.message, result.ok ? 'success' : 'error')
+  const id = late.start()
+  const show = (result: ActionResult) => showBanner(about(root, result.message), result.ok ? 'success' : 'error')
   fetchButton.disabled = true
   try {
-    show(await api.fetch(root))
+    const result = await api.fetch(root, id)
+    late.end(id)
+    show(result)
   } catch (error) {
-    if (timedOut(error)) lateResult(root, since, show)
-    else showBanner(errorMessage(error), 'error')
+    if (timedOut(error)) awaitLate(id, show)
+    else {
+      late.end(id)
+      showBanner(errorMessage(error), 'error')
+    }
   } finally {
     fetchButton.disabled = false
   }
@@ -1363,12 +1374,11 @@ orca.plugin.on('diff.current', ({ root, path }: { root: string; path: string }) 
   filesPane.querySelector('.ft-row.current')?.scrollIntoView({ block: 'nearest' })
 })
 
-orca.plugin.on('action.done', ({ root, result }: { root: string; result: BranchActionResult }) => {
-  lastDone.set(root, { at: Date.now(), result })
-  if (waiting?.root !== root) return
-  const { finish } = waiting
-  waiting = null
-  finish(result)
+orca.plugin.on('action.done', ({ id, result }: { id: string; result: BranchActionResult }) => late.done(id, result))
+
+// What the worker before this one ran is never posted: stop saying git is still running.
+orca.plugin.on('worker.started', () => {
+  if (late.restart()) showBanner(t('workerRestarted'), 'error')
 })
 
 orca.plugin.on('repo.changed', ({ root }: { root: string }) => {

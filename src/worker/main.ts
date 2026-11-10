@@ -25,9 +25,10 @@ const changing = new Set<string>()
 
 /**
  * Runs `change` on `root` (as `gitFor` accepted it) unless another change to it is running: that one is refused, not
- * queued. The result is also posted as `action.done`, for a panel that stopped waiting (Orca gives up after 120 s).
+ * queued. The result is also posted as `action.done` with the request's `id`, for a panel that stopped waiting (Orca
+ * gives up after 120 s).
  */
-async function exclusive<T extends ActionResult>(root: string, change: () => Promise<T>): Promise<T | ActionResult> {
+async function exclusive<T extends ActionResult>(root: string, id: unknown, change: () => Promise<T>): Promise<T | ActionResult> {
   if (changing.has(root)) return { ok: false, message: t('repoBusy') }
   changing.add(root)
   let result: T | ActionResult
@@ -38,7 +39,7 @@ async function exclusive<T extends ActionResult>(root: string, change: () => Pro
   } finally {
     changing.delete(root)
   }
-  orcaApi.panels.post('action.done', { root, result })
+  orcaApi.panels.post('action.done', { root, id: typeof id === 'string' ? id : '', result })
   return result
 }
 
@@ -147,6 +148,8 @@ async function openDiff(input: any): Promise<{ ok: boolean; reason?: string }> {
 
 export default function activate(orca: OrcaWorkerApi): void {
   orcaApi = orca
+  // A panel drops what it waited for from a worker before this one: that is never posted.
+  orca.panels.post('worker.started', {})
 
   // Each request names the caller's language; set it before the handler runs.
   const handle = (name: string, handler: (input: any) => unknown) =>
@@ -199,9 +202,9 @@ export default function activate(orca: OrcaWorkerApi): void {
 
   handle('action.check', async ({ root, kind, hashes }) => checkRewrite(await gitFor(root), kind, hashes))
 
-  handle('action.run', async ({ root, action, expectHead, backup }) => {
+  handle('action.run', async ({ root, action, expectHead, backup, id }) => {
     const git = await gitFor(root)
-    return exclusive(root, async () => {
+    return exclusive(root, id, async () => {
       const hardReset = action?.kind === 'reset' && action?.mode === 'hard'
       const result = await runGuarded(git, { expectHead, backup }, 'HEAD', () => runAction(git, action), hardReset)
       orca.panels.post('repo.changed', { root })
@@ -209,9 +212,9 @@ export default function activate(orca: OrcaWorkerApi): void {
     })
   })
 
-  handle('branch.run', async ({ root, action, expectHead, backup }) => {
+  handle('branch.run', async ({ root, action, expectHead, backup, id }) => {
     const git = await gitFor(root)
-    return exclusive(root, async () => {
+    return exclusive(root, id, async () => {
       // A deleted branch's backup keeps that branch; every other branch action moves HEAD.
       const tip = action?.kind === 'delete' ? { branch: action.name } : 'HEAD'
       const result = await runGuarded(git, { expectHead, backup }, tip, () => runBranchAction(git, action))
@@ -224,9 +227,9 @@ export default function activate(orca: OrcaWorkerApi): void {
 
   handle('reset.check', async ({ root, target }) => checkReset(await gitFor(root), root, target))
 
-  handle('backup.delete', async ({ root, action }) => {
+  handle('backup.delete', async ({ root, action, id }) => {
     const git = await gitFor(root)
-    return exclusive(root, async () => {
+    return exclusive(root, id, async () => {
       const result = await deleteBackup(git, action)
       orca.panels.post('repo.changed', { root })
       return result
@@ -235,9 +238,9 @@ export default function activate(orca: OrcaWorkerApi): void {
 
   handle('branch.check', async ({ root, name }) => checkRebaseOnto(await gitFor(root), name))
 
-  handle('repo.fetch', async ({ root }) => {
+  handle('repo.fetch', async ({ root, id }) => {
     const git = await gitFor(root)
-    return exclusive(root, async () => {
+    return exclusive(root, id, async () => {
       const result = await fetchAll(git)
       if (result.ok) orca.panels.post('repo.changed', { root })
       return result

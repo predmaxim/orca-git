@@ -252,9 +252,10 @@ declare module 'orca' {
     'range.diff': { input: { root: string; from: string | null; to: string; path: string; oldPath?: string; wholeFile?: boolean }; output: FileDiff }
     'patch.create': { input: { root: string; hashes: string[]; path?: string; overwrite?: boolean }; output: PatchResult }
     'action.check': { input: { root: string; kind: RewriteKind; hashes: string[] }; output: CheckResult }
-    'action.run': { input: { root: string; action: ActionRequest } & ActionGuard; output: ActionResult }
-    'branch.run': { input: { root: string; action: BranchAction } & ActionGuard; output: BranchActionResult }
-    'backup.delete': { input: { root: string; action: BackupDelete }; output: ActionResult }
+    /** `id`: echoed in `action.done`, so a panel that stopped waiting knows its result. */
+    'action.run': { input: { root: string; action: ActionRequest; id?: string } & ActionGuard; output: ActionResult }
+    'branch.run': { input: { root: string; action: BranchAction; id?: string } & ActionGuard; output: BranchActionResult }
+    'backup.delete': { input: { root: string; action: BackupDelete; id?: string }; output: ActionResult }
     /** Whether `name` can become a new backup branch or tag; read-only. */
     'backup.check': { input: { root: string; kind: 'branch' | 'tag'; name: string }; output: { ok: true } | { ok: false; reason: string } }
     /** What a hard reset to `target` would lose: uncommitted tracked changes, untracked files it overwrites; read-only. */
@@ -262,7 +263,7 @@ declare module 'orca' {
     /** Remote branches holding commits that rebasing the current branch onto `name` would rewrite. */
     /** `name`: the full ref, as for `rebaseOnto`. */
     'branch.check': { input: { root: string; name: string }; output: { pushed: string[] } }
-    'repo.fetch': { input: { root: string }; output: ActionResult }
+    'repo.fetch': { input: { root: string; id?: string }; output: ActionResult }
     /** Shows the state in the Diff tab of the workspace that holds `root`, opening the tab if needed. */
     'diff.open': { input: DiffTabState; output: { ok: boolean; reason?: string } }
     'diff.state': { input: { root: string }; output: DiffTabState | null }
@@ -271,8 +272,10 @@ declare module 'orca' {
   }
   interface PluginPanelEvents {
     'repo.changed': { root: string }
-    /** A change to `root` ended; a panel that stopped waiting for it shows `result`. */
-    'action.done': { root: string; result: BranchActionResult }
+    /** The change request `id` sent to `root` ended; a panel that stopped waiting for it shows `result`. */
+    'action.done': { root: string; id: string; result: BranchActionResult }
+    /** The worker started, so nothing an earlier one ran will be posted any more. */
+    'worker.started': Record<string, never>
     /** The Diff tab of `root` has a new state to show. */
     'diff.show': { root: string }
     /** The file the Diff tab of `root` now shows, for the sidebar to highlight. */

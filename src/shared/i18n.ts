@@ -352,7 +352,9 @@ export const en = {
   gitProbeFailed: '{path} could not be run as git: {error}',
   gitStopped: 'git {command} was stopped before it finished. If it was changing the repository, the change may be half done: check with git status.',
   repoBusy: 'Another git operation is still running in this repository. Wait for it to finish, then try again.',
-  stillRunning: 'git is still running after 2 minutes. Its result shows here when it finishes; until then other changes to this repository are refused.'
+  stillRunning: 'git is still running after 2 minutes. Its result shows here when it finishes; until then other changes to this repository are refused.',
+  inRepository: 'In {name}: {text}',
+  workerRestarted: 'The plugin\'s worker restarted while git was running, so how that change ended is not known. Check the log or git status.'
 } satisfies Record<string, Message>
 
 export const ru: Record<keyof typeof en, Message> = {
@@ -708,7 +710,9 @@ export const ru: Record<keyof typeof en, Message> = {
   gitProbeFailed: 'Не удалось запустить {path} как git: {error}',
   gitStopped: 'git {command} остановлен, не закончив работу. Если он менял репозиторий, изменение может быть сделано наполовину: проверьте git status.',
   repoBusy: 'В этом репозитории ещё выполняется другая операция git. Дождитесь её окончания и повторите.',
-  stillRunning: 'git всё ещё работает спустя 2 минуты. Результат появится здесь, когда он закончит; до тех пор другие изменения этого репозитория не выполняются.'
+  stillRunning: 'git всё ещё работает спустя 2 минуты. Результат появится здесь, когда он закончит; до тех пор другие изменения этого репозитория не выполняются.',
+  inRepository: 'В {name}: {text}',
+  workerRestarted: 'Рабочий процесс плагина перезапустился, пока работал git, поэтому неизвестно, чем закончилось изменение. Проверьте журнал или git status.'
 }
 
 export type MessageKey = keyof typeof en

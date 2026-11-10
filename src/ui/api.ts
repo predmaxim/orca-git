@@ -66,15 +66,15 @@ export const api = {
     call('patch.create', { root, hashes, ...(path ? { path, overwrite } : {}) }, LONG),
   check: (root: string, kind: RewriteKind, hashes: string[]): Promise<CheckResult> =>
     call('action.check', { root, kind, hashes }, LONG),
-  branch: (root: string, action: BranchAction, guard: ActionGuard = {}): Promise<BranchActionResult> =>
-    call('branch.run', { root, action, ...guard }, LONG),
+  branch: (root: string, action: BranchAction, guard: ActionGuard, id: string): Promise<BranchActionResult> =>
+    call('branch.run', { root, action, ...guard, id }, LONG),
   branchCheck: (root: string, name: string): Promise<{ pushed: string[] }> => call('branch.check', { root, name }, LONG),
-  run: (root: string, action: ActionRequest, guard: ActionGuard = {}): Promise<ActionResult> => call('action.run', { root, action, ...guard }, LONG),
-  deleteBackup: (root: string, action: BackupDelete): Promise<ActionResult> => call('backup.delete', { root, action }, LONG),
+  run: (root: string, action: ActionRequest, guard: ActionGuard, id: string): Promise<ActionResult> => call('action.run', { root, action, ...guard, id }, LONG),
+  deleteBackup: (root: string, action: BackupDelete, id: string): Promise<ActionResult> => call('backup.delete', { root, action, id }, LONG),
   backupCheck: (root: string, kind: 'branch' | 'tag', name: string): Promise<{ ok: true } | { ok: false; reason: string }> =>
     call('backup.check', { root, kind, name }),
   resetCheck: (root: string, target: string): Promise<ResetCheck> => call('reset.check', { root, target }, LONG),
-  fetch: (root: string): Promise<ActionResult> => call('repo.fetch', { root }, LONG),
+  fetch: (root: string, id: string): Promise<ActionResult> => call('repo.fetch', { root, id }, LONG),
   openDiff: (state: DiffTabState): Promise<{ ok: boolean; reason?: string }> => call('diff.open', state),
   diffState: (root: string): Promise<DiffTabState | null> => call('diff.state', { root }),
   diffIndex: (root: string, index: number): Promise<{ ok: boolean }> => call('diff.index', { root, index })

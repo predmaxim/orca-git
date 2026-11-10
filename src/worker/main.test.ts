@@ -22,6 +22,9 @@ function fixture(): string {
   return root
 }
 
+/** What the worker posts when it starts, so a panel drops what it waited for from the one before. */
+const started = { event: 'worker.started', payload: {} }
+
 function host(root: string) {
   return mockHost({
     results: {
@@ -54,11 +57,12 @@ test('resolves the focused workspace, pages the log and runs an action', async (
     assert.equal(page.hasMore, true)
 
     const [newest, middle] = page.commits
-    const run = await worker.request('action.run', { root, action: { kind: 'drop', hashes: [middle.hash] } })
+    assert.deepEqual(worker.posts[0], started)
+    const run = await worker.request('action.run', { root, action: { kind: 'drop', hashes: [middle.hash] }, id: 'request-1' })
     assert.equal(run.ok, true, run.message)
     assert.equal(run.previousHead, newest.hash)
     // A panel that stopped waiting gets the result from the last post.
-    assert.deepEqual(worker.posts.slice(-2), [{ event: 'repo.changed', payload: { root } }, { event: 'action.done', payload: { root, result: run } }])
+    assert.deepEqual(worker.posts.slice(-2), [{ event: 'repo.changed', payload: { root } }, { event: 'action.done', payload: { root, id: 'request-1', result: run } }])
 
     await assert.rejects(worker.request('log.page', { root: tmpdir(), filter: {}, skip: 0 }))
     assert.deepEqual(worker.refusals, [])
@@ -183,7 +187,7 @@ test('a Diff tab state with bad files, hashes or index opens nothing', async () 
       assert.deepEqual(result, { ok: false, reason: 'Invalid list of files.' }, JSON.stringify(change).slice(0, 100))
     }
     assert.deepEqual(h.callsOf('editor.open'), [])
-    assert.deepEqual(worker.posts, [])
+    assert.deepEqual(worker.posts, [started])
     assert.ok(!existsSync(join(root, ANCHOR)))
     assert.ok(!readFileSync(join(root, '.git', 'info', 'exclude'), 'utf8').includes(ANCHOR))
     assert.equal(await worker.request('diff.state', { root }), null)
@@ -202,7 +206,7 @@ test('a repository that no workspace holds opens no Diff tab', async () => {
     const result = await worker.request('diff.open', diffState(other))
     assert.deepEqual(result, { ok: false, reason: 'No open workspace holds this repository. Nothing was opened.' })
     assert.deepEqual(h.callsOf('editor.open'), [])
-    assert.deepEqual(worker.posts, [])
+    assert.deepEqual(worker.posts, [started])
     assert.ok(!existsSync(join(other, ANCHOR)) && !existsSync(join(root, ANCHOR)))
     assert.ok(!readFileSync(join(other, '.git', 'info', 'exclude'), 'utf8').includes(ANCHOR))
     assert.equal(await worker.request('diff.state', { root: other }), null)
@@ -242,7 +246,7 @@ test('an anchor name taken by anything but the plugin\'s own anchor opens nothin
     assert.equal(readFileSync(target, 'utf8'), 'keep')
     assert.equal(readFileSync(exclude, 'utf8'), before)
     assert.deepEqual(h.callsOf('editor.open'), [])
-    assert.deepEqual(worker.posts, [])
+    assert.deepEqual(worker.posts, [started])
     assert.equal(await worker.request('diff.state', { root }), null)
     await worker.deactivate()
   } finally {
