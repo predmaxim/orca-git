@@ -1,52 +1,97 @@
+/* Orca hands a frame exactly 20 theme tokens (--orca-*) and a light/dark class on <html>: whatever they cover comes from them. */
 :root {
-  --bg: var(--orca-card, var(--orca-background, #171717));
-  --fg: var(--orca-foreground, #dfe1e5);
-  --muted-fg: var(--orca-muted-foreground, #868a91);
-  --muted: var(--orca-muted, #2b2d30);
-  --border: var(--orca-border, #393b40);
-  --popover: var(--orca-popover, #2b2d30);
-  --popover-fg: var(--orca-popover-foreground, var(--fg));
-  --accent: var(--orca-accent, #2e436e);
-  --primary: var(--orca-primary, #3574f0);
-  --primary-fg: var(--orca-primary-foreground, #fff);
-  --input: var(--orca-input, #393b40);
-  --ring: var(--orca-ring, #3574f0);
-  --danger: var(--orca-destructive, #db5c5c);
-  --radius: var(--orca-radius, 6px);
+  --bg: var(--orca-card);
+  --fg: var(--orca-card-foreground);
+  --muted-fg: var(--orca-muted-foreground);
+  --muted: var(--orca-muted);
+  --border: var(--orca-border);
+  --popover: var(--orca-popover);
+  --popover-fg: var(--orca-popover-foreground);
+  --accent: var(--orca-accent);
+  --accent-fg: var(--orca-accent-foreground);
+  --primary: var(--orca-primary);
+  --primary-fg: var(--orca-primary-foreground);
+  --secondary: var(--orca-secondary);
+  --secondary-fg: var(--orca-secondary-foreground);
+  --input: var(--orca-input);
+  --ring: var(--orca-ring);
+  --danger: var(--orca-destructive);
+  --radius: var(--orca-radius);
+  /* Orca's shapes: --radius for menus and dialogs, less for controls and rows, less again for the parts inside them. */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-xs: calc(var(--radius) - 6px);
+  --hover: color-mix(in srgb, var(--accent) 55%, transparent);
+  --selected: var(--accent);
+  /* Selection is a fill, never bold; a little stronger in the list that has focus. */
+  --selected-focus: color-mix(in srgb, var(--accent-fg) 10%, var(--accent));
+  --toggle-on: var(--accent);
+  --field-bg: color-mix(in srgb, var(--input) 30%, transparent);
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--ring) 50%, transparent);
+  --font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
+  --font-code: 'JetBrainsMono Nerd Font', 'JetBrains Mono', ui-monospace, monospace;
+  --row-h: 24px;
   --selection: color-mix(in srgb, var(--primary) 32%, transparent);
   --selection-inactive: color-mix(in srgb, var(--fg) 12%, transparent);
-  --hover: color-mix(in srgb, var(--fg) 6%, transparent);
-  --row-h: 24px;
-  --c0: #4c8cf5;
-  --c1: #5fb865;
-  --c2: #e0a03a;
-  --c3: #c27ad6;
-  --c4: #e5676f;
-  --c5: #3fb6c4;
-  --c6: #d58b5a;
-  --c7: #9aa83a;
-  --ref-local: #6aab73;
-  --ref-remote: #a581d9;
-  --ref-tag: #c9a24a;
-  --ref-head: #e3b341;
   color-scheme: dark;
 }
 
 :root.light {
+  --toggle-on: color-mix(in srgb, var(--fg) 12%, transparent);
+  --field-bg: transparent;
   --selection: color-mix(in srgb, var(--primary) 22%, transparent);
-  --c0: #3574f0;
-  --c1: #3f9b45;
-  --c2: #c98612;
-  --c3: #a252c0;
-  --c4: #d0444f;
-  --c5: #1f9aa8;
-  --c6: #b8682f;
-  --c7: #7d8a1d;
-  --ref-local: #3f8a4a;
-  --ref-remote: #7c55c2;
-  --ref-tag: #a57c16;
-  --ref-head: #b58500;
   color-scheme: light;
+}
+
+/* Orca gives frames no git, diff or status colors: these are WebStorm 2026.2's (Islands Dark, then Islands Light).
+   Graph lanes come from its log color generator, ref icons from VersionControl.GitLog, the rest from the editor scheme and Banner.* */
+:root {
+  --c0: #3d5499;
+  --c1: #3d993d;
+  --c2: #996b3d;
+  --c3: #743d99;
+  --c4: #994d3d;
+  --c5: #3d8a99;
+  --c6: #99993d;
+  --c7: #993d7f;
+  --ref-local: #5fad65;
+  --ref-remote: #b589ec;
+  --ref-tag: #868a91;
+  --ref-head: #f5d273;
+  --st-added: #73bd79;
+  --st-modified: #70aeff;
+  --st-deleted: #6f737a;
+  --diff-add: #294436;
+  --diff-del: #484a4a;
+  --success-bg: #203b2a;
+  --success-border: #29583c;
+  --warning-bg: #44321d;
+  --warning-border: #694820;
+  --warning-fg: #d59637;
+}
+
+:root.light {
+  --c0: #4762b3;
+  --c1: #47b347;
+  --c2: #b37d47;
+  --c3: #8847b3;
+  --c4: #b35947;
+  --c5: #47a1b3;
+  --c6: #b3b347;
+  --c7: #b34794;
+  --ref-local: #369650;
+  --ref-remote: #834df0;
+  --ref-tag: #6c707e;
+  --ref-head: #ffaf0f;
+  --st-added: #067d17;
+  --st-modified: #0033b3;
+  --st-deleted: #6c707e;
+  --diff-add: #bee6be;
+  --diff-del: #d6d6d6;
+  --success-bg: #f5faf3;
+  --success-border: #bbdbc2;
+  --warning-bg: #fff6e9;
+  --warning-border: #f4cd9a;
+  --warning-fg: #a56906;
 }
 
 * {
@@ -59,9 +104,13 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font: 12.5px/1.4 Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
   overflow: hidden;
   user-select: none;
+}
+
+/* On body, not html: --orca-radius comes in rem, which must stay the browser's 16px as in Orca. */
+body {
+  font: 13px/1.5 var(--font-ui);
 }
 
 button,
@@ -72,14 +121,58 @@ textarea {
   color: inherit;
 }
 
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--primary);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--primary) 35%, transparent);
+}
+
+::placeholder {
+  color: var(--muted-fg);
+  opacity: 1;
+}
+
+/* Orca's scrollbars: a thin thumb of the secondary text color, inset from the edges. */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  min-height: 28px;
+  border: 3px solid transparent;
+  background: color-mix(in srgb, var(--muted-fg) 28%, transparent) padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--muted-fg) 48%, transparent);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background-color: color-mix(in srgb, var(--fg) 36%, transparent);
+}
+
 .icon {
   flex: none;
   display: block;
 }
 
 .mono {
-  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11.5px;
+  font-family: var(--font-code);
+  font-size: 12px;
 }
 
 /* ---------- App frame ---------- */
