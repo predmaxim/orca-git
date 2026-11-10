@@ -5,13 +5,15 @@ import { lateResults } from './late.ts'
 import { buildFileTree, dirPaths, orderedFiles, renderFileTree, type FileNode } from './filetree.ts'
 import { renderBranches } from './branches.ts'
 import { renderCommitList, renderPlaceholder } from './details.ts'
-import { askName, askPatch, askRebasePlan, askReset, busy, confirm, editMessage, overwrittenWarning, pushedWarning } from './dialogs.ts'
+import { askName, askPatch, askRebasePlan, askReset, busy, confirm, dialog, editMessage, overwrittenWarning, pushedWarning } from './dialogs.ts'
 import { h, icon } from './dom.ts'
 import { createFilterBar } from './filters.ts'
+import { KEYS, withKey, type KeyScope } from './keys.ts'
 import { reachableFrom, refLabels, relativeDate, fullDate, shortHash } from './format.ts'
 import { computeGraph, graphSvg, ROW_HEIGHT, TWO_LINE_ROW_HEIGHT, type GraphRow } from './graph.ts'
 import { showMenu, type MenuEntry } from './menu.ts'
-import { createColumn, normalizeSections, type SectionPrefs } from './sections.ts'
+import { mountPanelKeys } from './panelkeys.ts'
+import { createColumn, normalizeSections, type SectionId, type SectionPrefs } from './sections.ts'
 import { pickLocale, setLocale, t } from '../shared/i18n.ts'
 
 setLocale(pickLocale(orca.locale))
@@ -73,10 +75,10 @@ const isFiltered = () =>
 const app = document.getElementById('app')!
 
 const searchInput = h('input', { placeholder: t('searchPlaceholder'), spellcheck: false, 'aria-label': t('searchAria') }) as HTMLInputElement
-const regexToggle = h('button', { class: `toggle${prefs.regex ? ' on' : ''}`, title: t('regexTip') }, '.*')
-const caseToggle = h('button', { class: `toggle${prefs.matchCase ? ' on' : ''}`, title: t('matchCaseTip') }, 'Cc')
-const refreshButton = h('button', { class: 'tool', title: t('refresh') }, icon('refresh'))
-const fetchButton = h('button', { class: 'tool', title: t('fetch') }, icon('down'))
+const regexToggle = h('button', { class: `toggle${prefs.regex ? ' on' : ''}`, title: withKey(t('regexTip'), 'regex') }, '.*')
+const caseToggle = h('button', { class: `toggle${prefs.matchCase ? ' on' : ''}`, title: withKey(t('matchCaseTip'), 'matchCase') }, 'Cc')
+const refreshButton = h('button', { class: 'tool', title: withKey(t('refresh'), 'refresh') }, icon('refresh'))
+const fetchButton = h('button', { class: 'tool', title: withKey(t('fetch'), 'fetch') }, icon('down'))
 
 const filterBar = createFilterBar({
   get filter() {
@@ -123,8 +125,8 @@ column.section('commits').body.append(filterRow, logPane)
 const filesSection = column.section('files')
 const filesPane = filesSection.body
 filesSection.header.append(
-  h('button', { class: 'tool', title: t('expandAll'), 'aria-label': t('expandAll'), onclick: () => setAllFolders(true) }, icon('chevronDown')),
-  h('button', { class: 'tool', title: t('collapseAll'), 'aria-label': t('collapseAll'), onclick: () => setAllFolders(false) }, icon('chevronRight'))
+  h('button', { class: 'tool', title: withKey(t('expandAll'), 'expandAll'), 'aria-label': t('expandAll'), onclick: () => setAllFolders(true) }, icon('chevronDown')),
+  h('button', { class: 'tool', title: withKey(t('collapseAll'), 'collapseAll'), 'aria-label': t('collapseAll'), onclick: () => setAllFolders(false) }, icon('chevronRight'))
 )
 renderFilesNote(t('filesPlaceholder'))
 const detailsPane = column.section('details').body
@@ -566,6 +568,8 @@ searchInput.addEventListener('keydown', (event) => {
     clearTimeout(searchTimer)
     applyFilter({ text: searchInput.value.trim() })
   } else if (event.key === 'Escape' && searchInput.value) {
+    // Prevented: an empty search's Esc takes focus to the list, this one only clears.
+    event.preventDefault()
     searchInput.value = ''
     applyFilter({ text: '' })
   } else if (event.key === 'ArrowDown') {
@@ -613,6 +617,12 @@ function renderTree(): void {
   )
 }
 treeSearch.addEventListener('input', renderTree)
+treeSearch.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || !treeSearch.value) return
+  event.preventDefault()
+  treeSearch.value = ''
+  renderTree()
+})
 // Any click in the tree ends the "Show Backup" highlight.
 tree.addEventListener('mousedown', () => (revealed = null))
 
@@ -1427,6 +1437,63 @@ orca.plugin.on('diff.current', ({ root, path }: { root: string; path: string }) 
   for (const dir of dirPaths(fileTree)) if (path.startsWith(`${dir}/`)) openFolders.add(dir)
   drawFiles()
   filesPane.querySelector('.ft-row.current')?.scrollIntoView({ block: 'nearest' })
+})
+
+// ---------- Keyboard ----------
+
+/** 0: the Diff tab as it was left, or, if this repository has none yet, the current file of the selection. */
+async function goToDiff(): Promise<void> {
+  if (!repo) return
+  try {
+    const result = await api.focusDiff(repo.root)
+    if (result.ok) return
+    if (result.reason) return showBanner(result.reason, 'error')
+  } catch (error) {
+    return showBanner(errorMessage(error), 'error')
+  }
+  if (!selectionFiles.length) return showBanner(t('filesPlaceholder'), 'info')
+  openFile(Math.max(0, selectionFiles.findIndex((file) => file.path === currentFile)))
+}
+
+function showKeys(): void {
+  const group = (title: string, scope: KeyScope) =>
+    h('div', { class: 'keys' }, h('h3', null, title), ...KEYS.filter((k) => k.scope === scope).map((k) => h('div', { class: 'key' }, h('kbd', null, k.shown), h('span', null, t(k.label)))))
+  void dialog<null>({
+    title: t('keyHelp'),
+    body: [group(t('keysAnywhere'), 'anywhere'), group(t('sectionCommits'), 'commits'), group(t('sectionFiles'), 'files'), group(t('keyDiffTab'), 'diff')],
+    buttons: [{ label: t('dismiss'), value: null }]
+  })
+}
+
+const treeStop = (container: HTMLElement) => container.querySelector<HTMLElement>('[role=treeitem][tabindex="0"]')
+const area = (id: SectionId, target: () => HTMLElement | null, search?: HTMLInputElement) => {
+  const { root, body, toggle } = column.section(id)
+  return { root, body, toggle, target, search }
+}
+mountPanelKeys({
+  areas: {
+    branches: area('branches', () => treeStop(tree), treeSearch),
+    commits: area('commits', () => viewport, searchInput),
+    files: area('files', () => treeStop(filesPane)),
+    details: area('details', () => detailsPane.querySelector<HTMLElement>('.cl-head'))
+  },
+  isOpen: (id) => !prefs.sections.collapsed[id],
+  // The header's own click: it keeps the last open section open and saves the layout.
+  toggle: (id) => column.section(id).header.click(),
+  run: {
+    refresh: () => refreshButton.click(),
+    fetch: () => fetchButton.click(),
+    help: showKeys,
+    diff: () => void goToDiff(),
+    filterBranch: () => filterBar.elements[0].click(),
+    filterUser: () => filterBar.elements[1].click(),
+    filterDate: () => filterBar.elements[2].click(),
+    filterPaths: () => filterBar.elements[3].click(),
+    regex: () => regexToggle.click(),
+    matchCase: () => caseToggle.click(),
+    expandAll: () => setAllFolders(true),
+    collapseAll: () => setAllFolders(false)
+  }
 })
 
 orca.plugin.on('action.done', ({ id, result }: { id: string; result: BranchActionResult }) => late.done(id, result))

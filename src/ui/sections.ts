@@ -59,16 +59,20 @@ export function resizePair(
 }
 
 export interface Section {
+  /** The whole section, `data-section`. */
+  root: HTMLElement
   body: HTMLElement
   /** Chevron, title and summary; buttons appended here sit at its right end and don't collapse it. */
   header: HTMLElement
+  /** The chevron and title button that folds the section. */
+  toggle: HTMLButtonElement
   setSummary(text: string): void
 }
 
 /** Builds the sections `ids` from top to bottom; `onChange` runs after a collapse or a resize, to save `prefs`. */
 export function createColumn(ids: SectionId[], prefs: SectionPrefs, onChange: () => void): { element: HTMLElement; section(id: SectionId): Section } {
   const element = h('div', { class: 'column' })
-  const parts = new Map<SectionId, Section & { root: HTMLElement; toggle: HTMLElement; splitter: HTMLElement | null }>()
+  const parts = new Map<SectionId, Section & { splitter: HTMLElement | null }>()
 
   /** The nearest open section above `index`: the splitter above an open section resizes against it. */
   const openAbove = (index: number): SectionId | undefined => {

@@ -1257,6 +1257,27 @@ textarea.field {
   padding: 4px 16px 16px;
 }
 
+/* ---------- Keyboard shortcuts (?) ---------- */
+
+.keys h3 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted-fg);
+}
+
+.key {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.key kbd {
+  min-width: 56px;
+  font: 12px var(--font-code);
+}
+
 .btn {
   height: 30px;
   padding: 0 12px;

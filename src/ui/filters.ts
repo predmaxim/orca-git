@@ -2,6 +2,7 @@ import type { LogFilter, RefsResult } from '../shared/protocol.ts'
 import { h, icon } from './dom.ts'
 import { t } from '../shared/i18n.ts'
 import { dayInput } from './format.ts'
+import { withKey, type KeyId } from './keys.ts'
 import { showPopover } from './menu.ts'
 
 export interface FilterHost {
@@ -22,7 +23,12 @@ function summary(name: string, values: string[]): string {
   return `${name}: ${values[0]}${values.length > 1 ? ` +${values.length - 1}` : ''}`
 }
 
-function filterButton(name: string, onOpen: (button: HTMLElement) => void, onClear: () => void) {
+/** Puts focus back on the filter's button when closing the popover dropped it, as Esc does. */
+const refocus = (anchor: HTMLElement) => () => {
+  if (!document.activeElement || document.activeElement === document.body) anchor.focus()
+}
+
+function filterButton(name: string, key: KeyId, onOpen: (button: HTMLElement) => void, onClear: () => void) {
   const label = h('span', null, name)
   const clear = h('span', {
     class: 'clear',
@@ -34,7 +40,7 @@ function filterButton(name: string, onOpen: (button: HTMLElement) => void, onCle
   }, icon('close'))
   const button: HTMLButtonElement = h(
     'button',
-    { class: 'tool filter', onclick: () => onOpen(button) },
+    { class: 'tool filter', title: withKey(name, key), onclick: () => onOpen(button) },
     label,
     icon('chevronDown'),
     clear
@@ -44,7 +50,7 @@ function filterButton(name: string, onOpen: (button: HTMLElement) => void, onCle
     set(text: string, active: boolean) {
       label.textContent = text
       button.classList.toggle('set', active)
-      button.title = text
+      button.title = withKey(text, key)
     }
   }
 }
@@ -104,12 +110,13 @@ function checklist(
   }
   search.addEventListener('input', render)
   render()
-  showPopover(anchor, h('div', { style: 'min-width:240px' }, search, list))
+  showPopover(anchor, h('div', { style: 'min-width:240px' }, search, list), refocus(anchor))
 }
 
 export function createFilterBar(host: FilterHost) {
   const branch = filterButton(
     t('filterBranch'),
+    'filterBranch',
     (anchor) => {
       const refs = host.refs
       if (!refs) return
@@ -135,6 +142,7 @@ export function createFilterBar(host: FilterHost) {
 
   const user = filterButton(
     t('filterUser'),
+    'filterUser',
     (anchor) => {
       const refs = host.refs
       if (!refs) return
@@ -155,6 +163,7 @@ export function createFilterBar(host: FilterHost) {
   let dateLabel = ''
   const date = filterButton(
     t('filterDate'),
+    'filterDate',
     (anchor) => {
       const now = Math.floor(Date.now() / 1000)
       const preset = (label: string, days: number) =>
@@ -199,7 +208,8 @@ export function createFilterBar(host: FilterHost) {
           h('div', { class: 'option-group' }, t('dateSelect')),
           h('div', { style: 'display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;padding:4px 8px' }, t('dateFrom'), since, t('dateTo'), until),
           h('div', { style: 'display:flex;justify-content:flex-end;padding:4px 8px' }, apply)
-        )
+        ),
+        refocus(anchor)
       )
     },
     () => {
@@ -210,6 +220,7 @@ export function createFilterBar(host: FilterHost) {
 
   const paths = filterButton(
     t('filterPaths'),
+    'filterPaths',
     (anchor) => {
       const area = h('textarea', { class: 'field mono', rows: 5, spellcheck: false, placeholder: t('pathsPlaceholder') }) as HTMLTextAreaElement
       area.value = (host.filter.paths ?? []).join('\n')
@@ -227,7 +238,8 @@ export function createFilterBar(host: FilterHost) {
           { style: 'display:flex;flex-direction:column;gap:6px;padding:4px;width:320px' },
           area,
           h('div', { style: 'display:flex;justify-content:flex-end' }, h('button', { class: 'btn primary', onclick: submit }, t('apply')))
-        )
+        ),
+        refocus(anchor)
       )
     },
     () => host.apply({ paths: [] })
