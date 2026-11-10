@@ -196,6 +196,19 @@ test('a history rewrite whose local changes cannot be re-applied says so and off
   assert.match(sh(w.root, 'stash', 'show', '-p', 'stash@{0}'), /\+local c/)
 })
 
+test('rewritten messages keep lines that start with #', async () => {
+  const w = world()
+  const git = createGit(w.root)
+  const reworded = await runAction(git, { kind: 'reword', hash: w.c2, message: 'Fix the parser\n\n#12 is fixed by this\n# keep me' })
+  assert.equal(reworded.ok, true, reworded.message)
+  assert.equal(sh(w.root, 'log', '-1', '--skip=1', '--format=%B'), 'Fix the parser\n\n#12 is fixed by this\n# keep me')
+  const head = sh(w.root, 'rev-parse', 'HEAD')
+  const parent = sh(w.root, 'rev-parse', 'HEAD~1')
+  const squashed = await runAction(git, { kind: 'squash', hashes: [head, parent], message: `${sh(w.root, 'log', '-1', '--skip=1', '--format=%B')}\n\nc3` })
+  assert.equal(squashed.ok, true, squashed.message)
+  assert.match(sh(w.root, 'log', '-1', '--format=%B'), /^#12 is fixed by this$/m)
+})
+
 // ---------- 6. An operation left in progress in a terminal ----------
 
 const resolve = (w: World) => {

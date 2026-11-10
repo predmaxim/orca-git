@@ -111,7 +111,8 @@ export function buildTodo(
     if (final === undefined) final = group.reword
     if (final !== undefined) {
       if (!final.trim()) throw new Error(t('commitMessageEmpty'))
-      lines.push(`exec ${shQuote(gitBin)} commit --amend --allow-empty --no-verify --cleanup=strip -F ${shQuote(writeMessage(final))}`)
+      // As `git commit -F` cleans up: a line that starts with # (an issue number) is part of the message, not a comment.
+      lines.push(`exec ${shQuote(gitBin)} commit --amend --allow-empty --no-verify --cleanup=whitespace -F ${shQuote(writeMessage(final))}`)
     }
     group = null
   }
