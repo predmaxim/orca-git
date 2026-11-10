@@ -254,7 +254,7 @@ function renderEmpty(): void {
           h(
             'button',
             { class: 'choice', title: choice.path, onclick: () => pick(choice) },
-            h('span', { class: 'choice-path' }, choice.path),
+            h('span', { class: 'choice-path' }, h('bdi', { dir: 'ltr' }, choice.path)),
             choice.branch ? h('span', { class: 'choice-branch' }, choice.branch) : ''
           )
         )

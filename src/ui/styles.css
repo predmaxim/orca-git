@@ -821,6 +821,7 @@ input[type='radio'] {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* The ellipsis goes on the left; the path inside is an LTR <bdi>, so its leading slash or dot stays first. */
   direction: rtl;
 }
 
@@ -1644,6 +1645,7 @@ input[type='radio']:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* The ellipsis goes on the left; the path inside is an LTR <bdi>, so its leading dot stays first. */
   direction: rtl;
   text-align: left;
 }
