@@ -1025,6 +1025,11 @@ test('create patch refuses the git dir under a name other than .git', async () =
   assert.equal(readFileSync(join(root, 'meta', 'config'), 'utf8'), config)
   assert.deepEqual(['x.patch', 'new', 'refs/heads/x.patch'].filter((name) => existsSync(join(root, 'meta', name))), [])
   assert.equal((await createPatch(git, root, [hash], 'out/c1.patch')).ok, true)
+  // Another folder that only differs in case is the git dir only where the file system ignores case.
+  const sameFolder = existsSync(join(root, 'META'))
+  const other = await createPatch(git, root, [hash], 'META/x.patch')
+  assert.equal(other.ok, !sameFolder, JSON.stringify(other))
+  assert.equal(existsSync(join(root, 'meta', 'x.patch')), false)
 })
 
 test('create patch refuses a FIFO or another file that is not a regular one, without blocking', async () => {

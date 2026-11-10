@@ -1,4 +1,4 @@
-import { closeSync, constants, lstatSync, mkdirSync, openSync, realpathSync, writeFileSync } from 'node:fs'
+import { closeSync, constants, lstatSync, mkdirSync, openSync, realpathSync, rmdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { PatchResult } from '../shared/protocol.ts'
 import type { Git } from './git.ts'
@@ -31,15 +31,26 @@ export async function formatPatch(git: Git, hashes: string[]): Promise<{ text: s
   return { text: parts.join(''), name: order.length === 1 ? `${slug(subject)}.patch` : `${order.length}-commits.patch` }
 }
 
+/** A folder by its device and inode, and its real path for a file system that reports no inode. */
+type Folder = { dev: bigint; ino: bigint; real: string }
+
+/** The folder at `path`, links followed; null when there is none. */
+function folderAt(path: string): Folder | null {
+  const stat = statSync(path, { bigint: true, throwIfNoEntry: false })
+  return stat?.isDirectory() ? { dev: stat.dev, ino: stat.ino, real: realpathSync.native(path) } : null
+}
+
 /**
- * Whether `folder`, or the nearest folder above it that exists, is one of `gitDirs` (real paths, lower case) or inside
- * one, once links and other names for the same folder are resolved. Lower case: refusing too much is safe.
+ * Whether `folder`, or a folder above it, is one of `gitDirs` under whatever name the file system gives it (a separate
+ * git dir in the work tree; on NTFS `.git.`, `GIT~1`, `.git::$INDEX_ALLOCATION`): the same device and inode, or, where
+ * there is no inode, the same real path, case and all. A folder that does not exist yet is skipped.
  */
-function insideGitDir(folder: string, gitDirs: string[]): boolean {
-  let existing = folder
-  while (!lstatSync(existing, { throwIfNoEntry: false })) existing = dirname(existing)
-  const real = realpathSync.native(existing).toLowerCase()
-  return gitDirs.some((dir) => real === dir || real.startsWith(dir.endsWith(sep) ? dir : `${dir}${sep}`))
+function insideGitDir(folder: string, gitDirs: Folder[]): boolean {
+  for (let path = folder; ; path = dirname(path)) {
+    const here = folderAt(path)
+    if (here && gitDirs.some((dir) => (dir.ino && here.ino ? dir.dev === here.dev && dir.ino === here.ino : dir.real === here.real))) return true
+    if (dirname(path) === path) return false
+  }
 }
 
 /** Returns the patch text, or writes it to `path` (relative to `root`) when one is given. */
@@ -61,7 +72,8 @@ export async function createPatch(git: Git, root: string, hashes: string[], path
   const gitDirs = (await git.out(['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir']))
     .split(/\r?\n/)
     .filter(Boolean)
-    .map((dir) => realpathSync.native(dir).toLowerCase())
+    .map(folderAt)
+  if (gitDirs.includes(null)) return refused('patchPathRefused')
   try {
     // Through no link a repository could carry that leads elsewhere, and never onto a folder.
     const stats = parts.map((_, i) => lstatSync(join(root, ...parts.slice(0, i + 1)), { throwIfNoEntry: false }))
@@ -71,10 +83,24 @@ export async function createPatch(git: Git, root: string, hashes: string[], path
     // A FIFO would block the worker on open; a device or socket is no place for a patch either.
     if (last && !last.isFile()) return refused('patchPathNotFile')
     if (last && !overwrite) return exists
-    // Before any folder is made, and again once the patch's folder exists: a name only the file system resolves.
-    if (insideGitDir(dirname(target), gitDirs)) return refused('patchPathRefused')
-    mkdirSync(dirname(target), { recursive: true })
-    if (insideGitDir(dirname(target), gitDirs)) return refused('patchPathRefused')
+    if (insideGitDir(dirname(target), gitDirs as Folder[])) return refused('patchPathRefused')
+    // The missing folders one at a time, each checked once it exists: a name only the file system resolves to the git
+    // dir exists already (mkdir says so), so nothing is made inside it. A refusal removes the folders this call made.
+    const made: string[] = []
+    for (let i = 1; i < parts.length; i++) {
+      if (stats[i - 1]) continue
+      const folder = join(root, ...parts.slice(0, i))
+      try {
+        mkdirSync(folder)
+        made.push(folder)
+      } catch (error: any) {
+        if (error?.code !== 'EEXIST') throw error
+      }
+      if (insideGitDir(folder, gitDirs as Folder[])) {
+        for (const done of made.reverse()) rmdirSync(done)
+        return refused('patchPathRefused')
+      }
+    }
     // Neither replaces a link made since the check: wx never opens an existing path, O_NOFOLLOW never follows one.
     // O_NONBLOCK: a FIFO swapped in since the check fails with ENXIO instead of blocking the worker.
     const fd = openSync(target, overwrite ? O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_NONBLOCK : 'wx')
