@@ -140,10 +140,10 @@ async function perform(git: Git, action: ActionRequest): Promise<string> {
   }
   switch (action.kind) {
     case 'checkout': {
-      const target = action.target?.trim()
-      if (!target || target.startsWith('-')) throw new Error(t('invalidCheckoutTarget'))
+      const target = typeof action.target === 'string' ? action.target.trim() : ''
+      // A full hash or a branch name (a remote branch's makes a local branch tracking it), never @{-1}, HEAD~1 or a range.
       if (HASH.test(target)) await git.out(['checkout', '--detach', target, '--'])
-      else await git.out(['checkout', target, '--'])
+      else await git.out(['checkout', await assertName(git, target, 'branch'), '--'])
       return t('checkedOut', { target: HASH.test(target) ? target.slice(0, 8) : target })
     }
     case 'branch': {

@@ -131,6 +131,53 @@ const NAMES: unknown[] = ['', '   ', '-x', '--force', 'a b', 'a..b', '@{-1}', 'a
 const hashes = (w: World): unknown[] => ['', 'HEAD', 'main', w.c1.slice(0, 12), `${w.c1}\n`, ` ${w.c1}`, w.c1.toUpperCase(), 'g'.repeat(40), `-${w.c1.slice(1)}`, 42, null]
 const as = <T>(value: unknown) => value as T
 
+// ---------- 1. Normal input ----------
+
+test('checkout of a branch, a hash and a remote branch, reset in every mode, and Undo of an action', async () => {
+  const w = world()
+  const git = createGit(w.root)
+  sh(w.root, 'remote', 'add', 'origin', join(w.root, 'nowhere.git'))
+  sh(w.root, 'update-ref', 'refs/remotes/origin/feature', w.t2)
+  assert.equal((await runAction(git, { kind: 'checkout', target: 'topic' })).ok, true)
+  assert.equal(sh(w.root, 'branch', '--show-current'), 'topic')
+  assert.equal((await runAction(git, { kind: 'checkout', target: w.c1 })).ok, true)
+  assert.equal(sh(w.root, 'rev-parse', 'HEAD'), w.c1)
+  assert.equal(sh(w.root, 'branch', '--show-current'), '')
+  // A remote branch is checked out as a new local branch that tracks it.
+  assert.equal((await runAction(git, { kind: 'checkout', target: 'feature' })).ok, true)
+  assert.equal(sh(w.root, 'rev-parse', '--abbrev-ref', 'feature@{upstream}'), 'origin/feature')
+  assert.equal((await runAction(git, { kind: 'checkout', target: 'main' })).ok, true)
+
+  writeFileSync(join(w.root, 'b.txt'), 'local\n')
+  for (const mode of ['soft', 'mixed', 'keep'] as const) {
+    const result = await runAction(git, { kind: 'reset', hash: w.c2, mode })
+    assert.equal(result.ok, true, result.message)
+    assert.equal(sh(w.root, 'rev-parse', 'HEAD'), w.c2)
+    assert.equal(readFileSync(join(w.root, 'b.txt'), 'utf8'), 'local\n', mode)
+    sh(w.root, 'reset', '-q', '--soft', w.c3)
+  }
+
+  // Undo is a reset --keep to the HEAD before the action, bound to the HEAD the action left.
+  const dropped = await runGuarded(git, { expectHead: w.c3 }, 'HEAD', () => runAction(git, { kind: 'drop', hashes: [w.c2] }))
+  assert.equal(dropped.ok, true, dropped.message)
+  const undo = await runGuarded(git, { expectHead: dropped.head }, 'HEAD', () => runAction(git, { kind: 'reset', hash: dropped.previousHead!, mode: 'keep' }))
+  assert.equal(undo.ok, true, undo.message)
+  assert.equal(sh(w.root, 'rev-parse', 'HEAD'), w.c3)
+  assert.equal(readFileSync(join(w.root, 'b.txt'), 'utf8'), 'local\n')
+})
+
+// ---------- 2. Hostile input is refused before git changes anything ----------
+
+test('checkout refuses anything but a branch name or a full commit hash before git runs', async () => {
+  const w = world()
+  // @{-1} names topic, main@{1} the commit main was at before c3: git would check either out.
+  sh(w.root, 'checkout', '-q', 'topic')
+  sh(w.root, 'checkout', '-q', 'main')
+  for (const target of ['', '  ', '-b', '--orphan=x', '-', 'a b', 'main..topic', 'main@{1}', '@{-1}', 'HEAD~1', 'topic^', 'main:a.txt', 'a\0b', 42, null]) {
+    await refusedBeforeGit(w, `checkout ${JSON.stringify(target)}`, (git) => runAction(git, { kind: 'checkout', target: as(target) }))
+  }
+})
+
 // ---------- 3. A failure is aborted and leaves everything as it was ----------
 
 test('a cherry-pick of several commits that git refuses at the first leaves no sequencer behind and keeps staged changes', async () => {

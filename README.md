@@ -64,8 +64,8 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
 - An action runs in the repository its menu was opened on. If the workspace switches to another
   repository while a dialog is open (or, for an action on the current branch, HEAD moves), nothing
   runs and a banner says so. The worker checks HEAD once more right before it runs such an action, and
-  Undo runs only while HEAD is still where the action left it. New branch and rename refuse names git
-  would expand, like `@{-1}`.
+  Undo runs only while HEAD is still where the action left it. New branch, rename and checkout refuse
+  names git would expand, like `@{-1}`; checkout takes only a branch name or a full commit hash.
 - While a rebase, merge, cherry-pick or revert started elsewhere (a terminal) is stopped, the worker
   refuses every action that moves HEAD or touches the work tree; a new branch without checkout and a
   new tag still work.
