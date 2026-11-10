@@ -432,9 +432,9 @@ async function failsCleanly(label: string, prepare: (w: World) => void, run: (gi
   const result = await run(createGit(w.root), w)
   assert.equal(result.ok, false, `${label}: ${result.message}`)
   if (result.message.includes('git rebase --quit')) {
-    assert.match(result.message, /run git rebase --quit .*then git stash pop/, label)
+    assert.match(result.message, /run git rebase --quit .*then git stash pop --index/, label)
     sh(w.root, 'rebase', '--quit')
-    sh(w.root, 'stash', 'pop')
+    sh(w.root, 'stash', 'pop', '--index')
   } else assert.match(result.message, why, label)
   assert.deepEqual(snapshot(w.root), before, label)
 }
@@ -1044,6 +1044,29 @@ test('a cherry-pick that left only its todo list is reported as such, with --qui
   terminal(w.root, ['cherry-pick', w.t1])
   assert.equal((await describeRepo(git, w.root, null)).todoOnly, false)
   assert.match((await runAction(git, { kind: 'drop', hashes: [w.c2] })).message, /is in progress/)
+})
+
+test('a rebase that left only git\'s autostash is its own state, refused with the steps that bring the changes back', async () => {
+  const w = world()
+  // What git before 2.47 leaves when a pre-rebase hook refuses: the autostash alone in rebase-merge, without head-name.
+  writeFileSync(join(w.root, 'b.txt'), 'staged b\n')
+  sh(w.root, 'add', 'b.txt')
+  writeFileSync(join(w.root, 'b.txt'), 'staged, then edited b\n')
+  const before = snapshot(w.root)
+  const autostash = sh(w.root, 'stash', 'create')
+  mkdirSync(join(w.root, '.git', 'rebase-merge'))
+  writeFileSync(join(w.root, '.git', 'rebase-merge', 'autostash'), `${autostash}\n`)
+  sh(w.root, 'reset', '-q', '--hard')
+  const git = createGit(w.root)
+  const repo = await describeRepo(git, w.root, null)
+  assert.deepEqual([repo.operation, repo.autostashOnly], ['rebase', true])
+  const result = await runAction(git, { kind: 'drop', hashes: [w.c2] })
+  assert.equal(result.ok, false)
+  assert.match(result.message, /run git rebase --quit .*then git stash pop --index/)
+  sh(w.root, 'rebase', '--quit')
+  sh(w.root, 'stash', 'pop', '--index')
+  assert.deepEqual(snapshot(w.root), before)
+  assert.equal((await describeRepo(git, w.root, null)).autostashOnly, false)
 })
 
 test('a git that prints anything but one path for --git-path makes the operation check refuse, not pass', async () => {

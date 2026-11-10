@@ -9,6 +9,8 @@ export interface RepoInfo {
   operation: 'rebase' | 'merge' | 'cherry-pick' | 'revert' | null
   /** The cherry-pick or revert left only its todo list (.git/sequencer): `--quit` is the way out. */
   todoOnly: boolean
+  /** The rebase never started and left only git's autostash (git before 2.47): `--quit`, then `stash pop --index`, is the way back. */
+  autostashOnly: boolean
 }
 
 /** A local workspace the focused context could be, when several share its name and branch. */

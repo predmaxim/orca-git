@@ -5,7 +5,7 @@ import type { RepoInfo, RepoResult, WorkspaceChoice } from '../shared/protocol.t
 import { createGit, type Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
 import { readHead } from './log.ts'
-import { operationInProgress, todoOnly } from './rebase.ts'
+import { autostashOnly, operationInProgress, todoOnly } from './rebase.ts'
 
 export interface Workspace {
   id: string
@@ -96,7 +96,15 @@ export async function toplevel(path: string, gitPath: string): Promise<string | 
 
 export async function describeRepo(git: Git, root: string, workspaceId: string | null): Promise<RepoInfo> {
   const [head, operation] = await Promise.all([readHead(git), operationInProgress(git)])
-  return { root, name: basename(root), workspaceId, head, operation, todoOnly: await todoOnly(git, operation) }
+  return {
+    root,
+    name: basename(root),
+    workspaceId,
+    head,
+    operation,
+    todoOnly: await todoOnly(git, operation),
+    autostashOnly: operation === 'rebase' && (await autostashOnly(git))
+  }
 }
 
 export async function resolveRepo(

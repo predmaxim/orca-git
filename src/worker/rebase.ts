@@ -191,10 +191,14 @@ export async function todoOnly(git: Git, operation: string | null): Promise<bool
   return (operation === 'cherry-pick' || operation === 'revert') && !existsSync(await gitPath(git, operation === 'revert' ? 'REVERT_HEAD' : 'CHERRY_PICK_HEAD'))
 }
 
-/** Why an action that moves HEAD must not run now, or null. A lone todo list gets `--quit` as the way out: `--abort` resets staged changes. */
+/**
+ * Why an action that moves HEAD must not run now, or null. A lone todo list gets `--quit` as the way out: `--abort` resets
+ * staged changes. A lone autostash gets the steps that bring the changes back: `--abort` fails there.
+ */
 export async function operationRefusal(git: Git): Promise<string | null> {
   const operation = await operationInProgress(git)
   if (!operation) return null
+  if (operation === 'rebase' && (await autostashOnly(git))) return t('autostashStuck')
   return t((await todoOnly(git, operation)) ? 'opTodoLeft' : 'opInProgress', { operation })
 }
 
@@ -252,14 +256,19 @@ export async function gitTooOld(git: Git): Promise<string | null> {
 }
 
 /**
- * `git rebase --abort` after a rebase that failed. git before 2.47 (fixed by its commit bf6ab087d1) keeps the autostash
- * of a rebase that failed to start (a refusing pre-rebase hook) alone in .git/rebase-merge: the changes are gone from the
- * files and the abort fails. Then this returns the steps that bring them back; otherwise null.
+ * A rebase that never started and left only git's autostash: git before 2.47 (fixed by its commit bf6ab087d1) keeps it
+ * alone in .git/rebase-merge, without head-name, when a rebase fails to start (a refusing pre-rebase hook). The changes
+ * are gone from the files, and `git rebase --abort` fails; `git rebase --quit` stores them in the stash list.
  */
+export async function autostashOnly(git: Git): Promise<boolean> {
+  const dir = await gitPath(git, 'rebase-merge')
+  return existsSync(join(dir, 'autostash')) && !existsSync(join(dir, 'head-name'))
+}
+
+/** `git rebase --abort` after a rebase that failed; the steps that bring the changes back when it left only the autostash. */
 export async function abortRebase(git: Git): Promise<string | null> {
   if ((await operationInProgress(git)) !== 'rebase' || (await git.run(['rebase', '--abort'])).ok) return null
-  const dir = await gitPath(git, 'rebase-merge')
-  return existsSync(join(dir, 'autostash')) && !existsSync(join(dir, 'head-name')) ? t('autostashStuck') : null
+  return (await autostashOnly(git)) ? t('autostashStuck') : null
 }
 
 /** git's last lines of `text`, without its advice on going on with a rebase or merge the worker has already aborted. */

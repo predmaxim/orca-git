@@ -196,7 +196,7 @@ function hideBanner(): void {
 function showOperationBanner(): void {
   if (!repo?.operation) return
   showBanner(
-    t(repo.todoOnly ? 'opTodoLeft' : 'operationBanner', { operation: repo.operation }),
+    repo.autostashOnly ? t('autostashStuck') : t(repo.todoOnly ? 'opTodoLeft' : 'operationBanner', { operation: repo.operation }),
     'info',
     [],
     true
