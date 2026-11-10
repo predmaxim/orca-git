@@ -1,6 +1,6 @@
 import type { ActionResult } from '../shared/protocol.ts'
 import { t } from '../shared/i18n.ts'
-import { GitError, lastLines, type Git } from './git.ts'
+import { stdoutOf, subcommand, type Git } from './git.ts'
 
 /** Commands that change the repository: their warnings are the ones the banner shows. */
 const MUTATING = new Set(['checkout', 'switch', 'branch', 'tag', 'reset', 'cherry-pick', 'revert', 'merge', 'rebase', 'fetch', 'stash'])
@@ -40,21 +40,14 @@ export function noteWarnings(git: Git): { git: Git; withWarnings<R extends Actio
   const found: string[] = []
   const run: Git['run'] = async (args, options) => {
     const result = await git.run(args, options)
-    let verb = 0
-    while (args[verb] === '-c') verb += 2
-    if (result.ok && MUTATING.has(args[verb])) found.push(...warningsIn(result.stderr))
+    if (result.ok && MUTATING.has(subcommand(args))) found.push(...warningsIn(result.stderr))
     return result
   }
   return {
     git: {
       gitPath: git.gitPath,
       run,
-      async out(args, options) {
-        const result = await run(args, options)
-        // The error createGit's out throws.
-        if (!result.ok) throw new GitError(lastLines(result.stderr || result.stdout) || t('gitCommandFailed', { command: args[0] }), result)
-        return result.stdout
-      }
+      out: async (args, options) => stdoutOf(args, await run(args, options))
     },
     withWarnings(result) {
       const all = [...new Set(found)]

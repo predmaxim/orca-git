@@ -32,11 +32,17 @@ export function lastLines(text: string, count = 6): string {
   return text.trim().split(/\r?\n/).slice(-count).join('\n')
 }
 
+/** The stdout of `args`' `result`, or the readable error `out` throws when git failed. */
+export function stdoutOf(args: string[], result: GitResult): string {
+  if (!result.ok) throw new GitError(lastLines(result.stderr || result.stdout) || t('gitCommandFailed', { command: args[0] }), result)
+  return result.stdout
+}
+
 /** Subcommands the worker only reads with. */
 const READ_ONLY = new Set(['check-ref-format', 'config', 'diff', 'diff-tree', 'for-each-ref', 'format-patch', 'hash-object', 'log', 'ls-files', 'ls-tree', 'remote', 'rev-list', 'rev-parse', 'show', 'show-ref', 'status', 'symbolic-ref'])
 
 /** The subcommand of `args`, past any `-c name=value` in front. */
-const subcommand = (args: string[]) => args.find((arg, i) => !arg.startsWith('-') && args[i - 1] !== '-c') ?? ''
+export const subcommand = (args: string[]) => args.find((arg, i) => !arg.startsWith('-') && args[i - 1] !== '-c') ?? ''
 
 /**
  * How long git may run before it is killed (0: never). A read is killed after 60 s; anything else may be half way
@@ -74,10 +80,6 @@ export function createGit(root: string, gitPath = 'git'): Git {
   return {
     gitPath: file,
     run,
-    async out(args, options) {
-      const result = await run(args, options)
-      if (!result.ok) throw new GitError(lastLines(result.stderr || result.stdout) || t('gitCommandFailed', { command: args[0] }), result)
-      return result.stdout
-    }
+    out: async (args, options) => stdoutOf(args, await run(args, options))
   }
 }
