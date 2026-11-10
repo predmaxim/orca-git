@@ -48,6 +48,12 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   between the files of the selection it was opened from with ← / → (keys or header buttons) or Alt+↑ /
   Alt+↓ (counter "3/5 files"); the panel's Files section highlights the file the tab shows. Merge
   commits are compared with their first parent.
+- **Looks like Orca**: whatever Orca passes to plugins comes from the current Orca theme, light or
+  dark: backgrounds, text, borders, inputs and the focus ring, selection, menus, dialogs, buttons and
+  corner radius (its 20 `--orca-*` tokens). What Orca does not pass follows WebStorm (Islands Dark and
+  Islands Light): file status colors, added and removed lines and words in the diff, graph lanes and
+  ref icons. The interface uses the system font; code uses JetBrainsMono Nerd Font or JetBrains Mono
+  when installed.
 - **Multi-select**: click, Ctrl/⌘-click, Shift-click, arrows, Page Up/Down, Home/End, Ctrl+A.
 - **Right-click menu** with icons (or Shift+F10):
   - Copy Revision Number (Ctrl+C), Cherry-Pick, Create Patch… (`git format-patch` of the selection,
