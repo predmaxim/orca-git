@@ -4,7 +4,6 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, 
 import { tmpdir } from 'node:os'
 import { join, relative, sep } from 'node:path'
 import { after, test } from 'node:test'
-import { pathToFileURL } from 'node:url'
 import type { ActionRequest, ActionResult, PlanItem } from '../shared/protocol.ts'
 import { checkRewrite, runAction } from './actions.ts'
 import { createBackup, deleteBackup, runGuarded } from './backup.ts'
@@ -699,9 +698,9 @@ test('a first-parent history that is not one chain of distinct commits is refuse
 test('the oldest commit of a shallow clone is never rewritten, reverted or cherry-picked as a first commit', async () => {
   const origin = repo()
   const [, , c3, c4] = ['one', 'two', 'three', 'four'].map((name) => commit(origin, `${name}.txt`, `${name}\n`, name))
-  // Two commits deep: git shows c3 with no parent, though its object has one.
+  // Two commits deep (--no-local: a local clone ignores --depth): git shows c3 with no parent, though its object has one.
   const root = join(tempDir('git-log-shallow-'), 'clone')
-  sh(origin, 'clone', '-q', '--depth', '2', pathToFileURL(origin).href, root)
+  sh(origin, 'clone', '-q', '--no-local', '--depth', '2', origin, root)
   sh(root, 'config', 'user.name', 'Tester')
   sh(root, 'config', 'user.email', 'tester@example.com')
   sh(root, 'config', 'commit.gpgsign', 'false')
@@ -737,7 +736,7 @@ test('the oldest commit of a shallow clone is never rewritten, reverted or cherr
   assert.equal(sh(root, 'log', '-1', '--format=%P'), c3)
   const reverted = await runAction(git, { kind: 'revert', hashes: [sh(root, 'rev-parse', 'HEAD')] })
   assert.equal(reverted.ok, true, reverted.message)
-  assert.deepEqual(readdirSync(root).filter((name) => name !== '.git').sort(), ['one.txt', 'three.txt', 'two.txt'])
+  assert.deepEqual(readdirSync(root).filter((name: string) => name !== '.git').sort(), ['one.txt', 'three.txt', 'two.txt'])
 })
 
 test('rewritten messages keep lines that start with #', async () => {

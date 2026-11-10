@@ -119,13 +119,13 @@ test('a flag that gates a check counts only as true: checkout: 1 makes the branc
     const worker = await mountWorker(main, { host: host(root) })
     const [head, parent] = sh(root, 'rev-list', '-2', 'HEAD').split('\n')
     // Checked out, the branch would need the HEAD the dialog showed; this request sends none.
-    const loose = await worker.request('action.run', { root, action: { kind: 'branch', hash: parent, name: 'loose', checkout: 1 } })
+    const loose = await worker.request('action.run', { root, action: { kind: 'branch', hash: parent, name: 'loose', checkout: 1 as any } })
     assert.equal(loose.ok, true, loose.message)
     assert.equal(sh(root, 'symbolic-ref', '--short', 'HEAD'), 'main')
     assert.equal(sh(root, 'rev-parse', 'HEAD'), head)
     writeFileSync(join(root, 'mine.patch'), 'mine\n')
-    const kept = await worker.request('patch.create', { root, hashes: [head], path: 'mine.patch', overwrite: 1 })
-    assert.equal(kept.exists, true)
+    const kept = await worker.request('patch.create', { root, hashes: [head], path: 'mine.patch', overwrite: 1 as any })
+    assert.equal(!kept.ok && kept.exists, true)
     assert.equal(readFileSync(join(root, 'mine.patch'), 'utf8'), 'mine\n')
     await worker.deactivate()
   } finally {
