@@ -12,14 +12,21 @@ export interface HistoryEntry extends RangeCommit {
 /** How far back the first-parent history is read for a rewrite. */
 export const HISTORY_LIMIT = 3000
 
+const HASH = /^[0-9a-f]{40}$/
+
 export async function readFirstParentHistory(git: Git, limit = HISTORY_LIMIT): Promise<HistoryEntry[]> {
-  const out = await git.out(['log', '--first-parent', '--format=%H%x1f%P%x1f%s%x1f%B%x1e', `-n${limit}`, 'HEAD', '--'])
+  // -z ends each record with NUL, and NUL ends each field: no commit message, name or path can hold one.
+  const fields = (await git.out(['log', '-z', '--first-parent', '--format=%H%x00%P%x00%s%x00%B', `-n${limit}`, 'HEAD', '--'])).split('\0')
   const entries: HistoryEntry[] = []
-  for (const record of out.split('\x1e')) {
-    const text = record.replace(/^\r?\n/, '')
-    if (!text) continue
-    const [hash, parents, subject, ...message] = text.split('\x1f')
-    entries.push({ hash, parents: parents ? parents.split(' ') : [], subject, message: message.join('\x1f').replace(/\s+$/, '') })
+  for (let i = 0; i + 4 <= fields.length; i += 4) {
+    const [hash, parents, subject, message] = fields.slice(i, i + 4)
+    entries.push({ hash, parents: parents ? parents.split(' ') : [], subject, message: message.replace(/\s+$/, '') })
+  }
+  // A forged record cannot pass: every commit appears once, and each is the first parent of the one before it.
+  const chained = entries.every((entry, i) =>
+    HASH.test(entry.hash) && entry.parents.every((parent) => HASH.test(parent)) && (i + 1 === entries.length || entry.parents[0] === entries[i + 1].hash))
+  if (fields.length % 4 !== 1 || !chained || new Set(entries.map((entry) => entry.hash)).size !== entries.length) {
+    throw new Error(t('gitOutputUnreadable', { command: 'log' }))
   }
   return entries
 }

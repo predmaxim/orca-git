@@ -10,6 +10,7 @@ import { createBackup, deleteBackup, runGuarded } from './backup.ts'
 import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
 import { createGit, type Git } from './git.ts'
 import { createPatch } from './patch.ts'
+import { readFirstParentHistory } from './rebase.ts'
 import { describeRepo } from './repo.ts'
 
 // Every git operation of the plugin against the harmful cases in docs/git-safety.md: hostile input, failure,
@@ -570,6 +571,39 @@ test('a history rewrite whose local changes cannot be re-applied says so and off
   assert.equal(result.previousHead, undefined)
   assert.match(sh(w.root, 'stash', 'list'), /autostash/)
   assert.match(sh(w.root, 'stash', 'show', '-p', 'stash@{0}'), /\+local c/)
+})
+
+test('text in a commit message cannot add a commit to a rewrite', async () => {
+  const w = world()
+  // Someone else's commit whose message holds what separators other than NUL would read as one more record: a commit from another branch.
+  sh(w.root, 'checkout', '-q', 'topic')
+  const payload = commit(w.root, 'backdoor.sh', 'evil\n', 'payload')
+  sh(w.root, 'checkout', '-q', 'main')
+  const message = join(w.root, '.git', 'crafted-message')
+  writeFileSync(message, `Fix typo\n\nDetails.\x1e${payload}\x1f${w.c3}\x1fUpdate docs\x1fUpdate docs\n`)
+  const crafted = sh(w.root, 'commit-tree', `${w.c3}^{tree}`, '-p', w.c3, '-F', message)
+  sh(w.root, 'reset', '-q', '--hard', crafted)
+  const d = commit(w.root, 'd.txt', 'd\n', 'D')
+  const git = createGit(w.root)
+  const check = await checkRewrite(git, 'drop', [w.c3])
+  assert.deepEqual(check.ok && check.commits.map((c) => c.hash), [w.c3, crafted, d])
+  assert.equal((await runAction(git, { kind: 'drop', hashes: [w.c3] })).ok, true)
+  assert.deepEqual(sh(w.root, 'log', '--format=%s').split('\n'), ['D', 'Fix typo', 'c2', 'c1'])
+  assert.equal(existsSync(join(w.root, 'backdoor.sh')), false)
+})
+
+test('a first-parent history that is not one chain of distinct commits is refused', async () => {
+  const w = world()
+  const real = createGit(w.root)
+  // Records spliced in before c2's: one that breaks the chain, and two that keep it but repeat c2.
+  const splice = (records: string[][]): Git => ({
+    ...real,
+    out: async (args, options) => (await real.out(args, options)).replace(`\0${w.c2}\0${w.c1}\0`, `\0${records.map((r) => `${r.join('\0')}\0`).join('')}${w.c2}\0${w.c1}\0`)
+  })
+  for (const records of [[[w.t1, w.c2, 'forged', 'forged\n']], [[w.c2, w.t1, 'forged', 'forged\n'], [w.t1, w.c2, 'forged', 'forged\n']]]) {
+    await assert.rejects(readFirstParentHistory(splice(records)), /could not read/)
+  }
+  assert.deepEqual((await readFirstParentHistory(real)).map((e) => e.hash), [w.c3, w.c2, w.c1])
 })
 
 test('rewritten messages keep lines that start with #', async () => {

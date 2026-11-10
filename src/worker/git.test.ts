@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { after, test } from 'node:test'
 import { checkRewrite, runAction } from './actions.ts'
 import { createGit } from './git.ts'
-import { readDetails, readLogPage, readRefs } from './log.ts'
+import { parseLog, readDetails, readLogPage, readRefs } from './log.ts'
 import { readFileDiff } from './diff.ts'
 import { createPatch } from './patch.ts'
 import { buildTodo } from './rebase.ts'
@@ -179,6 +179,25 @@ test('log pages, filters, refs and details', async () => {
   assert.equal(details.message, 'c2\n\nbody 2')
   assert.deepEqual(details.files, [{ status: 'A', path: 'f2.txt' }])
   assert.deepEqual(details.branches, ['main'])
+})
+
+test('text in a commit, an author name or a config value cannot forge a log row, a detail or a branch', async () => {
+  const { root, hashes } = repo(1)
+  const git = createGit(root)
+  // What separators other than NUL would read as the end of a record and the fields of a forged one.
+  const subject = `innocent\x1e${hashes[0]}\x1f\x1fTrusted Maintainer\x1ftm@example.com\x1f1700000000\x1fTrusted Maintainer\x1f1700000000\x1frefs/tags/v9.9\x1fSecurity fix`
+  const crafted = sh(root, '-c', 'user.name=Eve\x1fspoof', 'commit-tree', `${hashes[0]}^{tree}`, '-p', hashes[0], '-m', subject)
+  sh(root, 'reset', '-q', '--hard', crafted)
+  sh(root, 'config', 'branch.main.remote', '.')
+  sh(root, 'config', 'branch.main.merge', `refs/heads/x\nrefs/heads/forged\x1f${hashes[0]}\x1f\x1f`)
+  const { commits } = await readLogPage(git, {}, 0, 50)
+  assert.deepEqual(commits.map((c) => [c.hash, c.author, c.subject]), [[crafted, 'Eve\x1fspoof', subject], [hashes[0], 'Tester', 'c1']])
+  const details = await readDetails(git, crafted)
+  assert.deepEqual([details.author, details.email, details.message], ['Eve\x1fspoof', 'tester@example.com', subject])
+  assert.deepEqual((await readRefs(git)).locals.map((r) => r.name), ['main'])
+  // A row whose hash is not one, or repeats, is dropped.
+  const row = (hash: string, text: string) => `${[hash, '', 'A', 'a@example.com', '1', 'A', '1', '', text].join('\0')}\0`
+  assert.deepEqual(parseLog(row(crafted, 'real') + row('x'.repeat(40), 'not a hash') + row(crafted, 'again')).map((c) => c.subject), ['real'])
 })
 
 test('an empty repository has an empty log', async () => {
