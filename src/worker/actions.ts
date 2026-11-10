@@ -1,18 +1,18 @@
-import { existsSync } from 'node:fs'
 import type { ActionRequest, ActionResult, CheckResult, RewriteKind } from '../shared/protocol.ts'
 import { lastLines, type Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
 import { readHead } from './log.ts'
 import {
   autostashConflict,
-  gitPath,
   operationInProgress,
+  operationRefusal,
   planFor,
   pushedTo,
   rangeHashes,
   readFirstParentHistory,
   runRebase,
   selectRange,
+  todoOnly,
   type HistoryEntry
 } from './rebase.ts'
 
@@ -52,7 +52,7 @@ async function sequencer(git: Git, verb: 'cherry-pick' | 'revert', args: string[
     if ((await operationInProgress(git)) === verb) {
       // A conflict, or commits already made, need --abort. Refused before the first commit (local changes in the way),
       // only the todo list is left: --quit drops it, where --abort would also reset staged changes.
-      const started = existsSync(await gitPath(git, verb === 'revert' ? 'REVERT_HEAD' : 'CHERRY_PICK_HEAD')) || (await readHead(git)).hash !== start
+      const started = !(await todoOnly(git, verb)) || (await readHead(git)).hash !== start
       await git.run([verb, started ? '--abort' : '--quit'])
     }
     throw new Error(`${t(verb === 'revert' ? 'revertFailed' : 'cherryPickFailed')}${reason ? `\n${reason}` : ''}`)
@@ -67,8 +67,8 @@ function messagesOf(history: HistoryEntry[]): Map<string, string> {
 export async function checkRewrite(git: Git, kind: RewriteKind, hashes: string[]): Promise<CheckResult> {
   try {
     assertHashes(hashes)
-    const operation = await operationInProgress(git)
-    if (operation) return { ok: false, reason: t('opInProgress', { operation }) }
+    const busy = await operationRefusal(git)
+    if (busy) return { ok: false, reason: busy }
     const head = await readHead(git)
     if (!head.hash) return { ok: false, reason: t('repoNoCommits') }
     const history = await readFirstParentHistory(git)
@@ -136,8 +136,8 @@ export async function runAction(git: Git, action: ActionRequest): Promise<Action
 async function perform(git: Git, action: ActionRequest): Promise<string> {
   // A rebase, merge, cherry-pick or revert stopped in a terminal: only adding a ref leaves HEAD, the index and the files alone.
   if (action.kind !== 'tag' && !(action.kind === 'branch' && !action.checkout)) {
-    const operation = await operationInProgress(git)
-    if (operation) throw new Error(t('opInProgress', { operation }))
+    const busy = await operationRefusal(git)
+    if (busy) throw new Error(busy)
   }
   switch (action.kind) {
     case 'checkout': {

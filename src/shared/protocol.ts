@@ -7,6 +7,8 @@ export interface RepoInfo {
   head: { branch: string | null; hash: string | null }
   /** A sequencer operation left in progress (by a terminal, say); rewrites are refused while set. */
   operation: 'rebase' | 'merge' | 'cherry-pick' | 'revert' | null
+  /** The cherry-pick or revert left only its todo list (.git/sequencer): `--quit` is the way out. */
+  todoOnly: boolean
 }
 
 /** A local workspace the focused context could be, when several share its name and branch. */

@@ -3,7 +3,7 @@ import { assertName } from './actions.ts'
 import { lastLines, type Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
 import { readHead } from './log.ts'
-import { autostashConflict, operationInProgress, pushedTo } from './rebase.ts'
+import { autostashConflict, operationInProgress, operationRefusal, pushedTo } from './rebase.ts'
 
 const NETWORK_TIMEOUT_MS = 120_000
 
@@ -71,8 +71,8 @@ export async function checkRebaseOnto(git: Git, target: string): Promise<{ pushe
 }
 
 async function integrate(git: Git, kind: 'merge' | 'rebase', target: string): Promise<BranchActionResult> {
-  const busy = await operationInProgress(git)
-  if (busy) throw new Error(t('opInProgress', { operation: busy }))
+  const busy = await operationRefusal(git)
+  if (busy) throw new Error(busy)
   const name = await assertTarget(git, target)
   const previousHead = (await readHead(git)).hash ?? undefined
   const args = kind === 'merge' ? ['merge', '--no-edit', '--autostash', name] : ['rebase', '--autostash', name]

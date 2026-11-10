@@ -195,7 +195,7 @@ function hideBanner(): void {
 function showOperationBanner(): void {
   if (!repo?.operation) return
   showBanner(
-    t('operationBanner', { operation: repo.operation }),
+    t(repo.todoOnly ? 'opTodoLeft' : 'operationBanner', { operation: repo.operation }),
     'info',
     [],
     true

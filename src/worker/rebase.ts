@@ -170,6 +170,18 @@ export async function operationInProgress(git: Git): Promise<'rebase' | 'merge' 
   return null
 }
 
+/** A cherry-pick or revert of several commits that left only its todo list (.git/sequencer): no commit is stopped on. */
+export async function todoOnly(git: Git, operation: string | null): Promise<boolean> {
+  return (operation === 'cherry-pick' || operation === 'revert') && !existsSync(await gitPath(git, operation === 'revert' ? 'REVERT_HEAD' : 'CHERRY_PICK_HEAD'))
+}
+
+/** Why an action that moves HEAD must not run now, or null. A lone todo list gets `--quit` as the way out: `--abort` resets staged changes. */
+export async function operationRefusal(git: Git): Promise<string | null> {
+  const operation = await operationInProgress(git)
+  if (!operation) return null
+  return t((await todoOnly(git, operation)) ? 'opTodoLeft' : 'opInProgress', { operation })
+}
+
 /** git exits 0 when the autostash does not apply cleanly: the changes stay in the stash and the tree has conflicts. */
 export async function autostashConflict(git: Git): Promise<boolean> {
   return Boolean((await git.run(['diff', '--name-only', '--diff-filter=U', '--'])).stdout.trim())

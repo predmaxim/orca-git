@@ -10,6 +10,7 @@ import { createBackup, deleteBackup, runGuarded } from './backup.ts'
 import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
 import { createGit, type Git } from './git.ts'
 import { createPatch } from './patch.ts'
+import { describeRepo } from './repo.ts'
 
 // Every git operation of the plugin against the harmful cases in docs/git-safety.md: hostile input, failure,
 // local changes, pushed commits and an operation a terminal left in progress.
@@ -608,7 +609,7 @@ for (const [state, start] of IN_PROGRESS) {
     for (const [label, run] of operations) {
       const result: ActionResult = await run(createGit(w.root))
       assert.equal(result.ok, false, `${label}: ${result.message}`)
-      assert.match(result.message, /in progress/, label)
+      assert.match(result.message, /in progress|unfinished/, label)
       assert.deepEqual(snapshot(w.root), before, label)
     }
     // Adding a ref leaves HEAD, the index and the files alone: it stays allowed.
@@ -618,6 +619,28 @@ for (const [state, start] of IN_PROGRESS) {
     assert.deepEqual({ ...snapshot(w.root), refs: before.refs }, before)
   })
 }
+
+test('a cherry-pick that left only its todo list is reported as such, with --quit as the way out', async () => {
+  const w = world()
+  // Refused at the first commit by a staged change, as earlier versions of the plugin left it.
+  writeFileSync(join(w.root, 'b.txt'), 'staged b\n')
+  sh(w.root, 'add', 'b.txt')
+  terminal(w.root, ['cherry-pick', w.t1, w.t2])
+  const before = snapshot(w.root)
+  assert.deepEqual(before.state, ['sequencer'])
+  const git = createGit(w.root)
+  assert.equal((await describeRepo(git, w.root, null)).todoOnly, true)
+  const result = await runAction(git, { kind: 'drop', hashes: [w.c2] })
+  assert.equal(result.ok, false)
+  assert.match(result.message, /git cherry-pick --quit/)
+  assert.deepEqual(snapshot(w.root), before)
+  // A cherry-pick stopped on a commit is in progress as usual.
+  sh(w.root, 'cherry-pick', '--quit')
+  sh(w.root, 'reset', '-q')
+  terminal(w.root, ['cherry-pick', w.t1])
+  assert.equal((await describeRepo(git, w.root, null)).todoOnly, false)
+  assert.match((await runAction(git, { kind: 'drop', hashes: [w.c2] })).message, /is in progress/)
+})
 
 test('git itself refuses to rename or delete the branch a terminal is rebasing', async () => {
   const w = world()
