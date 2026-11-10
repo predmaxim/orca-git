@@ -88,6 +88,10 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   - Diff tab: `Shift+S` switches between Split (side by side) and Unified, `Shift+W` Whole file, once
     you click into the tab. `0` only brings the tab forward, and a click takes you back to the panel:
     Orca gives plugins no way to move keyboard focus between the panel and the tab.
+  - Changed in 0.4.0, to follow the rule: `f` fold is now `Shift+Z`, `r` Refresh `Shift+R`, the filters
+    `b` `u` `d` `p` are `Shift+B` `Shift+U` `Shift+D` `Shift+P` (pressed again they clear, so the old
+    Shift+letter clear is the same key), `.` regex `Shift+X`, `c` match case `Shift+C`, `e` / `c` in
+    Files one `Shift+E`, and `s` / `u` / `w` in the Diff tab `Shift+S` / `Shift+W`.
   - Esc in a search clears it; in an empty search it goes back to the list. A thin line along the left
     edge marks the section the keys act on and stays there while focus is outside the panel.
 - **Right-click menu** with icons (or Space, Shift+F10), each item with its key:

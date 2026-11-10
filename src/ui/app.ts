@@ -847,6 +847,8 @@ let selectionFiles: SelectionFile[] = []
 let fileTree: FileNode[] = []
 let currentFile: string | null = null
 let filesToken = 0
+/** The selection's files as they load: 0 waits for them. */
+let filesLoad: Promise<unknown> = Promise.resolve()
 const openFolders = new Set<string>()
 
 function renderFilesNote(text: string): void {
@@ -888,7 +890,7 @@ function updateFiles(): void {
     return
   }
   filesSection.setSummary('…')
-  api
+  filesLoad = api
     .selectionFiles(repo.root, hashes)
     .then((files) => {
       if (token !== filesToken) return
@@ -1502,6 +1504,8 @@ async function goToDiff(): Promise<void> {
   } catch (error) {
     return showBanner(errorMessage(error), 'error')
   }
+  // A selection whose files are still loading: wait for them rather than say there is none.
+  if (selected.size && !selectionFiles.length) await filesLoad
   if (!selectionFiles.length) return showBanner(t('filesPlaceholder'), 'info')
   openFile(Math.max(0, selectionFiles.findIndex((file) => file.path === currentFile)))
 }
