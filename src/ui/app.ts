@@ -34,12 +34,12 @@ const stored = (() => {
     return {}
   }
 })()
+// Only the known fields, checked: a broken value must not stop the panel, and old keys are not saved back.
 const prefs: Prefs = {
-  regex: false,
-  matchCase: false,
-  collapsed: ['tags'],
-  picked: {},
-  ...stored,
+  regex: stored?.regex === true,
+  matchCase: stored?.matchCase === true,
+  collapsed: Array.isArray(stored?.collapsed) ? stored.collapsed.filter((id: unknown) => typeof id === 'string') : ['tags'],
+  picked: stored?.picked && typeof stored.picked === 'object' && !Array.isArray(stored.picked) ? stored.picked : {},
   sections: normalizeSections(stored?.sections)
 }
 const savePrefs = () => localStorage.setItem(PREFS_KEY, JSON.stringify(prefs))
