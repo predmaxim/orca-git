@@ -80,8 +80,6 @@ export async function checkRewrite(git: Git, kind: RewriteKind, hashes: string[]
 }
 
 async function rewrite(git: Git, action: Extract<ActionRequest, { kind: 'squash' | 'fixup' | 'drop' | 'reword' | 'rebase' }>): Promise<string> {
-  const operation = await operationInProgress(git)
-  if (operation) throw new Error(t('opInProgress', { operation }))
   const history = await readFirstParentHistory(git)
   const messages = messagesOf(history)
   if (action.kind === 'rebase') {
@@ -123,6 +121,11 @@ export async function runAction(git: Git, action: ActionRequest): Promise<Action
 }
 
 async function perform(git: Git, action: ActionRequest): Promise<string> {
+  // A rebase, merge, cherry-pick or revert stopped in a terminal: only adding a ref leaves HEAD, the index and the files alone.
+  if (action.kind !== 'tag' && !(action.kind === 'branch' && !action.checkout)) {
+    const operation = await operationInProgress(git)
+    if (operation) throw new Error(t('opInProgress', { operation }))
+  }
   switch (action.kind) {
     case 'checkout': {
       const target = action.target?.trim()

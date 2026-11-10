@@ -66,6 +66,9 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   runs and a banner says so. The worker checks HEAD once more right before it runs such an action, and
   Undo runs only while HEAD is still where the action left it. New branch and rename refuse names git
   would expand, like `@{-1}`.
+- While a rebase, merge, cherry-pick or revert started elsewhere (a terminal) is stopped, the worker
+  refuses every action that moves HEAD or touches the work tree; a new branch without checkout and a
+  new tag still work.
 - **Refresh** re-reads the log and branches; **Fetch** runs `git fetch --all` (without `--prune`) and
   reports the result in the banner. It never asks for a password: it works through the SSH agent and
   git's credential helpers.
