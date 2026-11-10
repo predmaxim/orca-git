@@ -183,6 +183,19 @@ const everyOperation = (w: World): [string, (git: Git) => Promise<Result>][] => 
   }]
 ]
 
+test('a history rewrite whose local changes cannot be re-applied says so and offers no undo', async () => {
+  const w = world()
+  // c2 added c.txt; dropping it leaves the local edit with nothing to apply to.
+  writeFileSync(join(w.root, 'c.txt'), 'local c\n')
+  const result = await runAction(createGit(w.root), { kind: 'drop', hashes: [w.c2] })
+  assert.equal(result.ok, true, result.message)
+  assert.equal((result as { warning?: boolean }).warning, true, result.message)
+  assert.match(result.message, /git stash list/)
+  assert.equal(result.previousHead, undefined)
+  assert.match(sh(w.root, 'stash', 'list'), /autostash/)
+  assert.match(sh(w.root, 'stash', 'show', '-p', 'stash@{0}'), /\+local c/)
+})
+
 // ---------- 6. An operation left in progress in a terminal ----------
 
 const resolve = (w: World) => {

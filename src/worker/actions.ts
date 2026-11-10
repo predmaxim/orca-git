@@ -4,6 +4,7 @@ import { lastLines, type Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
 import { readHead } from './log.ts'
 import {
+  autostashConflict,
   gitPath,
   operationInProgress,
   planFor,
@@ -16,6 +17,7 @@ import {
 } from './rebase.ts'
 
 const HASH = /^[0-9a-f]{40}$/
+const REWRITES = new Set<string>(['squash', 'fixup', 'drop', 'reword', 'rebase'])
 
 function assertHashes(hashes: unknown): string[] {
   if (!Array.isArray(hashes) || !hashes.length || !hashes.every((h) => typeof h === 'string' && HASH.test(h))) {
@@ -122,6 +124,8 @@ export async function runAction(git: Git, action: ActionRequest): Promise<Action
   const previousHead = (await readHead(git)).hash ?? undefined
   try {
     const message = await perform(git, action)
+    // A rewrite runs with --autostash; with its conflicts in the tree, Undo's reset --keep would refuse anyway.
+    if (REWRITES.has(action.kind) && (await autostashConflict(git))) return { ok: true, warning: true, message: `${message} ${t('autostashConflict')}` }
     return { ok: true, message, ...(previousHead ? { previousHead } : {}) }
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : String(error) }

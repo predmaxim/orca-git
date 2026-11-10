@@ -169,6 +169,11 @@ export async function operationInProgress(git: Git): Promise<'rebase' | 'merge' 
   return null
 }
 
+/** git exits 0 when the autostash does not apply cleanly: the changes stay in the stash and the tree has conflicts. */
+export async function autostashConflict(git: Git): Promise<boolean> {
+  return Boolean((await git.run(['diff', '--name-only', '--diff-filter=U', '--'])).stdout.trim())
+}
+
 /** Remote branches that already contain `hash`: rewriting it then needs a force push. */
 export async function pushedTo(git: Git, hash: string): Promise<string[]> {
   const result = await git.run(['for-each-ref', '--contains', hash, '--format=%(refname:short)', 'refs/remotes'])

@@ -169,6 +169,8 @@ export interface ActionResult {
   stash?: string
   /** HEAD after an action sent with `expectHead` or a backup ran, for its Undo to expect. */
   head?: string
+  /** It ran, but left something for the user to sort out (the message says what); no undo. */
+  warning?: boolean
 }
 
 /** A branch or tag the worker creates at `target` (40 hex) before a risky action; never overwrites a ref. */
@@ -203,8 +205,6 @@ export type BranchAction =
 export interface BranchActionResult extends ActionResult {
   /** The branch is not fully merged; deleting it needs force. */
   needsForce?: boolean
-  /** It ran, but left something for the user to sort out (the message says what); no undo. */
-  warning?: boolean
 }
 
 export type PatchResult =

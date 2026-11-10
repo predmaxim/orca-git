@@ -3,7 +3,7 @@ import { assertName } from './actions.ts'
 import { lastLines, type Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
 import { readHead } from './log.ts'
-import { operationInProgress, pushedTo } from './rebase.ts'
+import { autostashConflict, operationInProgress, pushedTo } from './rebase.ts'
 
 const NETWORK_TIMEOUT_MS = 120_000
 
@@ -76,8 +76,7 @@ async function integrate(git: Git, kind: 'merge' | 'rebase', target: string): Pr
     throw new Error(`${t(kind === 'merge' ? 'mergeFailed' : 'rebaseFailed')}${reason ? `\n${reason}` : ''}`)
   }
   const message = t(kind === 'merge' ? 'merged' : 'rebased', { name })
-  // git exits 0 when the autostash does not apply cleanly: the changes stay in the stash and the tree has conflicts.
-  if ((await git.run(['diff', '--name-only', '--diff-filter=U', '--'])).stdout.trim()) return { ok: true, warning: true, message: `${message} ${t('autostashConflict')}` }
+  if (await autostashConflict(git)) return { ok: true, warning: true, message: `${message} ${t('autostashConflict')}` }
   return { ok: true, message, ...(previousHead ? { previousHead } : {}) }
 }
 
