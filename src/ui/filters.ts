@@ -10,6 +10,8 @@ export interface FilterHost {
   refs: RefsResult | null
   /** Applies a filter change and reloads the log. */
   apply(change: Partial<LogFilter>): void
+  /** Takes focus back to the commit list when a closing popover took it along (Esc, a picked date). */
+  focusList(): void
 }
 
 const DAY = 86_400
@@ -23,16 +25,35 @@ function summary(name: string, values: string[]): string {
   return `${name}: ${values[0]}${values.length > 1 ? ` +${values.length - 1}` : ''}`
 }
 
-/** Puts focus back on the filter's button when closing the popover dropped it, as Esc does. */
-const refocus = (anchor: HTMLElement) => () => {
-  if (!document.activeElement || document.activeElement === document.body) anchor.focus()
+/** An option of a popover list: focusable by the arrows (see `optionKeys`), `value` names it across redraws. */
+const optionProps = (checked: boolean, value: string, onclick: () => void) => ({
+  class: `option${checked ? ' checked' : ''}`,
+  tabindex: -1,
+  role: 'option',
+  'aria-selected': String(checked),
+  dataset: { value },
+  onclick
+})
+
+/** ↑/↓ move between the popover's search field and its options; Enter or Space picks the focused option. */
+function optionKeys(root: HTMLElement): HTMLElement {
+  root.addEventListener('keydown', (event) => {
+    const items = Array.from(root.querySelectorAll<HTMLElement>('.pop-search, .option'))
+    const i = items.indexOf(event.target as HTMLElement)
+    if (i < 0 || event.altKey || event.ctrlKey || event.metaKey) return
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') items[i + (event.key === 'ArrowDown' ? 1 : -1)]?.focus()
+    else if (items[i].classList.contains('option') && (event.key === 'Enter' || event.key === ' ')) items[i].click()
+    else return
+    event.preventDefault()
+  })
+  return root
 }
 
-function filterButton(name: string, key: KeyId, onOpen: (button: HTMLElement) => void, onClear: () => void) {
+function filterButton(name: string, key: KeyId, clearKey: KeyId, onOpen: (button: HTMLElement) => void, onClear: () => void) {
   const label = h('span', null, name)
   const clear = h('span', {
     class: 'clear',
-    title: t('filterClearTip', { name: name.toLowerCase() }),
+    title: withKey(t('filterClearTip', { name: name.toLowerCase() }), clearKey),
     onclick: (event: MouseEvent) => {
       event.stopPropagation()
       onClear()
@@ -47,6 +68,7 @@ function filterButton(name: string, key: KeyId, onOpen: (button: HTMLElement) =>
   )
   return {
     el: button,
+    clear: onClear,
     set(text: string, active: boolean) {
       label.textContent = text
       button.classList.toggle('set', active)
@@ -60,23 +82,23 @@ function checklist(
   anchor: HTMLElement,
   groups: { title?: string; values: { value: string; label: string; icon?: HTMLElement | SVGElement }[] }[],
   selected: string[],
-  onChange: (values: string[]) => void
+  onChange: (values: string[]) => void,
+  onClose: () => void
 ) {
   const chosen = new Set(selected)
   const search = h('input', { class: 'field pop-search', placeholder: t('filterPlaceholder'), spellcheck: false }) as HTMLInputElement
   const list = h('div', null)
   const render = () => {
+    // Space or a click redraws the list: focus stays on the same option.
+    const focused = list.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.value : undefined
     const q = search.value.trim().toLowerCase()
     const all = h(
       'div',
-      {
-        class: `option${chosen.size ? '' : ' checked'}`,
-        onclick: () => {
-          chosen.clear()
-          onChange([])
-          render()
-        }
-      },
+      optionProps(!chosen.size, '', () => {
+        chosen.clear()
+        onChange([])
+        render()
+      }),
       h('span', { class: 'check' }, icon('check')),
       h('span', { class: 'label' }, t('filterAll'))
     )
@@ -90,14 +112,13 @@ function checklist(
           h(
             'div',
             {
-              class: `option${chosen.has(v.value) ? ' checked' : ''}`,
-              title: v.value,
-              onclick: () => {
+              ...optionProps(chosen.has(v.value), v.value, () => {
                 if (chosen.has(v.value)) chosen.delete(v.value)
                 else chosen.add(v.value)
                 onChange([...chosen])
                 render()
-              }
+              }),
+              title: v.value
             },
             h('span', { class: 'check' }, icon('check')),
             v.icon ?? null,
@@ -107,16 +128,22 @@ function checklist(
       }
     }
     list.replaceChildren(...parts)
+    if (focused !== undefined) list.querySelector<HTMLElement>(`[data-value="${CSS.escape(focused)}"]`)?.focus()
   }
   search.addEventListener('input', render)
   render()
-  showPopover(anchor, h('div', { style: 'min-width:240px' }, search, list), refocus(anchor))
+  showPopover(anchor, optionKeys(h('div', { style: 'min-width:240px' }, search, list)), onClose)
 }
 
 export function createFilterBar(host: FilterHost) {
+  // Only when closing dropped focus to body: a click elsewhere already put it where it belongs.
+  const closed = () => {
+    if (!document.activeElement || document.activeElement === document.body) host.focusList()
+  }
   const branch = filterButton(
     t('filterBranch'),
     'filterBranch',
+    'clearBranch',
     (anchor) => {
       const refs = host.refs
       if (!refs) return
@@ -134,7 +161,8 @@ export function createFilterBar(host: FilterHost) {
           { title: t('groupTags'), values: refs.tags.map((r) => item(r.full, r.name, 'tag')) }
         ],
         host.filter.branches ?? [],
-        (values) => host.apply({ branches: values })
+        (values) => host.apply({ branches: values }),
+        closed
       )
     },
     () => host.apply({ branches: [] })
@@ -143,6 +171,7 @@ export function createFilterBar(host: FilterHost) {
   const user = filterButton(
     t('filterUser'),
     'filterUser',
+    'clearUser',
     (anchor) => {
       const refs = host.refs
       if (!refs) return
@@ -154,7 +183,8 @@ export function createFilterBar(host: FilterHost) {
           { title: t('groupUsers'), values: refs.users.filter((u) => u !== me).map((u) => ({ value: u, label: u })) }
         ],
         host.filter.users ?? [],
-        (values) => host.apply({ users: values })
+        (values) => host.apply({ users: values }),
+        closed
       )
     },
     () => host.apply({ users: [] })
@@ -164,19 +194,17 @@ export function createFilterBar(host: FilterHost) {
   const date = filterButton(
     t('filterDate'),
     'filterDate',
+    'clearDate',
     (anchor) => {
       const now = Math.floor(Date.now() / 1000)
       const preset = (label: string, days: number) =>
         h(
           'div',
-          {
-            class: `option${dateLabel === label ? ' checked' : ''}`,
-            onclick: () => {
-              dateLabel = label
-              close()
-              host.apply({ since: days ? now - days * DAY : undefined, until: undefined })
-            }
-          },
+          optionProps(dateLabel === label, label, () => {
+            dateLabel = label
+            close()
+            host.apply({ since: days ? now - days * DAY : undefined, until: undefined })
+          }),
           h('span', { class: 'check' }, icon('check')),
           h('span', { class: 'label' }, label)
         )
@@ -199,7 +227,7 @@ export function createFilterBar(host: FilterHost) {
       )
       const close = showPopover(
         anchor,
-        h(
+        optionKeys(h(
           'div',
           { style: 'min-width:240px' },
           preset(t('dateLast24h'), 1),
@@ -208,8 +236,8 @@ export function createFilterBar(host: FilterHost) {
           h('div', { class: 'option-group' }, t('dateSelect')),
           h('div', { style: 'display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;padding:4px 8px' }, t('dateFrom'), since, t('dateTo'), until),
           h('div', { style: 'display:flex;justify-content:flex-end;padding:4px 8px' }, apply)
-        ),
-        refocus(anchor)
+        )),
+        closed
       )
     },
     () => {
@@ -221,6 +249,7 @@ export function createFilterBar(host: FilterHost) {
   const paths = filterButton(
     t('filterPaths'),
     'filterPaths',
+    'clearPaths',
     (anchor) => {
       const area = h('textarea', { class: 'field mono', rows: 5, spellcheck: false, placeholder: t('pathsPlaceholder') }) as HTMLTextAreaElement
       area.value = (host.filter.paths ?? []).join('\n')
@@ -239,7 +268,7 @@ export function createFilterBar(host: FilterHost) {
           area,
           h('div', { style: 'display:flex;justify-content:flex-end' }, h('button', { class: 'btn primary', onclick: submit }, t('apply')))
         ),
-        refocus(anchor)
+        closed
       )
     },
     () => host.apply({ paths: [] })
@@ -247,6 +276,8 @@ export function createFilterBar(host: FilterHost) {
 
   return {
     elements: [branch.el, user.el, date.el, paths.el],
+    /** Clears each filter as its cross does, in the same order. */
+    clear: [branch.clear, user.clear, date.clear, paths.clear],
     /** Syncs the button labels with the current filter. */
     update() {
       const f = host.filter

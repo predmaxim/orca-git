@@ -18,6 +18,10 @@ export type KeyId =
   | 'filterUser'
   | 'filterDate'
   | 'filterPaths'
+  | 'clearBranch'
+  | 'clearUser'
+  | 'clearDate'
+  | 'clearPaths'
   | 'regex'
   | 'matchCase'
   | 'expandAll'
@@ -51,6 +55,10 @@ export const KEYS: readonly KeyBinding[] = [
   { id: 'filterUser', code: 'KeyU', scope: 'commits', label: 'filterUser', shown: 'u' },
   { id: 'filterDate', code: 'KeyD', scope: 'commits', label: 'filterDate', shown: 'd' },
   { id: 'filterPaths', code: 'KeyP', scope: 'commits', label: 'filterPaths', shown: 'p' },
+  { id: 'clearBranch', code: 'KeyB', shift: true, scope: 'commits', label: 'keyClearBranch', shown: 'Shift+B' },
+  { id: 'clearUser', code: 'KeyU', shift: true, scope: 'commits', label: 'keyClearUser', shown: 'Shift+U' },
+  { id: 'clearDate', code: 'KeyD', shift: true, scope: 'commits', label: 'keyClearDate', shown: 'Shift+D' },
+  { id: 'clearPaths', code: 'KeyP', shift: true, scope: 'commits', label: 'keyClearPaths', shown: 'Shift+P' },
   { id: 'regex', code: 'Period', scope: 'commits', label: 'regexTip', shown: '.' },
   { id: 'matchCase', code: 'KeyC', scope: 'commits', label: 'matchCaseTip', shown: 'c' },
   { id: 'expandAll', code: 'KeyE', scope: 'files', label: 'expandAll', shown: 'e' },

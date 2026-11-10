@@ -87,7 +87,8 @@ const filterBar = createFilterBar({
   get refs() {
     return refs
   },
-  apply: (change) => applyFilter(change)
+  apply: (change) => applyFilter(change),
+  focusList: () => viewport.focus()
 })
 
 const toolbar = h('div', { class: 'toolbar' }, h('div', { class: 'spacer' }), refreshButton, fetchButton)
@@ -1390,7 +1391,8 @@ function commitMenu(x: number, y: number): void {
 
 // ---------- Toolbar & host events ----------
 
-refreshButton.addEventListener('click', () => void refreshAll())
+// A refresh that finds nothing new changes nothing on screen: say it ran.
+refreshButton.addEventListener('click', () => void refreshAll().then(() => repo && !loadError && showBanner(t('refreshed'), 'success')))
 fetchButton.addEventListener('click', async () => {
   if (!repo) return
   const root = repo.root
@@ -1489,6 +1491,10 @@ mountPanelKeys({
     filterUser: () => filterBar.elements[1].click(),
     filterDate: () => filterBar.elements[2].click(),
     filterPaths: () => filterBar.elements[3].click(),
+    clearBranch: filterBar.clear[0],
+    clearUser: filterBar.clear[1],
+    clearDate: filterBar.clear[2],
+    clearPaths: filterBar.clear[3],
     regex: () => regexToggle.click(),
     matchCase: () => caseToggle.click(),
     expandAll: () => setAllFolders(true),

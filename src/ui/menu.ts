@@ -125,7 +125,8 @@ export function showPopover(anchor: HTMLElement, content: HTMLElement, onClose?:
   const close = open(pop, onClose)
   const rect = anchor.getBoundingClientRect()
   place(pop, rect.left, rect.bottom + 4)
-  const focusable = pop.querySelector<HTMLElement>('input, textarea, select, button')
+  // The first control, or the first option (tabindex -1) when options come before any field, as Date's presets do.
+  const focusable = pop.querySelector<HTMLElement>('input, textarea, select, button, [tabindex]')
   focusable?.focus()
   return close
 }

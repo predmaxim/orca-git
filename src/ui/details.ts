@@ -96,9 +96,16 @@ export function renderCommitList(container: HTMLElement, commits: CommitRow[], h
     }
     head.addEventListener('click', toggle)
     head.addEventListener('keydown', (event) => {
-      if (event.key !== 'Enter' && event.key !== ' ') return
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+        const heads = Array.from(container.querySelectorAll<HTMLElement>('.cl-head'))
+        // Past the first or last row the key scrolls as before, so a long open message stays readable.
+        const next = heads[heads.indexOf(head) + (event.key === 'ArrowDown' ? 1 : -1)]
+        if (!next) return
+        next.focus()
+      } else if (event.key === 'Enter' || event.key === ' ') toggle()
+      else return
       event.preventDefault()
-      toggle()
     })
     show()
     return h('div', { class: 'cl-item' }, head, body)
