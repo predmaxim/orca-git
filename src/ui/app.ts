@@ -429,12 +429,19 @@ async function loadPage(): Promise<void> {
   renderRows()
 }
 
+let refsToken = 0
 async function loadRefs(): Promise<void> {
   if (!repo) return
+  const root = repo.root
+  const token = ++refsToken
+  // A newer load, or a switch to another repository, makes an answer stale: its HEAD is not the shown repository's.
   try {
-    refs = await api.refs(repo.root)
-    repo.head = refs.head
+    const next = await api.refs(root)
+    if (token !== refsToken || repo?.root !== root) return
+    refs = next
+    repo.head = next.head
   } catch (error) {
+    if (token !== refsToken || repo?.root !== root) return
     refs = null
     showBanner(t('refsFailed', { error: errorMessage(error) }), 'error')
   }
@@ -447,7 +454,10 @@ async function refreshAll(): Promise<void> {
   if (refreshing) return refreshing
   refreshing = (async () => {
     if (!repo) return start()
-    const result = await api.resolve(repo.root).catch((error) => ({ ok: false as const, reason: errorMessage(error) }))
+    const root = repo.root
+    const result = await api.resolve(root).catch((error) => ({ ok: false as const, reason: errorMessage(error) }))
+    // A workspace switch replaced the repository meanwhile: this answer is about the one it left.
+    if (repo?.root !== root) return
     if (!result.ok) {
       loadError = result.reason
       renderEmpty()
@@ -490,13 +500,17 @@ function setRepo(next: RepoInfo): void {
   filterReload = reloadLog(same)
 }
 
+/** Counts start() calls: a quick second switch can be answered before the first. */
+let startGen = 0
 async function start(): Promise<void> {
+  const mine = ++startGen
   try {
     let result: RepoResult = await api.resolve()
     if (!result.ok && result.choices?.length) {
       const saved = prefs.picked[choiceKey(result.choices)]
       if (saved && result.choices.some((c) => c.id === saved)) result = await api.resolve(undefined, saved)
     }
+    if (mine !== startGen) return
     choices = !result.ok ? (result.choices ?? []) : []
     if (result.ok) setRepo(result.repo)
     else {
@@ -512,6 +526,7 @@ async function start(): Promise<void> {
       updateDetails()
     }
   } catch (error) {
+    if (mine !== startGen) return
     loadError = errorMessage(error)
     renderEmpty()
   }
