@@ -9,7 +9,7 @@ import { createGit } from './git.ts'
 import { parseLog, readDetails, readLogPage, readRefs } from './log.ts'
 import { readFileDiff } from './diff.ts'
 import { createPatch } from './patch.ts'
-import { buildTodo } from './rebase.ts'
+import { buildTodo, emptyOption } from './rebase.ts'
 
 const dirs: string[] = []
 after(() => dirs.forEach((dir) => rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })))
@@ -198,6 +198,21 @@ test('text in a commit, an author name or a config value cannot forge a log row,
   // A row whose hash is not one, or repeats, is dropped.
   const row = (hash: string, text: string) => `${[hash, '', 'A', 'a@example.com', '1', 'A', '1', '', text].join('\0')}\0`
   assert.deepEqual(parseLog(row(crafted, 'real') + row('x'.repeat(40), 'not a hash') + row(crafted, 'again')).map((c) => c.subject), ['real'])
+})
+
+test('the empty-commit stop is spelled for the git version: stop from 2.45, ask before or when unknown', () => {
+  const cases: Array<[string, string]> = [
+    ['git version 2.56.0', '--empty=stop'],
+    ['git version 2.45.0', '--empty=stop'],
+    ['git version 2.45.1.windows.1', '--empty=stop'],
+    ['git version 3.0.0', '--empty=stop'],
+    ['git version 2.44.2.windows.1', '--empty=ask'],
+    ['git version 2.39.3 (Apple Git-145)', '--empty=ask'],
+    ['git version 2.34.8', '--empty=ask'],
+    ['', '--empty=ask'],
+    ['not git', '--empty=ask']
+  ]
+  for (const [version, option] of cases) assert.equal(emptyOption(version), option, version)
 })
 
 test('an empty repository has an empty log', async () => {

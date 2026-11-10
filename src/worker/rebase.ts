@@ -218,6 +218,17 @@ export async function pushedTo(git: Git, hash: string): Promise<string[]> {
   return result.ok ? result.stdout.split(/\r?\n/).filter((name) => name && !name.endsWith('/HEAD')) : []
 }
 
+/** git's spelling of "stop at a commit that becomes empty": `stop` from 2.45 on; before, or when the version is unknown, `ask`, its older (since deprecated) name. */
+export function emptyOption(version: string): '--empty=stop' | '--empty=ask' {
+  const [, major, minor] = /^git version (\d+)\.(\d+)/.exec(version.trim()) ?? []
+  return Number(major) > 2 || (Number(major) === 2 && Number(minor) >= 45) ? '--empty=stop' : '--empty=ask'
+}
+
+/** git's last lines of `text`, without its advice on going on with a rebase or merge the worker has already aborted. */
+export function abortedReason(text: string): string {
+  return lastLines(text.split('\n').filter((line) => !/^hint:|git rebase --|git commit --allow-empty|conflicts fixed|^\s*$/.test(line)).join('\n'), 4)
+}
+
 /**
  * Runs `git rebase -i` with `todo` as the whole todo list; aborts and throws on any failure. Resolves to whether the
  * branch then holds the planned number of commits right on top of `base`.
@@ -233,6 +244,7 @@ export async function runRebase(git: Git, base: string | null, plan: PlanItem[],
     }, git.gitPath)
     const todoFile = join(dir, 'todo')
     writeFileSync(todoFile, todo)
+    const empty = emptyOption((await git.run(['version'])).stdout)
     const result = await git.run(
       [
         '-c', 'rebase.abbreviateCommands=false',
@@ -240,7 +252,7 @@ export async function runRebase(git: Git, base: string | null, plan: PlanItem[],
         '-c', 'rebase.missingCommitsCheck=ignore',
         '-c', 'advice.waitingForEditor=false',
         // A commit that becomes empty stops the rebase (then aborted): dropped, the next amend or fixup would rewrite the commit below it.
-        'rebase', '-i', '--autostash', '--no-autosquash', '--empty=stop',
+        'rebase', '-i', '--autostash', '--no-autosquash', empty,
         base ?? '--root'
       ],
       {
@@ -249,8 +261,16 @@ export async function runRebase(git: Git, base: string | null, plan: PlanItem[],
       }
     )
     if (!result.ok || (await operationInProgress(git)) === 'rebase') {
-      const reason = lastLines(result.stderr || result.stdout, 4)
+      const output = result.stderr || result.stdout
+      const reason = abortedReason(output)
       if ((await operationInProgress(git)) === 'rebase') await git.run(['rebase', '--abort'])
+      // git names the commit by an abbreviated hash; the todo held full ones.
+      const short = /The previous cherry-pick is now empty[\s\S]*Could not apply ([0-9a-f]{4,40})\.\.\./.exec(output)?.[1]
+      const emptied = short ? plan.find((item) => item.hash.startsWith(short)) : undefined
+      if (emptied) {
+        const subject = (messages.get(emptied.hash) ?? '').split('\n')[0]
+        throw new Error(t('rewriteEmptied', { hash: emptied.hash.slice(0, 8), subject }))
+      }
       throw new Error(`${t('rebaseFailed')}${reason ? `\n${reason}` : ''}`)
     }
     const kept = plan.filter((item) => item.action === 'pick' || item.action === 'reword').length

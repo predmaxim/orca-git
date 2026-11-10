@@ -10,7 +10,7 @@ import { createBackup, deleteBackup, runGuarded } from './backup.ts'
 import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
 import { createGit, type Git } from './git.ts'
 import { createPatch } from './patch.ts'
-import { readFirstParentHistory } from './rebase.ts'
+import { emptyOption, readFirstParentHistory } from './rebase.ts'
 import { describeRepo } from './repo.ts'
 
 // Every git operation of the plugin against the harmful cases in docs/git-safety.md: hostile input, failure,
@@ -587,12 +587,35 @@ test('a history rewrite whose local changes cannot be re-applied says so and off
   assert.match(sh(w.root, 'stash', 'show', '-p', 'stash@{0}'), /\+local c/)
 })
 
+test('a rewrite stopped by a commit that becomes empty names it, on old git too, without advice for the rebase it aborted', async () => {
+  for (const version of [null, 'git version 2.39.3 (Apple Git-145)']) {
+    const w = world()
+    commit(w.root, 'a.txt', '1\n', 'undo c3')
+    const real = createGit(w.root)
+    const rebases: string[][] = []
+    // An older git, as far as its version goes: the rewrite must spell the stop the way that git knows it.
+    const git: Git = {
+      ...real,
+      run: (args, options) => {
+        if (version && args[0] === 'version') return Promise.resolve({ ok: true, code: 0, stdout: `${version}\n`, stderr: '' })
+        if (args.includes('rebase')) rebases.push(args)
+        return real.run(args, options)
+      }
+    }
+    const result = await runAction(git, { kind: 'drop', hashes: [w.c3] })
+    assert.equal(result.ok, false, result.message)
+    assert.match(result.message, /undo c3/)
+    assert.doesNotMatch(result.message, /--continue|--skip|conflicts fixed/)
+    assert.ok(rebases[0].includes(emptyOption(version ?? sh(w.root, 'version'))), rebases[0].join(' '))
+  }
+})
+
 test('a rewrite that ends without the planned commits on its base is reported, and Undo is offered', async () => {
   // A git that drops an emptied commit after all: the result is checked, not trusted.
   const w = world()
   commit(w.root, 'a.txt', '1\n', 'undo c3')
   const real = createGit(w.root)
-  const git: Git = { ...real, run: (args, options) => real.run(args.map((arg) => (arg === '--empty=stop' ? '--empty=drop' : arg)), options) }
+  const git: Git = { ...real, run: (args, options) => real.run(args.map((arg) => (arg.startsWith('--empty=') ? '--empty=drop' : arg)), options) }
   const before = sh(w.root, 'rev-parse', 'HEAD')
   const result = await runAction(git, { kind: 'drop', hashes: [w.c3] })
   assert.deepEqual([result.ok, result.warning, result.previousHead], [true, true, before], result.message)
