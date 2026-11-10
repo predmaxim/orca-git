@@ -58,7 +58,8 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
 - **Right-click menu** with icons (or Shift+F10):
   - Copy Revision Number (Ctrl+C), Cherry-Pick, Create Patch… (`git format-patch` of the selection,
     oldest first, copied to the clipboard or saved to a file inside the repository only: a path
-    outside it (such as `~/Downloads`), inside `.git` or through a link is refused)
+    outside it (such as `~/Downloads`), inside `.git` or through a link is refused; the file gets git's
+    bytes as they are, and a patch with file content that is not UTF-8 can only be saved)
   - Checkout Revision, checkout a branch at that commit, check out a remote branch as local
   - Reset Current Branch to Here… (soft / mixed / hard / keep), Revert Commits, Undo Commit
   - Edit Commit Message…, Fixup, Squash Commits…, Drop Commits, Interactively Rebase from Here…
@@ -112,8 +113,10 @@ asks for and prints the command to re-run with `--approve <fingerprint>`. If the
 installed too, turn it off so the two do not both show: `orca plugin disable emamalet.git-log` or
 `orca plugin uninstall emamalet.git-log`.
 
-Requires Orca 1.4.248 or later and `git` on the `PATH` (or set **Git executable** in the plugin
-settings). The plugin runs as a `trusted-worker`: it starts `git` with your user account.
+Requires Orca 1.4.248 or later and git 2.31 or later on the `PATH` (or set **Git executable** in the
+plugin settings): git 2.30 does not know `rev-parse --path-format`, which the plugin uses to find a
+rebase or merge in progress. The plugin runs as a `trusted-worker`: it starts `git` with your user
+account.
 
 ### Develop
 
@@ -133,13 +136,16 @@ opens; a message keeps its lines that start with `#`. The selection must be a ru
 commits on the current branch. If the rebase stops on a conflict it is aborted, and the branch is
 left exactly as it was. The same happens when a commit becomes empty on the way (it only undoes a
 commit you drop, say), which git would otherwise drop silently, folding the next squash or message
-edit into the commit below the selection: drop or keep both commits instead. Once git finishes, the
-worker checks that the branch holds the planned commits right on top of the commit below the
-selection; if not, the banner says so and offers Undo. The history is read with NUL between fields
-and must be one unbroken first-parent chain, so text in a commit message cannot add a commit to a
-rewrite. If the uncommitted changes do not apply cleanly to the rewritten branch, git keeps them in
-the stash: the banner says so and offers no Undo. Git gives the changes back without their staging
-(new files stay added), and the banner says that too; merge and rebase onto work the same way.
+edit into the commit below the selection: the banner names that commit; drop or keep both instead.
+git 2.45 and later are asked for that stop as `--empty=stop`, older git as `--empty=ask`, the name
+it knew then (the worker reads `git version` first). Once git finishes, the worker checks that the
+branch holds the planned commits right on top of the commit below the selection; if not, the banner
+says so and offers Undo. The history is read with NUL between fields and must be one unbroken
+first-parent chain, so text in a commit message cannot add a commit to a rewrite. Messages are read
+and written as UTF-8 whatever `i18n.logOutputEncoding` and `i18n.commitEncoding` say. If the
+uncommitted changes do not apply cleanly to the rewritten branch, git keeps them in the stash: the
+banner says so and offers no Undo. Git gives the changes back without their staging (new files stay
+added), and the banner says that too; merge and rebase onto work the same way.
 
 ## Backups before risky operations
 
@@ -204,6 +210,10 @@ keeps them all.
   its placeholder until you open a file again.
 - Conflicts during a rewrite, cherry-pick or revert are not resolved in the panel; the operation is
   aborted (or, when Git is left mid-operation by a terminal command, a banner says so).
+- With git 2.45 or older (seen on 2.34.8 to 2.45.4; 2.56.0 is not affected), a `pre-rebase` hook that
+  refuses a rewrite leaves your uncommitted changes only in git's autostash: they are gone from the
+  files, `git rebase --abort` fails and the panel reports a rebase in progress. `git rebase --quit`
+  saves them to the stash list, and `git stash pop` brings them back.
 - When several workspaces share the same name and branch, the panel matches the focused one through
   its terminal titles; if that is not enough it asks you to pick, and remembers the choice.
 
