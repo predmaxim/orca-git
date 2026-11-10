@@ -212,10 +212,10 @@ keeps them all.
   its placeholder until you open a file again.
 - Conflicts during a rewrite, cherry-pick or revert are not resolved in the panel; the operation is
   aborted (or, when Git is left mid-operation by a terminal command, a banner says so).
-- With git 2.45 or older (seen on 2.34.8 to 2.45.4; 2.56.0 is not affected), a `pre-rebase` hook that
-  refuses a rewrite leaves your uncommitted changes only in git's autostash: they are gone from the
-  files, `git rebase --abort` fails and the panel reports a rebase in progress. `git rebase --quit`
-  saves them to the stash list, and `git stash pop` brings them back.
+- With git before 2.47 (seen on 2.34.8 to 2.45.4; fixed in 2.47.0), a `pre-rebase` hook that refuses
+  a rewrite or rebase onto leaves your uncommitted changes only in git's autostash: they are gone from
+  the files and `git rebase --abort` fails. The banner says so and gives the way back: run
+  `git rebase --quit`, which stores them in the stash list, then `git stash pop`.
 - When several workspaces share the same name and branch, the panel matches the focused one through
   its terminal titles; if that is not enough it asks you to pick, and remembers the choice.
 

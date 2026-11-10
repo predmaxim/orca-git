@@ -3,7 +3,7 @@ import { assertName } from './actions.ts'
 import { lastLines, type Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
 import { readHead } from './log.ts'
-import { abortedReason, autostashConflict, noteUnstaged, operationInProgress, operationRefusal, pushedTo } from './rebase.ts'
+import { abortedReason, abortRebase, autostashConflict, noteUnstaged, operationInProgress, operationRefusal, pushedTo } from './rebase.ts'
 
 const NETWORK_TIMEOUT_MS = 120_000
 
@@ -95,8 +95,12 @@ async function integrate(git: Git, kind: 'merge' | 'rebase', target: string): Pr
   const result = await git.run(args, { timeoutMs: NETWORK_TIMEOUT_MS })
   if (!result.ok) {
     let kept: string | null = null
-    if (await operationInProgress(git)) await git.run([kind, '--abort'])
-    else if (kind === 'merge') kept = await returnAutostash(git)
+    const stuck = kind === 'rebase' ? await abortRebase(git) : null
+    if (stuck) throw new Error(stuck)
+    if (kind === 'merge') {
+      if (await operationInProgress(git)) await git.run(['merge', '--abort'])
+      else kept = await returnAutostash(git)
+    }
     const reason = abortedReason(result.stderr || result.stdout)
     throw new Error(`${t(kind === 'merge' ? 'mergeFailed' : 'rebaseFailed')}${kept ? ` ${t('changesInCommit', { hash: kept })}` : ''}${reason ? `\n${reason}` : ''}`)
   }

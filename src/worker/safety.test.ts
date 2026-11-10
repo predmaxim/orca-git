@@ -392,14 +392,21 @@ test('branch actions refuse hostile names before git runs', async () => {
 
 // ---------- 3. A failure is aborted and leaves everything as it was ----------
 
-/** Runs `run` on a fresh world prepared by `prepare` and checks it failed and changed nothing. */
+/**
+ * Runs `run` on a fresh world prepared by `prepare` and checks it failed and changed nothing. git before 2.47 cannot undo a
+ * rebase that failed to start by itself: there the message must give the two steps that do, and they must be enough.
+ */
 async function failsCleanly(label: string, prepare: (w: World) => void, run: (git: Git, w: World) => Promise<Result>, why = /./): Promise<void> {
   const w = world()
   prepare(w)
   const before = snapshot(w.root)
   const result = await run(createGit(w.root), w)
   assert.equal(result.ok, false, `${label}: ${result.message}`)
-  assert.match(result.message, why, label)
+  if (result.message.includes('git rebase --quit')) {
+    assert.match(result.message, /run git rebase --quit .*then git stash pop/, label)
+    sh(w.root, 'rebase', '--quit')
+    sh(w.root, 'stash', 'pop')
+  } else assert.match(result.message, why, label)
   assert.deepEqual(snapshot(w.root), before, label)
 }
 

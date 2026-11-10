@@ -244,6 +244,17 @@ export async function gitTooOld(git: Git): Promise<string | null> {
   return version && !atLeast(version, 2, 31) ? t('gitTooOld', { found: text.replace(/^git version /, ''), required: '2.31' }) : null
 }
 
+/**
+ * `git rebase --abort` after a rebase that failed. git before 2.47 (fixed by its commit bf6ab087d1) keeps the autostash
+ * of a rebase that failed to start (a refusing pre-rebase hook) alone in .git/rebase-merge: the changes are gone from the
+ * files and the abort fails. Then this returns the steps that bring them back; otherwise null.
+ */
+export async function abortRebase(git: Git): Promise<string | null> {
+  if ((await operationInProgress(git)) !== 'rebase' || (await git.run(['rebase', '--abort'])).ok) return null
+  const dir = await gitPath(git, 'rebase-merge')
+  return existsSync(join(dir, 'autostash')) && !existsSync(join(dir, 'head-name')) ? t('autostashStuck') : null
+}
+
 /** git's last lines of `text`, without its advice on going on with a rebase or merge the worker has already aborted. */
 export function abortedReason(text: string): string {
   return lastLines(text.split('\n').filter((line) => !/^hint:|git rebase --|git commit --allow-empty|conflicts fixed|^\s*$/.test(line)).join('\n'), 4)
@@ -285,7 +296,8 @@ export async function runRebase(git: Git, base: string | null, plan: PlanItem[],
     if (!result.ok || (await operationInProgress(git)) === 'rebase') {
       const output = result.stderr || result.stdout
       const reason = abortedReason(output)
-      if ((await operationInProgress(git)) === 'rebase') await git.run(['rebase', '--abort'])
+      const stuck = await abortRebase(git)
+      if (stuck) throw new Error(stuck)
       // git names the commit by an abbreviated hash; the todo held full ones.
       const short = /The previous cherry-pick is now empty[\s\S]*Could not apply ([0-9a-f]{4,40})\.\.\./.exec(output)?.[1]
       const emptied = short ? plan.find((item) => item.hash.startsWith(short)) : undefined
