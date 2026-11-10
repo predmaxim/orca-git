@@ -156,7 +156,8 @@ keeps them all.
   also save them to the stash (`git stash create`, then `git stash store`; the work tree is not
   touched). The hard reset is still confirmed, and both dialogs list what it would destroy that the
   stash does not keep. The check compares the target with the index and the work tree
-  (`git diff <target>`), so it also covers tracked files deleted or replaced with a folder. Listed:
+  (`git diff <target>`), so it also covers tracked files deleted or replaced with a folder; a folder
+  where a file marked `--assume-unchanged` is tracked, which git diff skips, is searched too. Listed:
   untracked files, ignored ones included, at a path the target has and the index or work tree lacks
   (or inside a folder there), files named like a folder the target needs, and the same inside a
   nested repository of their own, where git does not look: there the plugin checks each folder on
@@ -167,9 +168,13 @@ keeps them all.
   with their files and any history kept in them; neither the backup nor the stash keeps them. The
   search reads at most 10,000 folder entries and never follows links; a folder it cannot finish is
   named in bold as not fully checked rather than passed. A folder where the target has a submodule
-  is kept by the reset and not listed. Not listed: a file created after the dialog opened, and, with
-  `submodule.recurse=true` in the git config, uncommitted changes inside submodules, which the reset
-  then also discards.
+  is kept by the reset and not listed. With `submodule.recurse=true` in the git config the reset also
+  resets submodules: such a folder is then listed like any other, and every populated submodule (one
+  holding `.git`) of the index or the target is named in bold, since the reset resets or removes it.
+  What is inside (uncommitted changes, untracked files, commits on no branch) is not checked one by
+  one, and neither the backup nor the stash keeps it. Not listed: a file created after the dialog
+  opened, and an edit to a file marked `--assume-unchanged`: git status does not see it, and a hard
+  reset that keeps the file writes it back.
 - The banner names the backup and offers Undo and **Show Backup**, which opens its folder in the branch
   tree.
 - Backup branches sit in the `backup/` folder of the branch tree, backup tags among the tags. Their menu
