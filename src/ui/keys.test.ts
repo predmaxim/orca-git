@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { t } from '../shared/i18n.ts'
-import { findKey, KEYS, withKey } from './keys.ts'
+import { findKey, KEYS, pickByKey, withKey } from './keys.ts'
 
 const press = (code: string, extra: Partial<Record<'shiftKey' | 'ctrlKey' | 'altKey' | 'metaKey', boolean>> = {}) => ({
   code,
@@ -64,4 +64,12 @@ test('a letter without Shift acts on a thing, and every other letter takes Shift
 
 test('labels print without parameters', () => {
   for (const k of KEYS) assert.ok(!t(k.label).includes('{'), k.id)
+})
+
+test('pickByKey finds the entry whose key was pressed', () => {
+  const entries = [{ key: 'fetch' as const }, { key: 'fold' as const }, {}]
+  assert.equal(pickByKey(entries, press('KeyZ', { shiftKey: true })), entries[1])
+  assert.equal(pickByKey(entries, press('KeyZ')), undefined)
+  assert.equal(pickByKey(entries, press('KeyZ', { shiftKey: true, ctrlKey: true })), undefined)
+  assert.equal(pickByKey([{}], press('KeyZ', { shiftKey: true })), undefined)
 })

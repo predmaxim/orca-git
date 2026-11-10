@@ -1,4 +1,5 @@
 import { h, icon, ICONS } from './dom.ts'
+import { keyFor, pickByKey, type KeyId } from './keys.ts'
 
 export type MenuEntry =
   | 'separator'
@@ -6,6 +7,8 @@ export type MenuEntry =
       label: string
       icon?: keyof typeof ICONS
       shortcut?: string
+      /** Its key: shown on the right, and pressing it in the open menu runs the item. */
+      key?: KeyId
       disabled?: boolean
       /** Why it is disabled, shown as a tooltip. */
       hint?: string
@@ -100,12 +103,18 @@ export function showMenu(x: number, y: number, entries: MenuEntry[], restoreFocu
       },
       withIcons ? h('span', { class: 'menu-icon' }, entry.icon ? icon(entry.icon) : null) : null,
       h('span', { class: 'label' }, entry.label),
-      entry.shortcut ? h('span', { class: 'shortcut' }, entry.shortcut) : null
+      entry.shortcut || entry.key ? h('span', { class: 'shortcut' }, entry.shortcut ?? keyFor(entry.key)?.shown) : null
     )
     items.push({ el, entry })
     menu.append(el)
   })
   menu.addEventListener('keydown', (event) => {
+    const picked = pickByKey(items.map((item) => item.entry), event)
+    if (picked) {
+      event.preventDefault()
+      choose(items.findIndex((item) => item.entry === picked))
+      return
+    }
     const enabled = items.map((item, i) => (item.entry.disabled ? -1 : i)).filter((i) => i >= 0)
     if (!enabled.length) return
     const pos = enabled.indexOf(active)

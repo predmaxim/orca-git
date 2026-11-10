@@ -62,17 +62,29 @@ export const KEYS: readonly KeyBinding[] = [
   { id: 'wholeFile', code: 'KeyW', shift: true, scope: 'diff', label: 'diffWholeFile', shown: 'Shift+W' }
 ]
 
+type Press = Pick<KeyboardEvent, 'code' | 'shiftKey' | 'ctrlKey' | 'altKey' | 'metaKey'>
+
+/** Whether `event` is the key of `binding`; never while Ctrl, Alt or Meta is held. */
+const pressed = (binding: KeyBinding, event: Press) =>
+  !event.ctrlKey && !event.altKey && !event.metaKey && binding.code === event.code && Boolean(binding.shift) === event.shiftKey
+
 /** The first binding in one of `scopes` for this key; none while Ctrl, Alt or Meta is held. */
-export function findKey(
-  event: Pick<KeyboardEvent, 'code' | 'shiftKey' | 'ctrlKey' | 'altKey' | 'metaKey'>,
-  scopes: KeyScope[]
-): KeyBinding | null {
-  if (event.ctrlKey || event.altKey || event.metaKey) return null
-  return KEYS.find((k) => scopes.includes(k.scope) && k.code === event.code && Boolean(k.shift) === event.shiftKey) ?? null
+export function findKey(event: Press, scopes: KeyScope[]): KeyBinding | null {
+  return KEYS.find((k) => scopes.includes(k.scope) && pressed(k, event)) ?? null
+}
+
+export const keyFor = (id: KeyId | undefined): KeyBinding | undefined => KEYS.find((k) => k.id === id)
+
+/** The entry (a menu item) whose key this is. */
+export function pickByKey<T extends { key?: KeyId }>(entries: T[], event: Press): T | undefined {
+  return entries.find((entry) => {
+    const binding = keyFor(entry.key)
+    return binding !== undefined && pressed(binding, event)
+  })
 }
 
 /** A tooltip with its key: "User (u)". */
 export function withKey(text: string, id: KeyId): string {
-  const key = KEYS.find((k) => k.id === id)
+  const key = keyFor(id)
   return key ? `${text} (${key.shown})` : text
 }
