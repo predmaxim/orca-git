@@ -140,12 +140,18 @@ test('a conflicting merge is aborted and the tree is left clean', async () => {
   assert.equal(sh(root, 'status', '--porcelain'), '')
 })
 
-test('rebase onto replays the current branch on the target', async () => {
+test('rebase onto replays the current branch on the target, and no other branch', async () => {
   const root = diverged()
   sh(root, 'checkout', '-q', 'topic')
+  // A branch inside the replayed commits stays, whatever rebase.updateRefs says: Undo restores the current branch only.
+  sh(root, 'branch', 'stacked')
+  const stacked = sh(root, 'rev-parse', 'stacked')
+  commit(root, 'u.txt', 'u\n', 'more topic work')
+  sh(root, 'config', 'rebase.updateRefs', 'true')
   const result = await runBranchAction(createGit(root), { kind: 'rebaseOnto', name: 'refs/heads/main', tip: sh(root, 'rev-parse', 'main') })
   assert.equal(result.ok, true)
-  assert.deepEqual(sh(root, 'log', '--format=%s').split('\n'), ['topic work', 'main work', 'c1'])
+  assert.deepEqual(sh(root, 'log', '--format=%s').split('\n'), ['more topic work', 'topic work', 'main work', 'c1'])
+  assert.equal(sh(root, 'rev-parse', 'stacked'), stacked)
 })
 
 /** c1 has a.txt and b.txt; topic edits a.txt, main edits b.txt; HEAD is on main. */

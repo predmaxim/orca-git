@@ -12,14 +12,22 @@ export interface HistoryEntry extends RangeCommit {
 /** How far back the first-parent history is read for a rewrite. */
 export const HISTORY_LIMIT = 3000
 
+const HASH = /^[0-9a-f]{40}$/
+
 export async function readFirstParentHistory(git: Git, limit = HISTORY_LIMIT): Promise<HistoryEntry[]> {
-  const out = await git.out(['log', '--first-parent', '--format=%H%x1f%P%x1f%s%x1f%B%x1e', `-n${limit}`, 'HEAD', '--'])
+  // -z ends each record with NUL, and NUL ends each field: no commit message, name or path can hold one.
+  // --encoding=UTF-8: i18n.logOutputEncoding would garble the messages a rewrite writes back, or (UTF-16) hide them.
+  const fields = (await git.out(['log', '-z', '--encoding=UTF-8', '--first-parent', '--format=%H%x00%P%x00%s%x00%B', `-n${limit}`, 'HEAD', '--'])).split('\0')
   const entries: HistoryEntry[] = []
-  for (const record of out.split('\x1e')) {
-    const text = record.replace(/^\r?\n/, '')
-    if (!text) continue
-    const [hash, parents, subject, ...message] = text.split('\x1f')
-    entries.push({ hash, parents: parents ? parents.split(' ') : [], subject, message: message.join('\x1f').replace(/\s+$/, '') })
+  for (let i = 0; i + 4 <= fields.length; i += 4) {
+    const [hash, parents, subject, message] = fields.slice(i, i + 4)
+    entries.push({ hash, parents: parents ? parents.split(' ') : [], subject, message: message.replace(/\s+$/, '') })
+  }
+  // A forged record cannot pass: every commit appears once, and each is the first parent of the one before it.
+  const chained = entries.every((entry, i) =>
+    HASH.test(entry.hash) && entry.parents.every((parent) => HASH.test(parent)) && (i + 1 === entries.length || entry.parents[0] === entries[i + 1].hash))
+  if (fields.length % 4 !== 1 || !chained || new Set(entries.map((entry) => entry.hash)).size !== entries.length) {
+    throw new Error(t('gitOutputUnreadable', { command: 'log' }))
   }
   return entries
 }
@@ -112,7 +120,8 @@ export function buildTodo(
     if (final !== undefined) {
       if (!final.trim()) throw new Error(t('commitMessageEmpty'))
       // As `git commit -F` cleans up: a line that starts with # (an issue number) is part of the message, not a comment.
-      lines.push(`exec ${shQuote(gitBin)} commit --amend --allow-empty --no-verify --cleanup=whitespace -F ${shQuote(writeMessage(final))}`)
+      // The message file is UTF-8: i18n.commitEncoding must not label it as anything else.
+      lines.push(`exec ${shQuote(gitBin)} -c i18n.commitEncoding=UTF-8 commit --amend --allow-empty --no-verify --cleanup=whitespace -F ${shQuote(writeMessage(final))}`)
     }
     group = null
   }
@@ -211,8 +220,51 @@ export async function pushedTo(git: Git, hash: string): Promise<string[]> {
   return result.ok ? result.stdout.split(/\r?\n/).filter((name) => name && !name.endsWith('/HEAD')) : []
 }
 
-/** Runs `git rebase -i` with `todo` as the whole todo list; aborts and throws on any failure. */
-export async function runRebase(git: Git, base: string | null, plan: PlanItem[], messages: Map<string, string>): Promise<void> {
+/** `git version` output as [major, minor], also `2.39.3 (Apple Git-145)` and `2.45.1.windows.1`; null when unreadable. */
+function versionOf(text: string): [number, number] | null {
+  const match = /^git version (\d+)\.(\d+)/.exec(text.trim())
+  return match ? [Number(match[1]), Number(match[2])] : null
+}
+
+const atLeast = (version: [number, number] | null, major: number, minor: number) =>
+  version !== null && (version[0] > major || (version[0] === major && version[1] >= minor))
+
+/** git's spelling of "stop at a commit that becomes empty": `stop` from 2.45 on; before, or when the version is unknown, `ask`, its older (since deprecated) name. */
+export function emptyOption(version: string): '--empty=stop' | '--empty=ask' {
+  return atLeast(versionOf(version), 2, 45) ? '--empty=stop' : '--empty=ask'
+}
+
+/**
+ * Why the panel must not change the repository with this git: before 2.31 git does not know `rev-parse --path-format`,
+ * so a rebase or merge in progress would go unseen. Null when it is new enough, or when its version cannot be read.
+ */
+export async function gitTooOld(git: Git): Promise<string | null> {
+  const text = (await git.run(['version'])).stdout.trim()
+  const version = versionOf(text)
+  return version && !atLeast(version, 2, 31) ? t('gitTooOld', { found: text.replace(/^git version /, ''), required: '2.31' }) : null
+}
+
+/**
+ * `git rebase --abort` after a rebase that failed. git before 2.47 (fixed by its commit bf6ab087d1) keeps the autostash
+ * of a rebase that failed to start (a refusing pre-rebase hook) alone in .git/rebase-merge: the changes are gone from the
+ * files and the abort fails. Then this returns the steps that bring them back; otherwise null.
+ */
+export async function abortRebase(git: Git): Promise<string | null> {
+  if ((await operationInProgress(git)) !== 'rebase' || (await git.run(['rebase', '--abort'])).ok) return null
+  const dir = await gitPath(git, 'rebase-merge')
+  return existsSync(join(dir, 'autostash')) && !existsSync(join(dir, 'head-name')) ? t('autostashStuck') : null
+}
+
+/** git's last lines of `text`, without its advice on going on with a rebase or merge the worker has already aborted. */
+export function abortedReason(text: string): string {
+  return lastLines(text.split('\n').filter((line) => !/^hint:|git rebase --|git commit --allow-empty|conflicts fixed|^\s*$/.test(line)).join('\n'), 4)
+}
+
+/**
+ * Runs `git rebase -i` with `todo` as the whole todo list; aborts and throws on any failure. Resolves to whether the
+ * branch then holds the planned number of commits right on top of `base`.
+ */
+export async function runRebase(git: Git, base: string | null, plan: PlanItem[], messages: Map<string, string>): Promise<boolean> {
   const dir = mkdtempSync(join(tmpdir(), 'orca-git-log-'))
   try {
     let count = 0
@@ -223,22 +275,39 @@ export async function runRebase(git: Git, base: string | null, plan: PlanItem[],
     }, git.gitPath)
     const todoFile = join(dir, 'todo')
     writeFileSync(todoFile, todo)
+    const empty = emptyOption((await git.run(['version'])).stdout)
     const result = await git.run(
       [
         '-c', 'rebase.abbreviateCommands=false',
         '-c', 'rebase.updateRefs=false',
         '-c', 'rebase.missingCommitsCheck=ignore',
         '-c', 'advice.waitingForEditor=false',
-        'rebase', '-i', '--autostash', '--no-autosquash', '--empty=drop',
+        // git writes its own todo list in the log output encoding, and cannot read it back in UTF-16.
+        '-c', 'i18n.logOutputEncoding=UTF-8',
+        // A commit that becomes empty stops the rebase (then aborted): dropped, the next amend or fixup would rewrite the commit below it.
+        'rebase', '-i', '--autostash', '--no-autosquash', empty,
         base ?? '--root'
       ],
       { env: { GIT_SEQUENCE_EDITOR: `cp ${shQuote(todoFile)}` } }
     )
     if (!result.ok || (await operationInProgress(git)) === 'rebase') {
-      const reason = lastLines(result.stderr || result.stdout, 4)
-      if ((await operationInProgress(git)) === 'rebase') await git.run(['rebase', '--abort'])
+      const output = result.stderr || result.stdout
+      const reason = abortedReason(output)
+      const stuck = await abortRebase(git)
+      if (stuck) throw new Error(stuck)
+      // git names the commit by an abbreviated hash; the todo held full ones.
+      const short = /The previous cherry-pick is now empty[\s\S]*Could not apply ([0-9a-f]{4,40})\.\.\./.exec(output)?.[1]
+      const emptied = short ? plan.find((item) => item.hash.startsWith(short)) : undefined
+      if (emptied) {
+        const subject = (messages.get(emptied.hash) ?? '').split('\n')[0]
+        throw new Error(t('rewriteEmptied', { hash: emptied.hash.slice(0, 8), subject }))
+      }
       throw new Error(`${t('rebaseFailed')}${reason ? `\n${reason}` : ''}`)
     }
+    const kept = plan.filter((item) => item.action === 'pick' || item.action === 'reword').length
+    // A failure here reads as an empty chain: the rewrite already ran, so it is reported with Undo, not as failed.
+    const chain = (await git.run(['rev-list', '--first-parent', `--max-count=${kept + 1}`, 'HEAD', '--'])).stdout.split('\n').filter(Boolean)
+    return chain.length === kept + (base ? 1 : 0) && (chain[kept] ?? null) === base
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

@@ -172,8 +172,9 @@ export async function askName(
 
 export type PatchChoice = { action: 'copy' } | { action: 'save'; path: string }
 
-/** "Create Patch": a file path to save to, or copy to the clipboard when the patch is small enough. */
-export async function askPatch(count: number, size: number, defaultPath: string, canCopy: boolean): Promise<PatchChoice | null> {
+/** "Create Patch": a file path to save to, or copy to the clipboard unless `noCopy` says why not. */
+export async function askPatch(count: number, size: number, defaultPath: string, noCopy: string | null): Promise<PatchChoice | null> {
+  const canCopy = !noCopy
   const input = h('input', { class: 'field mono', spellcheck: false, placeholder: t('filePathPlaceholder') }) as HTMLInputElement
   input.value = defaultPath
   const kb = size < 1024 ? t('sizeBytes', { n: size }) : t('sizeKilobytes', { n: Math.round(size / 1024) })
@@ -182,7 +183,7 @@ export async function askPatch(count: number, size: number, defaultPath: string,
     body: [
       t('patchIntro', { count, size: kb }),
       input,
-      canCopy ? null : h('div', { class: 'muted' }, t('patchTooLarge'))
+      noCopy ? h('div', { class: 'muted' }, noCopy) : null
     ],
     buttons: [cancel(), ...(canCopy ? [{ label: t('copyToClipboard'), value: 'copy' as const }] : []), { label: t('save'), value: 'save', kind: 'primary' }],
     focus: input,

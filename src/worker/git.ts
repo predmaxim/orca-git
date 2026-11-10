@@ -7,11 +7,15 @@ export interface GitResult {
   code: number | null
   stdout: string
   stderr: string
+  /** stdout as git wrote it, with `bytes: true`. */
+  bytes?: Uint8Array
 }
 
 export interface GitOptions {
   env?: Record<string, string>
   timeoutMs?: number
+  /** Also keep stdout as bytes (`GitResult.bytes`): output that need not be UTF-8, such as a patch. */
+  bytes?: boolean
 }
 
 export interface Git {
@@ -65,15 +69,18 @@ export function createGit(root: string, gitPath = 'git'): Git {
           env: { ...env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C', GIT_EDITOR: ':', ...options.env },
           maxBuffer: 64 * 1024 * 1024,
           timeout: timeoutFor(args, options),
-          windowsHide: true
+          windowsHide: true,
+          encoding: options.bytes ? 'buffer' : 'utf8'
         },
         (error, stdout, stderr) => {
           const code = error ? (typeof (error as any).code === 'number' ? (error as any).code : null) : 0
+          // String() of a Buffer decodes it as UTF-8, as execFile does for 'utf8'.
+          const err = String(stderr)
           // Killed (a signal, a time limit, the output cap) rather than refused: what it was changing may be half done.
           const stopped = Boolean((error as any)?.signal) || (error as any)?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
-          const text = String(stderr || (error && !stopped ? error.message : ''))
+          const text = err || (error && !stopped ? error.message : '')
           const note = stopped ? `${text.trimEnd()}\n${t('gitStopped', { command: subcommand(args) })}`.trimStart() : text
-          resolve({ ok: !error, code, stdout: String(stdout), stderr: note })
+          resolve({ ok: !error, code, stdout: String(stdout), stderr: note, ...(options.bytes ? { bytes: stdout } : {}) })
         }
       )
     })

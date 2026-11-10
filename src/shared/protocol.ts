@@ -176,7 +176,7 @@ export interface ActionResult {
   stash?: string
   /** HEAD after an action sent with `expectHead` or a backup ran, for its Undo to expect. */
   head?: string
-  /** It ran, but left something for the user to sort out (the message says what); no undo. */
+  /** It ran, but left something for the user to sort out (the message says what); Undo only with `previousHead`. */
   warning?: boolean
   /** Nothing ran: moving HEAD would leave these commits (the first 20; `message` gives how many) on no branch. */
   leaves?: string[]
@@ -245,7 +245,7 @@ export interface BranchActionResult extends ActionResult {
 }
 
 export type PatchResult =
-  | { ok: true; name: string; size: number; text?: string; tooLarge?: boolean; path?: string }
+  | { ok: true; name: string; size: number; text?: string; tooLarge?: boolean; notUtf8?: boolean; path?: string }
   | { ok: false; reason: string; exists?: boolean }
 
 /** What the Diff tab of a repository shows: the files of the selection a file was opened from. */

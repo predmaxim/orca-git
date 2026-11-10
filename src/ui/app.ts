@@ -1236,7 +1236,7 @@ async function createPatch(scope: Scope, hashes: string[]): Promise<void> {
     done()
   }
   if (!preview.ok) return showBanner(preview.reason, 'error')
-  const choice = await askPatch(hashes.length, preview.size, preview.name, Boolean(preview.text))
+  const choice = await askPatch(hashes.length, preview.size, preview.name, preview.text ? null : t(preview.notUtf8 ? 'patchNotUtf8' : 'patchTooLarge'))
   if (!choice || !unchanged(scope)) return
   if (choice.action === 'copy') {
     if (copyText(preview.text!)) showBanner(hashes.length === 1 ? t('patchCopiedOne', { hash: shortHash(hashes[0]) }) : t('patchCopiedMany', { count: hashes.length }), 'success')

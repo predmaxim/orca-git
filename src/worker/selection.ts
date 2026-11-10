@@ -29,14 +29,19 @@ export async function readSelectionFiles(git: Git, hashes: string[]): Promise<Se
     throw new Error(t('invalidSelection'))
   }
   const order = await oldestFirst(git, hashes)
-  const log = await git.out(['log', '--no-walk=unsorted', '--format=%x1e%H%x1f%P', '-z', '--name-status', '-M', '--root', '--diff-merges=first-parent', ...order, '--'])
+  // --encoding=UTF-8: under i18n.logOutputEncoding=UTF-16 git would print even the hashes in UTF-16.
+  const log = await git.out(['log', '--no-walk=unsorted', '--encoding=UTF-8', '--format=%H%x00%P', '-z', '--name-status', '-M', '--root', '--diff-merges=first-parent', ...order, '--'])
   const entries = new Map<string, Entry>()
-  for (const record of log.split('\x1e').filter(Boolean)) {
-    const end = record.indexOf('\0')
-    const header = end < 0 ? record : record.slice(0, end)
-    const [hash, parents] = header.split('\x1f')
-    const parent = parents.split(' ')[0] || null
-    for (const f of end < 0 ? [] : parseNameStatus(record.slice(end + 1))) {
+  // Per commit, in `order`: `<hash>\0<parents>\0`, then a newline and `<status>\0<path>\0` (two paths for a rename or copy) per file.
+  // Only NUL separates: a path can hold any other byte.
+  const fields = log.split('\0')
+  let i = 0
+  for (const hash of order) {
+    if (fields[i] !== hash) throw new Error(t('gitOutputUnreadable', { command: 'log' }))
+    const parent = fields[i + 1].split(' ')[0] || null
+    const start = (i += 2)
+    while (/^\n?[A-Z]\d*$/.test(fields[i] ?? '')) i += /^\n?[RC]/.test(fields[i]) ? 3 : 2
+    for (const f of parseNameStatus(fields.slice(start, i).join('\0'))) {
       const key = f.status === 'R' && f.oldPath ? f.oldPath : f.path
       const e = entries.get(key)
       entries.delete(key)

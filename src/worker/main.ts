@@ -13,6 +13,7 @@ import { resolveRepo, toplevel } from './repo.ts'
 import { readFileDiff } from './diff.ts'
 import { readRangeDiff, readSelectionFiles } from './selection.ts'
 import { createPatch } from './patch.ts'
+import { gitTooOld } from './rebase.ts'
 import { watchRepo, type RepoWatcher } from './watch.ts'
 
 let orcaApi: OrcaWorkerApi
@@ -209,9 +210,12 @@ export default function activate(orca: OrcaWorkerApi): void {
 
   handle('action.check', async ({ root, kind, hashes }) => checkRewrite(await gitFor(root), kind, hashes))
 
+  // Every request that changes the repository, backups included, first checks that git is new enough for the guards.
   handle('action.run', async ({ root, action, expectHead, backup, id }) => {
     const git = await gitFor(root)
     return exclusive(root, id, async () => {
+      const old = await gitTooOld(git)
+      if (old) return { ok: false, message: old }
       const hardReset = action?.kind === 'reset' && action?.mode === 'hard'
       const result = await runGuarded(git, { expectHead, backup }, 'HEAD', () => runAction(git, action), { hardReset, onHead: onHead(action) })
       orca.panels.post('repo.changed', { root })
@@ -222,6 +226,8 @@ export default function activate(orca: OrcaWorkerApi): void {
   handle('branch.run', async ({ root, action, expectHead, backup, id }) => {
     const git = await gitFor(root)
     return exclusive(root, id, async () => {
+      const old = await gitTooOld(git)
+      if (old) return { ok: false, message: old }
       // A deleted branch's backup keeps that branch; every other branch action moves HEAD.
       const tip = action?.kind === 'delete' ? { branch: action.name } : 'HEAD'
       const result = await runGuarded(git, { expectHead, backup }, tip, () => runBranchAction(git, action), { onHead: onHead(action) })
@@ -237,6 +243,8 @@ export default function activate(orca: OrcaWorkerApi): void {
   handle('backup.delete', async ({ root, action, id }) => {
     const git = await gitFor(root)
     return exclusive(root, id, async () => {
+      const old = await gitTooOld(git)
+      if (old) return { ok: false, message: old }
       const result = await deleteBackup(git, action)
       orca.panels.post('repo.changed', { root })
       return result
@@ -248,6 +256,8 @@ export default function activate(orca: OrcaWorkerApi): void {
   handle('repo.fetch', async ({ root, id }) => {
     const git = await gitFor(root)
     return exclusive(root, id, async () => {
+      const old = await gitTooOld(git)
+      if (old) return { ok: false, message: old }
       const result = await fetchAll(git)
       if (result.ok) orca.panels.post('repo.changed', { root })
       return result

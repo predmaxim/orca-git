@@ -152,7 +152,8 @@ test('a long contiguous selection lists each file over the commits that touch it
 })
 
 test('odd file names come through both from the log and from a range diff', async () => {
-  const names = ['-rf', ':(glob)*', 'with space.txt', 'юникод.txt', 'tab\there.txt']
+  // The last one holds what other separators than NUL would read as the start of another commit's record.
+  const names = ['-rf', ':(glob)*', 'with space.txt', 'юникод.txt', 'tab\there.txt', 'rs\x1ex\x1fy.txt']
   const { root, hashes: h } = repoWith([
     (r) => names.forEach((name) => writeFileSync(join(r, name), '1\n')),
     (r) => names.slice(0, 3).forEach((name) => writeFileSync(join(r, name), '2\n'))

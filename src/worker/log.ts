@@ -2,9 +2,10 @@ import type { BranchRef, CommitDetails, CommitRow, FileChange, LogFilter, LogPag
 import type { Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
 
-const FS = '\x1f'
-const RS = '\x1e'
-export const LOG_FORMAT = ['%H', '%P', '%an', '%ae', '%at', '%cn', '%ct', '%D', '%s'].join('%x1f') + '%x1e'
+const HASH = /^[0-9a-f]{40}$/
+/** Fields end with NUL, and with `git log -z` so does each record: no commit message, name or path can hold one. */
+export const LOG_FORMAT = ['%H', '%P', '%an', '%ae', '%at', '%cn', '%ct', '%D', '%s'].join('%x00')
+const LOG_FIELDS = 9
 
 const REMOTE_HEAD = /^refs\/remotes\/[^/]+\/HEAD$/
 
@@ -22,11 +23,13 @@ export function parseDecorations(text: string): string[] {
 
 export function parseLog(stdout: string): CommitRow[] {
   const rows: CommitRow[] = []
-  for (const record of stdout.split(RS)) {
-    const line = record.replace(/^\r?\n/, '')
-    if (!line) continue
-    const [hash, parents, author, email, at, committer, ct, decorations, ...subject] = line.split(FS)
-    if (!hash || hash.length < 40) continue
+  const fields = stdout.split('\0')
+  const seen = new Set<string>()
+  for (let i = 0; i + LOG_FIELDS <= fields.length; i += LOG_FIELDS) {
+    const [hash, parents, author, email, at, committer, ct, decorations, subject] = fields.slice(i, i + LOG_FIELDS)
+    // A hash that is not one, or that came already, is not a commit of this log.
+    if (!HASH.test(hash) || seen.has(hash)) continue
+    seen.add(hash)
     rows.push({
       hash,
       parents: parents ? parents.split(' ').filter(Boolean) : [],
@@ -35,7 +38,7 @@ export function parseLog(stdout: string): CommitRow[] {
       authorTime: Number(at) || 0,
       committer,
       commitTime: Number(ct) || 0,
-      subject: subject.join(FS),
+      subject,
       refs: parseDecorations(decorations ?? '')
     })
   }
@@ -77,7 +80,8 @@ export function logArgs(filter: LogFilter): string[] {
 }
 
 export async function readLogPage(git: Git, filter: LogFilter, skip: number, limit: number): Promise<LogPage> {
-  const result = await git.run(['log', `--format=${LOG_FORMAT}`, `--skip=${skip}`, `-n${limit + 1}`, ...logArgs(filter)])
+  // --encoding=UTF-8 here and below: i18n.logOutputEncoding would garble the text, or (UTF-16) every field.
+  const result = await git.run(['log', '-z', '--encoding=UTF-8', `--format=${LOG_FORMAT}`, `--skip=${skip}`, `-n${limit + 1}`, ...logArgs(filter)])
   // An empty repository (no HEAD yet) is an empty log, not an error.
   if (!result.ok) {
     if (!(await readHead(git)).hash) return { commits: [], hasMore: false }
@@ -88,7 +92,7 @@ export async function readLogPage(git: Git, filter: LogFilter, skip: number, lim
   if (hasMore) commits.length = limit
   const text = filter.text?.trim()
   if (skip === 0 && text && isHashLike(text)) {
-    const found = await git.run(['log', '-1', '--decorate=full', `--format=${LOG_FORMAT}`, `${text}^{commit}`, '--'])
+    const found = await git.run(['log', '-z', '--encoding=UTF-8', '-1', '--decorate=full', `--format=${LOG_FORMAT}`, `${text}^{commit}`, '--'])
     const exact = found.ok ? parseLog(found.stdout)[0] : undefined
     if (exact && !commits.some((c) => c.hash === exact.hash)) commits.unshift(exact)
   }
@@ -110,9 +114,11 @@ export function parseRefs(stdout: string): Pick<RefsResult, 'locals' | 'remotes'
   const locals: BranchRef[] = []
   const remotes: BranchRef[] = []
   const tags: BranchRef[] = []
-  for (const line of stdout.split(/\r?\n/)) {
-    if (!line) continue
-    const [full, object, peeled, upstream] = line.split(FS)
+  // Each field ends with NUL and each record with a newline after that: an upstream name from the config can hold a newline, never a NUL.
+  const fields = stdout.split('\0')
+  for (let i = 0; i + 4 <= fields.length; i += 4) {
+    const [ref, object, peeled, upstream] = fields.slice(i, i + 4)
+    const full = ref.replace(/^\n/, '')
     const hash = peeled || object
     if (full.startsWith('refs/heads/')) locals.push({ name: full.slice(11), full, hash, ...(upstream ? { upstream } : {}) })
     else if (full.startsWith('refs/remotes/')) {
@@ -126,13 +132,13 @@ export async function readRefs(git: Git): Promise<RefsResult> {
   const [refs, head, users, me] = await Promise.all([
     git.out([
       'for-each-ref',
-      '--format=%(refname)%1f%(objectname)%1f%(*objectname)%1f%(upstream:short)',
+      '--format=%(refname)%00%(objectname)%00%(*objectname)%00%(upstream:short)%00',
       'refs/heads',
       'refs/remotes',
       'refs/tags'
     ]),
     readHead(git),
-    git.run(['log', '--branches', '--remotes', '--format=%an', '-n5000']),
+    git.run(['log', '--encoding=UTF-8', '--branches', '--remotes', '--format=%an', '-n5000']),
     git.run(['config', 'user.name'])
   ])
   const names = new Set<string>()
@@ -164,8 +170,8 @@ export function parseNameStatus(stdout: string): FileChange[] {
 
 export async function readDetails(git: Git, hash: string): Promise<CommitDetails> {
   assertRevision(hash)
-  const show = await git.out(['show', '-s', '--format=%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%cn%x1f%ce%x1f%ct%x1f%B', hash, '--'])
-  const [full, parents, author, email, at, committer, committerEmail, ct, ...message] = show.split(FS)
+  const show = await git.out(['show', '-s', '-z', '--encoding=UTF-8', '--format=%H%x00%P%x00%an%x00%ae%x00%at%x00%cn%x00%ce%x00%ct%x00%B', hash, '--'])
+  const [full, parents, author, email, at, committer, committerEmail, ct, message = ''] = show.split('\0')
   const parentList = parents ? parents.split(' ').filter(Boolean) : []
   const diff = parentList.length > 1
     ? await git.run(['diff', '--name-status', '-z', '-M', parentList[0], full, '--'])
@@ -180,7 +186,7 @@ export async function readDetails(git: Git, hash: string): Promise<CommitDetails
     committer,
     committerEmail,
     commitTime: Number(ct) || 0,
-    message: message.join(FS).replace(/\s+$/, ''),
+    message: message.replace(/\s+$/, ''),
     files: diff.ok ? parseNameStatus(diff.stdout) : [],
     branches: containing.ok
       ? containing.stdout.split(/\r?\n/).filter((name) => name && !name.endsWith('/HEAD'))

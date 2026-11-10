@@ -10,6 +10,7 @@ import { createBackup, deleteBackup, runGuarded } from './backup.ts'
 import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
 import { createGit, type Git } from './git.ts'
 import { createPatch } from './patch.ts'
+import { emptyOption, readFirstParentHistory } from './rebase.ts'
 import { describeRepo } from './repo.ts'
 
 // Every git operation of the plugin against the harmful cases in docs/git-safety.md: hostile input, failure,
@@ -419,14 +420,21 @@ test('branch actions refuse hostile names before git runs', async () => {
 
 // ---------- 3. A failure is aborted and leaves everything as it was ----------
 
-/** Runs `run` on a fresh world prepared by `prepare` and checks it failed and changed nothing. */
+/**
+ * Runs `run` on a fresh world prepared by `prepare` and checks it failed and changed nothing. git before 2.47 cannot undo a
+ * rebase that failed to start by itself: there the message must give the two steps that do, and they must be enough.
+ */
 async function failsCleanly(label: string, prepare: (w: World) => void, run: (git: Git, w: World) => Promise<Result>, why = /./): Promise<void> {
   const w = world()
   prepare(w)
   const before = snapshot(w.root)
   const result = await run(createGit(w.root), w)
   assert.equal(result.ok, false, `${label}: ${result.message}`)
-  assert.match(result.message, why, label)
+  if (result.message.includes('git rebase --quit')) {
+    assert.match(result.message, /run git rebase --quit .*then git stash pop/, label)
+    sh(w.root, 'rebase', '--quit')
+    sh(w.root, 'stash', 'pop')
+  } else assert.match(result.message, why, label)
   assert.deepEqual(snapshot(w.root), before, label)
 }
 
@@ -479,6 +487,20 @@ test('a conflict or a refusal by git aborts the operation and leaves everything 
     runAction(git, { kind: 'rebase', plan: [{ hash: w.c3, action: 'pick' }, { hash: w.c2, action: 'pick' }] })
   , /aborted/)
   await failsCleanly('reword to a message git refuses', dirty, (git, w) => runAction(git, { kind: 'reword', hash: w.c2, message: 'a\0b' }), /aborted/)
+  // A commit that becomes empty (it undoes a dropped one) stops the rewrite: dropped, it would let the next amend or fixup
+  // land on the commit below the range, and the result would no longer be what was asked.
+  const undoC3 = (w: World) => {
+    commit(w.root, 'a.txt', '1\n', 'undo c3')
+    commit(w.root, 'd.txt', 'd\n', 'c5')
+  }
+  const back = (w: World, n: number) => sh(w.root, 'rev-parse', `HEAD~${n}`)
+  await failsCleanly('drop that empties a later commit', undoC3, (git, w) => runAction(git, { kind: 'drop', hashes: [w.c3] }), /aborted/)
+  await failsCleanly('interactive rebase that rewords a commit it empties', undoC3, (git, w) =>
+    runAction(git, { kind: 'rebase', plan: [{ hash: w.c3, action: 'drop' }, { hash: back(w, 1), action: 'reword', message: 'new' }, { hash: back(w, 0), action: 'pick' }] })
+  , /aborted/)
+  await failsCleanly('interactive rebase that squashes into a commit it empties', undoC3, (git, w) =>
+    runAction(git, { kind: 'rebase', plan: [{ hash: w.c3, action: 'drop' }, { hash: back(w, 1), action: 'pick' }, { hash: back(w, 0), action: 'squash' }] })
+  , /aborted/)
   // Merge and rebase onto: a refusing hook, an untracked file in the way or unrelated histories are aborted with local changes back.
   await failsCleanly('merge refused by a pre-merge-commit hook', (w) => {
     matchTopic(w)
@@ -598,6 +620,74 @@ test('a history rewrite whose local changes cannot be re-applied says so and off
   assert.equal(result.previousHead, undefined)
   assert.match(sh(w.root, 'stash', 'list'), /autostash/)
   assert.match(sh(w.root, 'stash', 'show', '-p', 'stash@{0}'), /\+local c/)
+})
+
+test('a rewrite stopped by a commit that becomes empty names it, on old git too, without advice for the rebase it aborted', async () => {
+  for (const version of [null, 'git version 2.39.3 (Apple Git-145)']) {
+    const w = world()
+    commit(w.root, 'a.txt', '1\n', 'undo c3')
+    const real = createGit(w.root)
+    const rebases: string[][] = []
+    // An older git, as far as its version goes: the rewrite must spell the stop the way that git knows it.
+    const git: Git = {
+      ...real,
+      run: (args, options) => {
+        if (version && args[0] === 'version') return Promise.resolve({ ok: true, code: 0, stdout: `${version}\n`, stderr: '' })
+        if (args.includes('rebase')) rebases.push(args)
+        return real.run(args, options)
+      }
+    }
+    const result = await runAction(git, { kind: 'drop', hashes: [w.c3] })
+    assert.equal(result.ok, false, result.message)
+    assert.match(result.message, /undo c3/)
+    assert.doesNotMatch(result.message, /--continue|--skip|conflicts fixed/)
+    assert.ok(rebases[0].includes(emptyOption(version ?? sh(w.root, 'version'))), rebases[0].join(' '))
+  }
+})
+
+test('a rewrite that ends without the planned commits on its base is reported, and Undo is offered', async () => {
+  // A git that drops an emptied commit after all: the result is checked, not trusted.
+  const w = world()
+  commit(w.root, 'a.txt', '1\n', 'undo c3')
+  const real = createGit(w.root)
+  const git: Git = { ...real, run: (args, options) => real.run(args.map((arg) => (arg.startsWith('--empty=') ? '--empty=drop' : arg)), options) }
+  const before = sh(w.root, 'rev-parse', 'HEAD')
+  const result = await runAction(git, { kind: 'drop', hashes: [w.c3] })
+  assert.deepEqual([result.ok, result.warning, result.previousHead], [true, true, before], result.message)
+  assert.match(result.message, /does not hold the planned commits/)
+})
+
+test('text in a commit message cannot add a commit to a rewrite', async () => {
+  const w = world()
+  // Someone else's commit whose message holds what separators other than NUL would read as one more record: a commit from another branch.
+  sh(w.root, 'checkout', '-q', 'topic')
+  const payload = commit(w.root, 'backdoor.sh', 'evil\n', 'payload')
+  sh(w.root, 'checkout', '-q', 'main')
+  const message = join(w.root, '.git', 'crafted-message')
+  writeFileSync(message, `Fix typo\n\nDetails.\x1e${payload}\x1f${w.c3}\x1fUpdate docs\x1fUpdate docs\n`)
+  const crafted = sh(w.root, 'commit-tree', `${w.c3}^{tree}`, '-p', w.c3, '-F', message)
+  sh(w.root, 'reset', '-q', '--hard', crafted)
+  const d = commit(w.root, 'd.txt', 'd\n', 'D')
+  const git = createGit(w.root)
+  const check = await checkRewrite(git, 'drop', [w.c3])
+  assert.deepEqual(check.ok && check.commits.map((c) => c.hash), [w.c3, crafted, d])
+  assert.equal((await runAction(git, { kind: 'drop', hashes: [w.c3] })).ok, true)
+  assert.deepEqual(sh(w.root, 'log', '--format=%s').split('\n'), ['D', 'Fix typo', 'c2', 'c1'])
+  assert.equal(existsSync(join(w.root, 'backdoor.sh')), false)
+})
+
+test('a first-parent history that is not one chain of distinct commits is refused', async () => {
+  const w = world()
+  const real = createGit(w.root)
+  // Records spliced in before c2's: one that breaks the chain, and two that keep it but repeat c2.
+  const splice = (records: string[][]): Git => ({
+    ...real,
+    out: async (args, options) => (await real.out(args, options)).replace(`\0${w.c2}\0${w.c1}\0`, `\0${records.map((r) => `${r.join('\0')}\0`).join('')}${w.c2}\0${w.c1}\0`)
+  })
+  for (const records of [[[w.t1, w.c2, 'forged', 'forged\n']], [[w.c2, w.t1, 'forged', 'forged\n'], [w.t1, w.c2, 'forged', 'forged\n']]]) {
+    await assert.rejects(readFirstParentHistory(splice(records)), /could not read/)
+  }
+  assert.deepEqual((await readFirstParentHistory(real)).map((e) => e.hash), [w.c3, w.c2, w.c1])
 })
 
 test('rewritten messages keep lines that start with #', async () => {

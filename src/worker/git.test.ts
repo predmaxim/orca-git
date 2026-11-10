@@ -8,10 +8,11 @@ import { checkRewrite, runAction } from './actions.ts'
 import { createBackup } from './backup.ts'
 import { createGit, timeoutFor } from './git.ts'
 import { gitCandidates, resolveGit } from './launch.ts'
-import { readDetails, readLogPage, readRefs } from './log.ts'
+import { parseLog, readDetails, readLogPage, readRefs } from './log.ts'
 import { readFileDiff } from './diff.ts'
 import { createPatch } from './patch.ts'
-import { buildTodo } from './rebase.ts'
+import { buildTodo, emptyOption } from './rebase.ts'
+import { readSelectionFiles } from './selection.ts'
 
 const dirs: string[] = []
 after(() => dirs.forEach((dir) => rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })))
@@ -46,7 +47,7 @@ test('squash folds the selected commits into the oldest with the new message', a
   const { root, hashes } = repo(4)
   const git = createGit(root)
   const result = await runAction(git, { kind: 'squash', hashes: [hashes[3], hashes[1]], message: 'squashed\n\nall of it' })
-  assert.equal(result.ok, true, result.message)
+  assert.deepEqual([result.ok, result.warning], [true, undefined], result.message)
   assert.deepEqual(subjects(root), ['c3', 'squashed', 'c1'])
   assert.equal(sh(root, 'log', '-1', '--skip=1', '--format=%B'), 'squashed\n\nall of it')
   assert.deepEqual(files(root), ['f1.txt', 'f2.txt', 'f3.txt', 'f4.txt'])
@@ -64,7 +65,7 @@ test('drop removes commits and keeps the rest', async () => {
 test('fixup of one commit folds it into its parent and keeps the parent message', async () => {
   const { root, hashes } = repo(3)
   const result = await runAction(createGit(root), { kind: 'fixup', hashes: [hashes[2]] })
-  assert.equal(result.ok, true, result.message)
+  assert.deepEqual([result.ok, result.warning], [true, undefined], result.message)
   assert.deepEqual(subjects(root), ['c2', 'c1'])
   assert.deepEqual(files(root), ['f1.txt', 'f2.txt', 'f3.txt'])
 })
@@ -72,7 +73,7 @@ test('fixup of one commit folds it into its parent and keeps the parent message'
 test('reword changes one message, including the root commit', async () => {
   const { root, hashes } = repo(2)
   const result = await runAction(createGit(root), { kind: 'reword', hash: hashes[0], message: 'first!' })
-  assert.equal(result.ok, true, result.message)
+  assert.deepEqual([result.ok, result.warning], [true, undefined], result.message)
   assert.deepEqual(subjects(root), ['c2', 'first!'])
 })
 
@@ -86,7 +87,7 @@ test('interactive rebase reorders, squashes with combined message and drops', as
       { hash: hashes[2], action: 'drop' }
     ]
   })
-  assert.equal(result.ok, true, result.message)
+  assert.deepEqual([result.ok, result.warning], [true, undefined], result.message)
   assert.deepEqual(subjects(root), ['c2', 'c1'])
   assert.equal(sh(root, 'log', '-1', '--format=%B'), 'c2\n\nbody 2\n\nc4\n\nbody 4')
   assert.deepEqual(files(root), ['f1.txt', 'f2.txt', 'f4.txt'])
@@ -183,6 +184,89 @@ test('log pages, filters, refs and details', async () => {
   assert.deepEqual(details.branches, ['main'])
 })
 
+test('text in a commit, an author name or a config value cannot forge a log row, a detail or a branch', async () => {
+  const { root, hashes } = repo(1)
+  const git = createGit(root)
+  // What separators other than NUL would read as the end of a record and the fields of a forged one.
+  const subject = `innocent\x1e${hashes[0]}\x1f\x1fTrusted Maintainer\x1ftm@example.com\x1f1700000000\x1fTrusted Maintainer\x1f1700000000\x1frefs/tags/v9.9\x1fSecurity fix`
+  const crafted = sh(root, '-c', 'user.name=Eve\x1fspoof', 'commit-tree', `${hashes[0]}^{tree}`, '-p', hashes[0], '-m', subject)
+  sh(root, 'reset', '-q', '--hard', crafted)
+  sh(root, 'config', 'branch.main.remote', '.')
+  sh(root, 'config', 'branch.main.merge', `refs/heads/x\nrefs/heads/forged\x1f${hashes[0]}\x1f\x1f`)
+  const { commits } = await readLogPage(git, {}, 0, 50)
+  assert.deepEqual(commits.map((c) => [c.hash, c.author, c.subject]), [[crafted, 'Eve\x1fspoof', subject], [hashes[0], 'Tester', 'c1']])
+  const details = await readDetails(git, crafted)
+  assert.deepEqual([details.author, details.email, details.message], ['Eve\x1fspoof', 'tester@example.com', subject])
+  assert.deepEqual((await readRefs(git)).locals.map((r) => r.name), ['main'])
+  // A row whose hash is not one, or repeats, is dropped.
+  const row = (hash: string, text: string) => `${[hash, '', 'A', 'a@example.com', '1', 'A', '1', '', text].join('\0')}\0`
+  assert.deepEqual(parseLog(row(crafted, 'real') + row('x'.repeat(40), 'not a hash') + row(crafted, 'again')).map((c) => c.subject), ['real'])
+})
+
+test('a log output encoding other than UTF-8 neither garbles nor hides text, and a rewrite writes messages back intact', async () => {
+  for (const encoding of ['cp1251', 'UTF-16']) {
+    const { root } = repo(1)
+    const add = (file: string, message: string) => {
+      writeFileSync(join(root, file), `${file}\n`)
+      sh(root, 'add', '.')
+      sh(root, 'commit', '-qm', message)
+      return sh(root, 'rev-parse', 'HEAD')
+    }
+    const a = add('a.txt', 'Исправить ошибку')
+    const b = add('b.txt', 'Добавить тест\n\nТело')
+    sh(root, 'config', 'i18n.logOutputEncoding', encoding)
+    const git = createGit(root)
+    assert.deepEqual((await readLogPage(git, {}, 0, 50)).commits.map((c) => c.subject), ['Добавить тест', 'Исправить ошибку', 'c1'], encoding)
+    assert.equal((await readDetails(git, b)).message, 'Добавить тест\n\nТело', encoding)
+    assert.deepEqual((await readRefs(git)).users, ['Tester'], encoding)
+    assert.deepEqual((await readSelectionFiles(git, [b])).map((f) => f.path), ['b.txt'], encoding)
+    const patch = await createPatch(git, root, [b])
+    assert.ok(patch.ok && patch.text?.includes('\n\nТело\n'), encoding)
+    const check = await checkRewrite(git, 'squash', [a, b])
+    assert.deepEqual(check.ok && check.commits.map((c) => c.message), ['Исправить ошибку', 'Добавить тест\n\nТело'], encoding)
+    const result = await runAction(git, { kind: 'rebase', plan: [{ hash: a, action: 'pick' }, { hash: b, action: 'squash' }] })
+    assert.equal(result.ok, true, `${encoding}: ${result.message}`)
+    assert.equal(sh(root, '-c', 'i18n.logOutputEncoding=UTF-8', 'log', '-1', '--format=%B'), 'Исправить ошибку\n\nДобавить тест\n\nТело', encoding)
+  }
+  // The worker writes messages in UTF-8: i18n.commitEncoding must not label them as anything else.
+  const { root, hashes } = repo(1)
+  sh(root, 'config', 'i18n.commitEncoding', 'cp1251')
+  const reworded = await runAction(createGit(root), { kind: 'reword', hash: hashes[0], message: 'Новое сообщение' })
+  assert.equal(reworded.ok, true, reworded.message)
+  assert.equal(sh(root, 'log', '-1', '--encoding=UTF-8', '--format=%B'), 'Новое сообщение')
+})
+
+test('create patch keeps file content that is not UTF-8 byte for byte, and offers no clipboard text for it', async () => {
+  const { root, hashes } = repo(1)
+  writeFileSync(join(root, 'legacy.txt'), Uint8Array.from('caf\xe9 line\nna\xefve\n', (c) => c.charCodeAt(0)))
+  sh(root, 'add', '.')
+  sh(root, 'commit', '-qm', 'latin1')
+  const git = createGit(root)
+  const head = sh(root, 'rev-parse', 'HEAD')
+  const preview = await createPatch(git, root, [head])
+  assert.deepEqual(preview.ok && [preview.text, preview.notUtf8], [undefined, true])
+  const saved = await createPatch(git, root, [head], 'latin1.patch')
+  const path = saved.ok ? saved.path : undefined
+  assert.ok(path, JSON.stringify(saved))
+  sh(root, 'reset', '-q', '--hard', hashes[0])
+  sh(root, 'apply', '--check', path!)
+})
+
+test('the empty-commit stop is spelled for the git version: stop from 2.45, ask before or when unknown', () => {
+  const cases: Array<[string, string]> = [
+    ['git version 2.56.0', '--empty=stop'],
+    ['git version 2.45.0', '--empty=stop'],
+    ['git version 2.45.1.windows.1', '--empty=stop'],
+    ['git version 3.0.0', '--empty=stop'],
+    ['git version 2.44.2.windows.1', '--empty=ask'],
+    ['git version 2.39.3 (Apple Git-145)', '--empty=ask'],
+    ['git version 2.34.8', '--empty=ask'],
+    ['', '--empty=ask'],
+    ['not git', '--empty=ask']
+  ]
+  for (const [version, option] of cases) assert.equal(emptyOption(version), option, version)
+})
+
 test('an empty repository has an empty log', async () => {
   const root = mkdtempSync(join(tmpdir(), 'git-log-test-'))
   dirs.push(root)
@@ -249,7 +333,7 @@ test('create patch exports the selected commits oldest first, applies cleanly an
 test('squash and reword todo lines amend with the configured git executable', () => {
   const hash = 'a'.repeat(40)
   const todo = buildTodo([{ hash, action: 'reword', message: 'New' }], new Map(), () => '/tmp/message.txt', '/opt/my git/bin/git')
-  assert.ok(todo.includes(`exec '/opt/my git/bin/git' commit --amend`), todo)
+  assert.ok(todo.includes(`exec '/opt/my git/bin/git' -c i18n.commitEncoding=UTF-8 commit --amend`), todo)
 })
 
 test('a git or cp in the repository never runs, even with . or an empty entry on PATH', { skip: process.platform === 'win32' }, async () => {

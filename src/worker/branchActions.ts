@@ -3,7 +3,7 @@ import { assertName } from './actions.ts'
 import { lastLines, type Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
 import { readHead } from './log.ts'
-import { autostashConflict, noteUnstaged, operationInProgress, operationRefusal, pushedTo } from './rebase.ts'
+import { abortedReason, abortRebase, autostashConflict, noteUnstaged, operationInProgress, operationRefusal, pushedTo } from './rebase.ts'
 import { noteWarnings } from './warnings.ts'
 
 // Under the 120 s a frame waits, so the fetch's own message arrives.
@@ -105,13 +105,18 @@ async function integrate(git: Git, kind: 'merge' | 'rebase', target: string, tip
     short !== 'FETCH_HEAD' &&
     (await git.run(['rev-parse', '--verify', '-q', '--symbolic-full-name', '--end-of-options', short])).stdout.trim() === name &&
     (await commitOf(short)) === (await commitOf(name))
-  const args = kind === 'merge' ? ['merge', '--no-edit', '--autostash', exact ? short : name] : ['rebase', '--autostash', name]
+  // rebase.updateRefs=false: git would also move other branches in the run, which Undo does not restore. Not --no-update-refs: git before 2.38 refuses it.
+  const args = kind === 'merge' ? ['merge', '--no-edit', '--autostash', exact ? short : name] : ['-c', 'rebase.updateRefs=false', 'rebase', '--autostash', name]
   const result = await git.run(args)
   if (!result.ok) {
     let kept: string | null = null
-    if (await operationInProgress(git)) await git.run([kind, '--abort'])
-    else if (kind === 'merge') kept = await returnAutostash(git)
-    const reason = lastLines(result.stderr || result.stdout, 4)
+    const stuck = kind === 'rebase' ? await abortRebase(git) : null
+    if (stuck) throw new Error(stuck)
+    if (kind === 'merge') {
+      if (await operationInProgress(git)) await git.run(['merge', '--abort'])
+      else kept = await returnAutostash(git)
+    }
+    const reason = abortedReason(result.stderr || result.stdout)
     throw new Error(`${t(kind === 'merge' ? 'mergeFailed' : 'rebaseFailed')}${kept ? ` ${t('changesInCommit', { hash: kept })}` : ''}${reason ? `\n${reason}` : ''}`)
   }
   const message = t(kind === 'merge' ? 'merged' : 'rebased', { name: shortName(name) })
