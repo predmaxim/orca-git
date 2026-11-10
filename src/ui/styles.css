@@ -491,6 +491,21 @@ input[type='radio'] {
   color: var(--accent-fg);
 }
 
+.tree:focus-within .node-row.active,
+.tree:focus-within .node-row.filtered {
+  background: var(--selected-focus);
+}
+
+.node-row:focus-visible {
+  outline: 0;
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.node-row.active:focus-visible,
+.node-row.filtered:focus-visible {
+  box-shadow: none;
+}
+
 .node-row .twisty {
   width: 16px;
   color: var(--muted-fg);

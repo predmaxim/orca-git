@@ -1,6 +1,6 @@
 // The files changed by a commit selection as a folder tree. Pure tree building on top, DOM below.
 import type { SelectionFile } from '../shared/protocol.ts'
-import { h, icon } from './dom.ts'
+import { h, icon, mountTree } from './dom.ts'
 import { fileIcon, folderIcon } from './fileicons.ts'
 import { statusName } from './format.ts'
 
@@ -69,8 +69,10 @@ export function dirPaths(nodes: FileNode[]): string[] {
 
 export function renderFileTree(container: HTMLElement, nodes: FileNode[], host: FileTreeHost): void {
   const rows: HTMLElement[] = []
+  const depths: number[] = []
   const walk = (list: FileNode[], depth: number): void => {
     for (const node of list) {
+      depths.push(depth)
       const pad = `${6 + depth * 14}px`
       if (node.kind === 'dir') {
         const open = host.expanded.has(node.path)
@@ -85,16 +87,10 @@ export function renderFileTree(container: HTMLElement, nodes: FileNode[], host: 
             {
               class: 'ft-row ft-dir',
               style: `padding-left:${pad}`,
-              dataset: { path: node.path },
-              tabindex: '0',
+              dataset: { key: node.path },
               role: 'treeitem',
               'aria-expanded': String(open),
-              onclick: toggle,
-              onkeydown: (event: KeyboardEvent) => {
-                if (event.key !== 'Enter' && event.key !== ' ') return
-                event.preventDefault()
-                toggle()
-              }
+              onclick: toggle
             },
             icon(open ? 'chevronDown' : 'chevronRight'),
             folderIcon(),
@@ -113,16 +109,10 @@ export function renderFileTree(container: HTMLElement, nodes: FileNode[], host: 
             {
               class: `ft-row file openable st-${letter}${host.current === file.path ? ' current' : ''}`,
               style: `padding-left:${pad}`,
-              dataset: { path: file.path },
-              tabindex: '0',
+              dataset: { key: file.path },
               role: 'treeitem',
               title: `${statusName(letter) ?? file.status}: ${file.oldPath ? `${file.oldPath} → ` : ''}${file.path}`,
-              onclick: open,
-              onkeydown: (event: KeyboardEvent) => {
-                if (event.key !== 'Enter') return
-                event.preventDefault()
-                open()
-              }
+              onclick: open
             },
             h('span', { class: 'status-letter' }, letter),
             fileIcon(node.name),
@@ -133,8 +123,5 @@ export function renderFileTree(container: HTMLElement, nodes: FileNode[], host: 
     }
   }
   walk(nodes, 0)
-  // A redraw replaces the rows; keep keyboard focus on the row it was on.
-  const focused = container.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.path : undefined
-  container.replaceChildren(h('div', { class: 'ft', role: 'tree' }, ...rows))
-  if (focused !== undefined) rows.find((row) => row.dataset.path === focused)?.focus()
+  mountTree(container, rows, depths, 'ft')
 }

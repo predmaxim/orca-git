@@ -34,11 +34,13 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   `fix/`); search by name. Click a branch to filter the log by it (click again to clear), double-click
   to jump to its commit. Right-click for checkout, new branch from it, rename,
   delete (local only; an unmerged branch asks first), merge into the current branch and rebase the
-  current branch onto it.
+  current branch onto it. The keys of the Files tree below work here too; Enter filters by the branch.
 - **Files of the selection**: the changed files of all selected commits as a folder tree with status
   letters (added, modified, deleted, renamed), expand/collapse all. For each file the diff runs from its
   state before the earliest selected commit that touched it to its state after the latest one, so a
   selection across a merge works too. A click (or Enter) opens the file's diff in the Diff tab.
+  Tree keys (here and in the branch tree): ↑ / ↓ move between rows, → opens a folder or steps into it,
+  ← closes it or steps up to the parent folder, Space opens or closes a folder; each tree is one Tab stop.
 - **Details section**: one row per selected commit (short hash, title, author); click a row to expand
   the full message, author, committer, date and branches. A single selected commit is expanded at once.
 - **Diff tab**: one editor tab per repository; the next file you open replaces its content. Side by

@@ -23,6 +23,39 @@ export function append(el: Element, children: Child[]): void {
   }
 }
 
+/**
+ * Puts the rows of a tree into `container` with the keyboard of one: ↑/↓ move between rows, → opens a
+ * closed folder or enters an open one, ← closes an open folder or goes up to the row's folder, Enter
+ * clicks a row and Space a folder. A folder row has aria-expanded and opens or closes on click;
+ * `depths[i]` is how deep `rows[i]` sits, one deeper than its folder. The tree is one Tab stop, and a
+ * redraw keeps focus on the row with the same data-key.
+ */
+export function mountTree(container: HTMLElement, rows: HTMLElement[], depths: number[], cls?: string): void {
+  const active = document.activeElement as HTMLElement | null
+  const key = active && container.contains(active) ? active.dataset.key : undefined
+  const tabStop = (row: EventTarget | undefined) => rows.forEach((r) => (r.tabIndex = r === row ? 0 : -1))
+  const tree = h('div', {
+    class: cls,
+    role: 'tree',
+    onfocusin: (event: FocusEvent) => tabStop(event.target ?? undefined),
+    onkeydown: (event: KeyboardEvent) => {
+      const i = rows.indexOf(event.target as HTMLElement)
+      if (i < 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+      const expanded = rows[i].getAttribute('aria-expanded') // null on a leaf
+      if (event.key === 'Enter' || (event.key === ' ' && expanded) || (event.key === 'ArrowRight' && expanded === 'false') || (event.key === 'ArrowLeft' && expanded === 'true')) rows[i].click()
+      else if (event.key === 'ArrowDown' || (event.key === 'ArrowRight' && expanded === 'true')) rows[i + 1]?.focus()
+      else if (event.key === 'ArrowUp') rows[i - 1]?.focus()
+      else if (event.key === 'ArrowLeft') rows[depths.lastIndexOf(depths[i] - 1, i)]?.focus()
+      else return
+      event.preventDefault()
+    }
+  }, ...rows)
+  const kept = key === undefined ? undefined : rows.find((row) => row.dataset.key === key)
+  tabStop(kept ?? rows[0])
+  container.replaceChildren(tree)
+  kept?.focus()
+}
+
 /** An inline SVG icon from the set below. */
 export function icon(name: keyof typeof ICONS, cls = ''): SVGSVGElement {
   const tpl = document.createElement('template')

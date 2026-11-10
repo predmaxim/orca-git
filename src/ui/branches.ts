@@ -1,5 +1,5 @@
 import type { BranchRef, RefsResult } from '../shared/protocol.ts'
-import { h, icon } from './dom.ts'
+import { h, icon, mountTree } from './dom.ts'
 import { t } from '../shared/i18n.ts'
 import { groupByPrefix, groupRemotes, type BranchNode } from './format.ts'
 
@@ -26,21 +26,29 @@ export function renderBranches(container: HTMLElement, host: BranchesHost, query
   }
   const q = query.trim().toLowerCase()
   const rows: HTMLElement[] = []
+  const depths: number[] = []
   const matches = (name: string) => !q || name.toLowerCase().includes(q)
 
   const group = (id: string, label: string, depth: number, count: number) => {
     const open = q !== '' || !host.collapsed.has(id)
+    depths.push(depth)
     rows.push(
       h(
         'div',
         {
           class: 'node-row group',
           style: `padding-left:${4 + depth * 14}px`,
-          onclick: () => {
-            if (host.collapsed.has(id)) host.collapsed.delete(id)
-            else host.collapsed.add(id)
-            host.onCollapse()
-          }
+          dataset: { key: id },
+          role: 'treeitem',
+          // A search shows every group open, so a group does not close then: a click would only change its saved state.
+          'aria-expanded': q ? undefined : String(open),
+          onclick: q
+            ? undefined
+            : () => {
+                if (host.collapsed.has(id)) host.collapsed.delete(id)
+                else host.collapsed.add(id)
+                host.onCollapse()
+              }
         },
         h('span', { class: 'twisty' }, icon(open ? 'chevronDown' : 'chevronRight')),
         h('span', { class: 'label' }, label),
@@ -52,12 +60,15 @@ export function renderBranches(container: HTMLElement, host: BranchesHost, query
 
   const leaf = (ref: BranchRef, kind: 'local' | 'remote' | 'tag' | 'head', label: string, depth: number, current = false) => {
     const filtered = host.filtered.includes(ref.full)
+    depths.push(depth)
     rows.push(
       h(
         'div',
         {
           class: `node-row${filtered ? ' filtered' : ''}${ref.full === host.revealed ? ' active' : ''}`,
           style: `padding-left:${4 + depth * 14 + 16}px`,
+          dataset: { key: ref.full },
+          role: 'treeitem',
           title: `${ref.full}${ref.upstream ? `\n${t('trackingTip', { upstream: ref.upstream })}` : ''}\n${t('branchRowTip', { kind: t(kind === 'tag' ? 'kindTag' : 'kindBranch') })}`,
           // The second click of a double click does nothing: filterTo toggles and would undo the first.
           onclick: (event: MouseEvent) => event.detail <= 1 && host.filterTo(ref.full),
@@ -109,5 +120,5 @@ export function renderBranches(container: HTMLElement, host: BranchesHost, query
     for (const ref of tags) leaf(ref, 'tag', ref.name, 1)
   }
 
-  container.replaceChildren(...rows)
+  mountTree(container, rows, depths)
 }
