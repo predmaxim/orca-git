@@ -37,7 +37,7 @@ export async function createPatch(git: Git, root: string, hashes: string[], path
   }
   if (typeof path !== 'string' || !path.trim()) return { ok: false, reason: t('enterFilePath') }
   const target = resolve(root, path.trim())
-  const inside = relative(root, target)
+  const inside: string = relative(root, target)
   const parts = inside.split(sep)
   // Inside the work tree, outside any .git, and through no link a repository could carry that leads elsewhere.
   const linked = () => parts.some((_, i) => lstatSync(join(root, ...parts.slice(0, i + 1)), { throwIfNoEntry: false })?.isSymbolicLink())
