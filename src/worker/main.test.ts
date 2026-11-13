@@ -4,7 +4,7 @@ import { tmpdir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { assert, hostError, mockHost, mountWorker, test } from 'orca/testing'
 import * as main from './main.ts'
-import { matchWorkspace } from './repo.ts'
+import { focusedWorkspace, matchWorkspace } from './repo.ts'
 
 const sh = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
 
@@ -176,6 +176,29 @@ test('a workspace that only exists on a remote host is reported as unsupported',
   assert.equal(resolved.ok, false)
   assert.match(resolved.ok ? '' : resolved.reason, /Remote workspaces/)
   await worker.deactivate()
+})
+
+test('a host that names the focused workspace picks it among same-named ones, whatever was picked before', async () => {
+  const a = realpathSync.native(mkdtempSync(join(tmpdir(), 'git-log-a-')))
+  const b = realpathSync.native(mkdtempSync(join(tmpdir(), 'git-log-b-')))
+  try {
+    const workspaces = [
+      { id: 'wt-a', kind: 'worktree', name: 'main', path: a, branch: 'main', hostId: null },
+      { id: 'wt-b', kind: 'worktree', name: 'main', path: b, branch: 'main', hostId: null }
+    ]
+    // The installed test kit checks results against host API 1.6, which has no workspaceId: a plain stand-in host instead.
+    const focused = (workspaceId: string) => {
+      const results: Record<string, unknown> = { 'workspace.readContext': { workspaceId, branch: 'main', displayName: 'main', terminals: [] }, 'workspace.list': { workspaces, truncated: false } }
+      return focusedWorkspace({ host: { call: async (method: string) => results[method] } } as any)
+    }
+    // Without the id the second would get the first one's workspace: same name, same branch, no terminal to tell.
+    assert.deepEqual(await focused('wt-a'), { id: 'wt-a', path: a })
+    assert.deepEqual(await focused('wt-b'), { id: 'wt-b', path: b })
+    assert.deepEqual(await focused('wt-a'), { id: 'wt-a', path: a })
+  } finally {
+    rmSync(a, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+    rmSync(b, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
 })
 
 const ANCHOR = '.orca-git-log.gitdiff'

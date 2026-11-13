@@ -305,8 +305,11 @@ keeps them all.
   the files and `git rebase --abort` fails. The banner says so and keeps giving the way back until it
   is done: run `git rebase --quit`, which stores them in the stash list, then `git stash pop --index`
   (or `git stash pop` if git reports conflicts in the index; the changes then come back unstaged).
-- When several workspaces share the same name and branch, the panel matches the focused one through
-  its terminal titles; if that is not enough it asks you to pick, and remembers the choice.
+- Orca from host API 1.7 names the focused workspace, and the panel follows it exactly. Older Orca (1.4.258
+  and before) only gives its name and branch: when several workspaces share both (many `main` worktrees),
+  the panel matches the focused one through its terminal titles; if that is not enough it asks you to pick,
+  and remembers the choice. It does not notice a switch between two such workspaces and can keep showing
+  the other one's repository; a file opened from it then opens its Diff tab in that other, hidden workspace.
 
 ## Third-party code
 

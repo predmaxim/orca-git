@@ -21,6 +21,8 @@ export interface ListedWorkspace {
 }
 
 interface Context {
+  /** The focused workspace's id in `workspace.list`; host API 1.7 and later. */
+  workspaceId?: string
   branch: string
   displayName: string
   terminals?: { id: string; title?: string }[]
@@ -76,7 +78,9 @@ export async function focusedWorkspace(
   const context = (await orca.host.call('workspace.readContext', {})) as Context | null
   if (!context) return { reason: t('openWorkspace') }
   const { workspaces } = (await orca.host.call('workspace.list', {})) as { workspaces: ListedWorkspace[] }
-  const match = matchWorkspace(context, workspaces, prefer ?? lastChoice)
+  // A host that names the focused workspace leaves nothing to guess; older ones only describe it.
+  const byId = context.workspaceId ? workspaces.find((w) => w.id === context.workspaceId) : undefined
+  const match = byId ? (isLocal(byId) ? { workspace: byId } : { remote: true as const }) : matchWorkspace(context, workspaces, prefer ?? lastChoice)
   if (!match) return { reason: t('workspaceNotFound', { name: context.displayName }) }
   if ('remote' in match) return { reason: t('remoteUnsupported') }
   if ('ambiguous' in match) {

@@ -1633,8 +1633,9 @@ orca.plugin.on('repo.changed', ({ root }: { root: string }) => {
 
 // The first event is the current context (already handled by start()); later ones mean focus moved.
 let lastContext: string | null = null
-orca.on('workspace.changed', ({ context }: { context: { branch: string; displayName: string } | null }) => {
-  const key = context ? `${context.displayName}\n${context.branch}` : ''
+orca.on('workspace.changed', ({ context }: { context: { workspaceId?: string; branch: string; displayName: string } | null }) => {
+  // The id (host API 1.7) tells apart workspaces that share a name and branch.
+  const key = context ? `${context.workspaceId ?? ''}\n${context.displayName}\n${context.branch}` : ''
   const first = lastContext === null
   if (key === lastContext) return
   lastContext = key

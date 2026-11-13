@@ -801,7 +801,9 @@ input[type='radio'] {
   inset: 28px 0 0;
   display: flex;
   align-items: center;
-  justify-content: center;
+  /* A list taller than the log (many same-named workspaces) scrolls from its top instead of spilling over the section. */
+  justify-content: safe center;
+  overflow: auto;
   flex-direction: column;
   gap: 8px;
   color: var(--muted-fg);
