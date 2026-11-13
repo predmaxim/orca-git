@@ -56,7 +56,7 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   Islands Light): file status colors, added and removed lines and words in the diff, graph lanes and
   ref icons. The interface uses the system font; code uses JetBrainsMono Nerd Font or JetBrains Mono
   when installed.
-- **Multi-select**: click, Ctrl/⌘-click, Shift-click, arrows, Page Up/Down, Home/End, Ctrl+A.
+- **Multi-select**: click, Ctrl/⌘-click, Shift-click, arrows, Page Up/Down, Home/End, Ctrl+A. A repository opens with its HEAD commit selected, so its files are listed at once.
 - **Keyboard, like lazygit**: keys while focus is in the panel and not in a field, menu or dialog.
   They go by the physical key, so they work in any keyboard layout; `?` lists them all, and tooltips
   name them ("User (Shift+U)"), and so does the right edge of each menu item. The rule: a letter acts
