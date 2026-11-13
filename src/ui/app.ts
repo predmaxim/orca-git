@@ -398,7 +398,7 @@ async function reloadLog(keepCount = false): Promise<void> {
   recompute()
   const before = selected.size
   // A repository just opened starts on its HEAD commit, once.
-  if (selectHeadOnLoad && !loading) {
+  if (selectHeadOnLoad) {
     selectHeadOnLoad = false
     const headIndex = indexByHash.get(repo?.head.hash ?? '')
     if (!selected.size && headIndex !== undefined) {
