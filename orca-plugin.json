@@ -3,7 +3,7 @@
   "manifestVersion": 2,
   "id": "git-log",
   "name": "Git",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "WebStorm-style Git log for Orca: branches, commits and the files of a multi-commit selection in the sidebar, their diffs in a Diff tab. Fork of emamalet/Orca-git-log-panel.",
   "license": "MIT",
   "repository": "https://github.com/predmaxim/orca-git",

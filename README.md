@@ -31,7 +31,7 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   reachable from HEAD are dimmed.
 - **Filters**: text or hash (with regex `.*` and match case `Cc`), Branch, User, Date and Paths.
 - **Branch tree**: HEAD, Local, Remote and Tags, with branches grouped into folders by prefix (`feature/`,
-  `fix/`); search by name. Click a branch to filter the log by it (click again to clear), double-click
+  `fix/`); search by name. A repository opens with HEAD selected, so the log shows the current branch. Click a branch to filter the log by it (click again to clear and show all branches), double-click
   to jump to its commit. Right-click for checkout, new branch from it, rename,
   delete (local only; an unmerged branch asks first), merge into the current branch and rebase the
   current branch onto it. The keys of the Files tree below work here too; Enter filters by the branch.
@@ -56,7 +56,7 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   Islands Light): file status colors, added and removed lines and words in the diff, graph lanes and
   ref icons. The interface uses the system font; code uses JetBrainsMono Nerd Font or JetBrains Mono
   when installed.
-- **Multi-select**: click, Ctrl/⌘-click, Shift-click, arrows, Page Up/Down, Home/End, Ctrl+A. A repository opens with its HEAD commit selected, so its files are listed at once.
+- **Multi-select**: click, Ctrl/⌘-click, Shift-click, arrows, Page Up/Down, Home/End, Ctrl+A.
 - **Keyboard, like lazygit**: keys while focus is in the panel and not in a field, menu or dialog.
   They go by the physical key, so they work in any keyboard layout; `?` lists them all, and tooltips
   name them ("User (Shift+U)"), and so does the right edge of each menu item. The rule: a letter acts

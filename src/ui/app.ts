@@ -397,16 +397,6 @@ async function reloadLog(keepCount = false): Promise<void> {
   loading = false
   recompute()
   const before = selected.size
-  // A repository just opened starts on its HEAD commit, once.
-  if (selectHeadOnLoad) {
-    selectHeadOnLoad = false
-    const headIndex = indexByHash.get(repo?.head.hash ?? '')
-    if (!selected.size && headIndex !== undefined) {
-      selected.add(rows[headIndex].hash)
-      anchor = headIndex
-      ensureVisible(headIndex)
-    }
-  }
   for (const hash of [...selected]) if (!indexByHash.has(hash)) selected.delete(hash)
   cursor = selected.size ? Math.min(...[...selected].map((h) => indexByHash.get(h)!)) : -1
   if (anchor >= rows.length) anchor = cursor
@@ -520,20 +510,18 @@ const scheduleRefresh = (delay = 200) => {
   changeTimer = setTimeout(() => void refreshAll(), delay)
 }
 
-let selectHeadOnLoad = false
-
 function setRepo(next: RepoInfo): void {
   const same = repo?.root === next.root
   repo = next
   loadError = null
   if (!same) {
-    selectHeadOnLoad = true
     selected.clear()
     detailsKey = ''
     detailsCache.clear()
     anchor = cursor = -1
     updateFiles()
-    filter = { ...filter, branches: [] }
+    // A repository opens on HEAD in the branch tree, as a click on it does.
+    filter = { ...filter, branches: ['HEAD'] }
     viewport.scrollTop = 0
     document.title = t('docTitle', { name: next.name })
     void api.watch(next.root).catch(() => undefined)
