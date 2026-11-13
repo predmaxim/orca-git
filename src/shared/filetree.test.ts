@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { SelectionFile } from '../shared/protocol.ts'
+import type { SelectionFile } from './protocol.ts'
 import { buildFileTree, orderedFiles } from './filetree.ts'
 
 const file = (path: string): SelectionFile => ({ path, status: 'M', from: 'a', to: 'b' })

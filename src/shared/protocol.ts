@@ -300,8 +300,8 @@ declare module 'orca' {
     /** `name`: the full ref, as for `rebaseOnto`. */
     'branch.check': { input: { root: string; name: string }; output: { pushed: string[] } }
     'repo.fetch': { input: { root: string; id?: string }; output: ActionResult }
-    /** Shows the state in the Diff tab of the workspace that holds `root`, opening the tab if needed. */
-    'diff.open': { input: DiffTabState; output: { ok: boolean; reason?: string } }
+    /** Opens the Diff tab on the file `path` changed by commit `to` in the selection `hashes`; the worker lists the files. */
+    'diff.open': { input: { root: string; hashes: string[]; path: string; to: string }; output: { ok: boolean; reason?: string } }
     /** Brings forward the Diff tab `diff.open` showed for `root`, without reloading it; `ok: false` if none was shown. */
     'diff.focus': { input: { root: string }; output: { ok: boolean; reason?: string } }
     'diff.state': { input: { root: string }; output: DiffTabState | null }

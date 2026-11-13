@@ -2,7 +2,8 @@ import type { ActionRequest, ActionResult, BackupDelete, BackupRequest, BranchAc
 import { api, copyText, errorMessage, orca, timedOut } from './api.ts'
 import { backupBlock, suggestBackupName, type BackupBlock } from './backup.ts'
 import { lateResults } from './late.ts'
-import { buildFileTree, dirPaths, orderedFiles, renderFileTree, type FileNode } from './filetree.ts'
+import { buildFileTree, orderedFiles, type FileNode } from '../shared/filetree.ts'
+import { dirPaths, renderFileTree } from './filetree.ts'
 import { renderBranches } from './branches.ts'
 import { renderCommitList, renderPlaceholder } from './details.ts'
 import { askCheckout, askName, askPatch, askRebasePlan, askReset, busy, confirm, dialog, editMessage, overwrittenWarning, pushedWarning } from './dialogs.ts'
@@ -191,7 +192,7 @@ function showBanner(text: string, kind: 'success' | 'error' | 'info', actions: {
       )
     )
   )
-  if (!sticky && kind !== 'error') bannerTimer = setTimeout(hideBanner, actions.length ? 15_000 : 6_000)
+  if (!sticky) bannerTimer = setTimeout(hideBanner, kind === 'error' ? 60_000 : actions.length ? 15_000 : 6_000)
 }
 
 /**
@@ -864,6 +865,8 @@ function copyHashes(): void {
 
 /** The files changed by the whole selection, in drawn order; the diff shows one of them. */
 let selectionFiles: SelectionFile[] = []
+/** The selection `selectionFiles` lists: the worker lists the same files again to open the Diff tab. */
+let filesHashes: string[] = []
 let fileTree: FileNode[] = []
 let currentFile: string | null = null
 let filesToken = 0
@@ -914,6 +917,7 @@ function updateFiles(): void {
     .selectionFiles(repo.root, hashes)
     .then((files) => {
       if (token !== filesToken) return
+      filesHashes = hashes
       fileTree = buildFileTree(files)
       selectionFiles = orderedFiles(fileTree)
       openFolders.clear()
@@ -1495,10 +1499,8 @@ fetchButton.addEventListener('click', async () => {
   }
 })
 async function openDiff(root: string, index: number): Promise<void> {
-  // shortcut: the worker takes at most 2000 files, so a larger selection sends the 2000 around the clicked one; send them all once the limit goes.
-  const first = clamp(index - 1000, 0, Math.max(0, selectionFiles.length - 2000))
   try {
-    const result = await api.openDiff({ root, files: selectionFiles.slice(first, first + 2000), index: index - first })
+    const result = await api.openDiff(root, filesHashes, selectionFiles[index])
     if (!result.ok) showBanner(result.reason ?? t('openDiffFailed'), 'error')
   } catch (error) {
     showBanner(errorMessage(error), 'error')

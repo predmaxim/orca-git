@@ -287,6 +287,8 @@ keeps them all.
   has **Restore <branch> to This Backup…** (`git reset --keep`, with its own confirmation and backup
   offer; git refuses if it would overwrite local changes) and **Delete Backup** (only for `backup/`
   names, and only while the ref still points where the tree showed it).
+- **Banner** at the top of the panel: a result or a notice hides after 6 s (15 s with buttons), an error
+  after a minute; one that must be acted on (a stash name, git warnings) stays until you close it.
 - Settings: **Offer a backup before risky operations** (on) and **Backup kind** (branch). The last kind
   picked in a dialog is remembered there.
 
@@ -295,7 +297,9 @@ keeps them all.
 - Local workspaces only: SSH, WSL and paired-host workspaces are not supported yet.
 - The diff viewer is read-only, and very large diffs are cut after 20,000 lines.
 - The Diff tab steps through at most 2,000 files: for a larger selection it gets the 2,000 around the
-  file you clicked.
+  file you clicked. The panel sends only the selected commits and the clicked file, and the worker lists
+  the files again: Orca refuses a frame message over 65 KiB ("message too large", Orca as of 2026-11-13),
+  which a list of a thousand files exceeds.
 - The Diff tab's content lives in the plugin's worker: after Orca restarts, a restored Diff tab shows
   its placeholder until you open a file again.
 - Conflicts during a rewrite, cherry-pick or revert are not resolved in the panel; the operation is

@@ -6,7 +6,8 @@ import type { ActionResult, DiffTabState, RepoResult } from '../shared/protocol.
 import { checkRewrite, runAction } from './actions.ts'
 import { checkBackup, checkReset, deleteBackup, runGuarded } from './backup.ts'
 import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
-import { DIFF_ANCHOR, validDiffState, workspaceFor } from './diffTab.ts'
+import { DIFF_ANCHOR, workspaceFor } from './diffTab.ts'
+import { buildFileTree, orderedFiles } from '../shared/filetree.ts'
 import { createGit, type Git } from './git.ts'
 import { readDetails, readLogPage, readRefs } from './log.ts'
 import { resolveRepo, toplevel } from './repo.ts'
@@ -151,13 +152,22 @@ async function diffTab(root: string): Promise<{ workspaceId: string; path: strin
   return { workspaceId: workspace.id, path: DIFF_ANCHOR }
 }
 
+/**
+ * Opens the Diff tab on the file `path` changed by commit `to` in the selection `hashes`. The worker lists the files itself:
+ * a frame message is capped at 65 KiB, too little for a large selection's list.
+ */
 async function openDiff(input: any): Promise<{ ok: boolean; reason?: string }> {
-  if (!validDiffState(input)) return { ok: false, reason: t('diffInvalid') }
-  const root: string = input.root
+  const { root, hashes, path, to } = input ?? {}
+  if (typeof path !== 'string' || typeof to !== 'string') return { ok: false, reason: t('diffInvalid') }
+  const files = orderedFiles(buildFileTree(await readSelectionFiles(await gitFor(root), hashes)))
+  const index = files.findIndex((file) => file.path === path && file.to === to)
+  if (index < 0) return { ok: false, reason: t('diffInvalid') }
   const tab = await diffTab(root)
   if ('reason' in tab) return { ok: false, reason: tab.reason }
+  // shortcut: a response to a frame is capped too, so the tab gets at most 2000 files around the clicked one; send them all once it can page.
+  const first = Math.min(Math.max(0, index - 1000), Math.max(0, files.length - 2000))
   const previous = diffStates.get(root)
-  diffStates.set(root, { root, files: input.files, index: input.index })
+  diffStates.set(root, { root, files: files.slice(first, first + 2000), index: index - first })
   try {
     await orcaApi.host.call('editor.open', tab)
   } catch (error) {

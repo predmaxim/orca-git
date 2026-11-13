@@ -203,15 +203,19 @@ test('a host that names the focused workspace picks it among same-named ones, wh
 
 const ANCHOR = '.orca-git-log.gitdiff'
 
+/** A `diff.open` request for `three.txt` in a selection of the last two commits, and the state the tab gets. */
 function diffState(root: string) {
-  const [to, from] = sh(root, 'rev-list', '-2', 'HEAD').split('\n')
+  const [three, two, one] = sh(root, 'rev-list', '-3', 'HEAD').split('\n')
   return {
-    root,
-    files: [
-      { status: 'R', path: 'one.txt', oldPath: 'uno.txt', from, to },
-      { status: 'A', path: 'three.txt', from: null, to }
-    ],
-    index: 1
+    request: { root, hashes: [three, two], path: 'three.txt', to: three },
+    state: {
+      root,
+      files: [
+        { status: 'A', path: 'three.txt', from: two, to: three },
+        { status: 'A', path: 'two.txt', from: one, to: two }
+      ],
+      index: 0
+    }
   }
 }
 
@@ -220,8 +224,8 @@ test('opening a file shows it in the Diff tab of the workspace that holds its re
   try {
     const h = host(root)
     const worker = await mountWorker(main, { host: h })
-    const state = diffState(root)
-    assert.deepEqual(await worker.request('diff.open', state), { ok: true })
+    const { request, state } = diffState(root)
+    assert.deepEqual(await worker.request('diff.open', request), { ok: true })
     assert.deepEqual(h.callsOf('editor.open'), [{ workspaceId: 'wt-1', path: ANCHOR }])
     assert.deepEqual(JSON.parse(readFileSync(join(root, ANCHOR), 'utf8')), { root, workspaceId: 'wt-1' })
     assert.match(readFileSync(join(root, '.git', 'info', 'exclude'), 'utf8'), /^\.orca-git-log\.gitdiff$/m)
@@ -242,7 +246,7 @@ test('a Diff tab that fails to open leaves no state for a later one to show', as
       throw hostError('action_failed', 'no editor')
     }
     const worker = await mountWorker(main, { host: host(root, {}, { 'editor.open': failing }) })
-    await assert.rejects(worker.request('diff.open', diffState(root)))
+    await assert.rejects(worker.request('diff.open', diffState(root).request))
     assert.equal(await worker.request('diff.state', { root }), null)
     await worker.deactivate()
   } finally {
@@ -255,8 +259,8 @@ test('going to an open Diff tab shows it again without reloading it', async () =
   try {
     const h = host(root)
     const worker = await mountWorker(main, { host: h })
-    const state = diffState(root)
-    await worker.request('diff.open', state)
+    const { request, state } = diffState(root)
+    await worker.request('diff.open', request)
     const posted = worker.posts.length
     assert.deepEqual(await worker.request('diff.focus', { root }), { ok: true })
     assert.deepEqual(h.callsOf('editor.open'), [
@@ -284,36 +288,23 @@ test('going to the Diff tab of a repository it never showed opens nothing', asyn
   }
 })
 
-test('a Diff tab state with bad files, hashes or index opens nothing', async () => {
+test('a Diff tab request with a bad selection or a file outside it opens nothing', async () => {
   const root = fixture()
   try {
     const h = host(root)
     const worker = await mountWorker(main, { host: h })
-    const good = diffState(root)
-    const file = good.files[0]
+    const good = diffState(root).request
     const bad: object[] = [
-      { files: 'one.txt' },
-      { files: [] },
-      { files: Array(2001).fill(file) },
-      { files: [null] },
-      { files: [, file] },
-      { files: [{ ...file, path: '' }] },
-      { files: [{ ...file, path: 'a\0b' }] },
-      { files: [{ ...file, path: 1 }] },
-      { files: [{ ...file, oldPath: '' }] },
-      { files: [{ ...file, oldPath: 'a\0b' }] },
-      { files: [{ ...file, status: 'X' }] },
-      { files: [{ ...file, status: 'MM' }] },
-      { files: [{ ...file, from: 'HEAD' }] },
-      { files: [{ ...file, to: null }] },
-      { files: [{ ...file, to: file.to.toUpperCase() }] },
-      { index: -1 },
-      { index: 2 },
-      { index: 0.5 },
-      { index: '0' }
+      { path: 1 },
+      { to: null },
+      { path: 'one.txt' },
+      { to: good.hashes[1] },
+      { hashes: [good.hashes[1]] }
     ]
+    const refused: object[] = [{ hashes: [] }, { hashes: 'HEAD' }, { hashes: ['HEAD'] }, { hashes: Array(501).fill(good.to) }]
+    for (const change of refused) await assert.rejects(worker.request('diff.open', { ...good, ...change }), JSON.stringify(change).slice(0, 100))
     for (const change of bad) {
-      const result = await worker.request('diff.open', { ...good, index: 0, ...change })
+      const result = await worker.request('diff.open', { ...good, ...change })
       assert.deepEqual(result, { ok: false, reason: 'Invalid list of files.' }, JSON.stringify(change).slice(0, 100))
     }
     assert.deepEqual(h.callsOf('editor.open'), [])
@@ -333,7 +324,7 @@ test('a repository that no workspace holds opens no Diff tab', async () => {
   try {
     const h = host(root)
     const worker = await mountWorker(main, { host: h })
-    const result = await worker.request('diff.open', diffState(other))
+    const result = await worker.request('diff.open', diffState(other).request)
     assert.deepEqual(result, { ok: false, reason: 'No open workspace holds this repository. Nothing was opened.' })
     assert.deepEqual(h.callsOf('editor.open'), [])
     assert.deepEqual(worker.posts, [started])
@@ -368,7 +359,7 @@ test('an anchor name taken by anything but the plugin\'s own anchor opens nothin
     for (const [name, make] of taken) {
       make()
       const content = lstatSync(anchor).isFile() ? readFileSync(anchor, 'utf8') : null
-      const result = await worker.request('diff.open', diffState(root))
+      const result = await worker.request('diff.open', diffState(root).request)
       assert.deepEqual(result, { ok: false, reason: `${anchor} already exists and is not the plugin's file. Nothing was opened.` }, name)
       if (content !== null) assert.equal(readFileSync(anchor, 'utf8'), content, name)
       rmSync(anchor, { recursive: true, force: true })
@@ -395,7 +386,7 @@ test('a FIFO under the anchor name is refused without blocking', async () => {
     }
     const h = host(root)
     const worker = await mountWorker(main, { host: h })
-    const result = await worker.request('diff.open', diffState(root))
+    const result = await worker.request('diff.open', diffState(root).request)
     assert.deepEqual(result, { ok: false, reason: `${anchor} already exists and is not the plugin's file. Nothing was opened.` })
     assert.ok(lstatSync(anchor).isFIFO())
     assert.ok(!readFileSync(join(root, '.git', 'info', 'exclude'), 'utf8').includes(ANCHOR))
@@ -413,7 +404,7 @@ test('a workspace the anchor cannot be created in says why and opens nothing', a
     const h = host(root)
     const worker = await mountWorker(main, { host: h })
     chmodSync(root, 0o555)
-    const result = await worker.request('diff.open', diffState(root))
+    const result = await worker.request('diff.open', diffState(root).request)
     chmodSync(root, 0o755)
     assert.deepEqual(result, { ok: false, reason: `Could not create ${join(root, ANCHOR)}: EACCES. Nothing was opened.` })
     assert.ok(!existsSync(join(root, ANCHOR)))
@@ -431,15 +422,16 @@ test('the plugin\'s own anchor is not rewritten on the next file', async () => {
   try {
     const h = host(root)
     const worker = await mountWorker(main, { host: h })
-    assert.deepEqual(await worker.request('diff.open', diffState(root)), { ok: true })
+    assert.deepEqual(await worker.request('diff.open', diffState(root).request), { ok: true })
     const anchor = join(root, ANCHOR)
     const content = readFileSync(anchor, 'utf8')
     utimesSync(anchor, 1_000_000, 1_000_000)
-    assert.deepEqual(await worker.request('diff.open', { ...diffState(root), index: 0 }), { ok: true })
+    const { request } = diffState(root)
+    assert.deepEqual(await worker.request('diff.open', { ...request, path: 'two.txt', to: request.hashes[1] }), { ok: true })
     assert.equal(statSync(anchor).mtimeMs, 1_000_000_000)
     assert.equal(readFileSync(anchor, 'utf8'), content)
     assert.equal(h.callsOf('editor.open').length, 2)
-    assert.equal((await worker.request('diff.state', { root }))?.index, 0)
+    assert.equal((await worker.request('diff.state', { root }))?.index, 1)
     await worker.deactivate()
   } finally {
     rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
@@ -450,15 +442,15 @@ test('stepping to another file in the Diff tab updates its state and tells the s
   const root = fixture()
   try {
     const worker = await mountWorker(main, { host: host(root) })
-    await worker.request('diff.open', diffState(root))
+    await worker.request('diff.open', diffState(root).request)
     const posts = worker.posts.length
-    assert.deepEqual(await worker.request('diff.index', { root, index: 0 }), { ok: true })
-    assert.deepEqual(worker.posts.at(-1), { event: 'diff.current', payload: { root, path: 'one.txt' } })
-    assert.equal((await worker.request('diff.state', { root }))?.index, 0)
+    assert.deepEqual(await worker.request('diff.index', { root, index: 1 }), { ok: true })
+    assert.deepEqual(worker.posts.at(-1), { event: 'diff.current', payload: { root, path: 'two.txt' } })
+    assert.equal((await worker.request('diff.state', { root }))?.index, 1)
     const bad: any[] = [{ root, index: 2 }, { root, index: -1 }, { root, index: 0.5 }, { root, index: '1' }, { root: tmpdir(), index: 0 }, { index: 0 }]
     for (const input of bad) assert.deepEqual(await worker.request('diff.index', input), { ok: false }, JSON.stringify(input))
     assert.equal(worker.posts.length, posts + 1)
-    assert.equal((await worker.request('diff.state', { root }))?.index, 0)
+    assert.equal((await worker.request('diff.state', { root }))?.index, 1)
     await worker.deactivate()
   } finally {
     rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })

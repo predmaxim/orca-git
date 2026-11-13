@@ -75,7 +75,8 @@ export const api = {
     call('backup.check', { root, kind, name }),
   resetCheck: (root: string, target: string): Promise<ResetCheck> => call('reset.check', { root, target }, LONG),
   fetch: (root: string, id: string): Promise<ActionResult> => call('repo.fetch', { root, id }, LONG),
-  openDiff: (state: DiffTabState): Promise<{ ok: boolean; reason?: string }> => call('diff.open', state),
+  openDiff: (root: string, hashes: string[], file: SelectionFile): Promise<{ ok: boolean; reason?: string }> =>
+    call('diff.open', { root, hashes, path: file.path, to: file.to }),
   focusDiff: (root: string): Promise<{ ok: boolean; reason?: string }> => call('diff.focus', { root }),
   diffState: (root: string): Promise<DiffTabState | null> => call('diff.state', { root }),
   diffIndex: (root: string, index: number): Promise<{ ok: boolean }> => call('diff.index', { root, index })
