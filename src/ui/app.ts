@@ -520,6 +520,8 @@ function setRepo(next: RepoInfo): void {
   repo = next
   loadError = null
   if (!same) {
+    // The old repository's branches would lend the new HEAD their upstream counts until loadRefs answers.
+    refs = null
     selected.clear()
     detailsKey = ''
     detailsCache.clear()

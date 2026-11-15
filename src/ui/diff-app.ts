@@ -14,8 +14,7 @@ const applyColors = () =>
     .then((settings) => (document.documentElement.dataset.diffColors = settings.diffColors === 'webstorm' ? 'webstorm' : 'orca'))
     .catch(() => undefined)
 applyColors()
-// An Orca without the listener (older than the one this was made on) applies a change when the tab reopens.
-orca.settings.onDidChange?.(({ key }) => key === 'diffColors' && applyColors())
+orca.settings.onDidChange(({ key }) => key === 'diffColors' && applyColors())
 
 type Typography = { cssFontFamily: string; fontSize: number; fontWeight: string; lineHeight: number; fontLigatures: boolean }
 /** Orca's file editor font, for the Orca colors; Monaco reads a line height under 8 as a multiple of the font size and 0 as its own default. */

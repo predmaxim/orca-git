@@ -35,7 +35,7 @@ interface FrameOrca {
   settings: {
     get(): Promise<Record<string, unknown>>
     set(key: string, value: unknown): Promise<void>
-    onDidChange?(listener: (change: { key: string }) => void): Disposable
+    onDidChange(listener: (change: { key: string }) => void): Disposable
   }
   host: { has(method: string): boolean; call(method: string, params?: unknown): Promise<any> }
   document?: { get(): Promise<{ content: { kind: string; text?: string } }> }
