@@ -74,6 +74,8 @@ export function mdDom(source: string, open: (url: string) => void): DocumentFrag
         e.preventDefault()
         open(href)
       })
+      // A middle click opens a link without a click event: it must not navigate either.
+      el.addEventListener('auxclick', (e) => e.preventDefault())
     }
     for (const c of n.children) el.append(build(c))
     return el

@@ -1987,6 +1987,229 @@ input[type='radio']:focus-visible {
   opacity: 0.75;
 }
 
+/* ---------- Review notes (notes.ts) ---------- */
+
+.diff-lines .note-mark {
+  background: color-mix(in srgb, var(--state-wait) 28%, transparent);
+  border-radius: 2px;
+}
+
+/* While a selection is made, data-pick names its side: the other side and the cards stay out of it. */
+.diff-lines.split[data-pick='old'] .d-code:nth-child(4),
+.diff-lines.split[data-pick='new'] .d-code:nth-child(2),
+.diff-lines.unified[data-pick='old'] .d-code.add,
+.diff-lines.unified[data-pick='new'] .d-code.del,
+.diff-lines[data-pick] .d-note {
+  user-select: none;
+}
+
+.diff-lines.split .d-notes > :nth-child(2) {
+  border-right: 1px solid var(--border);
+}
+
+/* A card is interface, not code: the panel's font on the muted plate. */
+.diff-lines .d-note,
+.diff-lines .d-note-edit {
+  margin: 4px 10px;
+  font: 13px/1.45 var(--font-ui);
+  letter-spacing: 0.01em;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  color: var(--fg);
+}
+
+.diff-lines .d-note {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+}
+
+/* The buttons keep the card's padding: they reach into it rather than make the card taller. */
+.d-note-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -4px -6px 4px 0;
+}
+
+.d-note-head .spacer {
+  flex: 1;
+}
+
+/* A state: a tint of its colour, the border a stronger one, as the notices are. */
+.d-label {
+  --tone: var(--muted-fg);
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--tone) 45%, transparent);
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--tone) 12%, transparent);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.d-label.confirmed,
+.d-label.fixed {
+  --tone: var(--state-done);
+}
+
+.d-label.refuted {
+  --tone: var(--state-info);
+}
+
+.d-label.unclear {
+  --tone: var(--state-wait);
+}
+
+.d-note-reply {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.d-note-caption {
+  margin-bottom: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted-fg);
+}
+
+.d-note .md > * {
+  margin: 0 0 6px;
+}
+
+.d-note .md > :last-child {
+  margin-bottom: 0;
+}
+
+.d-note .md :is(ul, ol) {
+  padding-left: 18px;
+}
+
+.d-note .md blockquote {
+  padding-left: 8px;
+  border-left: 2px solid var(--border);
+  color: var(--muted-fg);
+}
+
+.d-note .md :is(code, pre) {
+  font-family: var(--font-code);
+  font-size: 12px;
+}
+
+.d-note .md code {
+  padding: 0 3px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+
+.d-note .md pre {
+  padding: 6px 8px;
+  overflow: auto;
+  white-space: pre;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+
+.d-note .md pre code {
+  padding: 0;
+  background: none;
+}
+
+.d-note .md a {
+  color: var(--primary);
+}
+
+.d-note-input {
+  display: block;
+  width: 100%;
+}
+
+.d-note-error {
+  margin-top: 4px;
+  color: var(--danger);
+}
+
+.d-note-error:empty {
+  display: none;
+}
+
+/* The button at the end of a selection floats over the code. */
+.tool.note-add {
+  position: fixed;
+  z-index: 40;
+  width: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  background: var(--popover);
+  color: var(--popover-fg);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 25%);
+}
+
+.tool.note-add:hover {
+  background: var(--selected-focus);
+}
+
+.notes-list {
+  width: 400px;
+  max-width: 100%;
+}
+
+.notes-head {
+  display: flex;
+  gap: 4px;
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.notes-item {
+  display: flex;
+  align-items: flex-start;
+  border-radius: var(--radius-sm);
+}
+
+.notes-item:hover {
+  background: var(--selected);
+}
+
+.notes-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  text-align: left;
+  cursor: default;
+}
+
+.notes-open > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notes-where {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.notes-where .path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+
+.notes-empty {
+  padding: 8px;
+}
+
 /* Code colors by the diffColors setting (data-diff-colors on <html>, set by diff-app.ts); Orca gives frames no editor colors.
    Orca: Monaco's vs-dark and vs, which Orca 1.4.258's file editor uses with a theme that brings no editor colors, on Orca's
    background. WebStorm: WebStorm 2026.2.3's Islands Dark (IslandSchemeDark.xml over Darcula) and Islands Light

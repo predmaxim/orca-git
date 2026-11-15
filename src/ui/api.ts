@@ -13,6 +13,8 @@ import type {
   FileDiff,
   LogFilter,
   LogPage,
+  NoteDraft,
+  NoteResult,
   PatchResult,
   PushPlan,
   PushRequest,
@@ -20,6 +22,7 @@ import type {
   RefsResult,
   RepoResult,
   ResetCheck,
+  ReviewNote,
   RewriteKind,
   SelectionFile
 } from '../shared/protocol.ts'
@@ -42,6 +45,8 @@ interface FrameOrca {
   }
   host: { has(method: string): boolean; call(method: string, params?: unknown): Promise<any> }
   document?: { get(): Promise<{ content: { kind: string; text?: string } }> }
+  /** Desktop frames only; needs a click or key press in the frame. */
+  shell?: { openExternal(url: string): Promise<unknown> }
 }
 
 export const orca = (globalThis as unknown as { orca: FrameOrca }).orca
@@ -88,7 +93,11 @@ export const api = {
     call('diff.open', { root, hashes, path: file.path, to: file.to }),
   focusDiff: (root: string): Promise<{ ok: boolean; reason?: string }> => call('diff.focus', { root }),
   diffState: (root: string): Promise<DiffTabState | null> => call('diff.state', { root }),
-  diffIndex: (root: string, index: number): Promise<{ ok: boolean }> => call('diff.index', { root, index })
+  diffIndex: (root: string, index: number): Promise<{ ok: boolean }> => call('diff.index', { root, index }),
+  notes: (root: string): Promise<{ notes: ReviewNote[] }> => call('notes.list', { root }),
+  noteAdd: (root: string, draft: NoteDraft): Promise<NoteResult> => call('notes.add', { root, draft }),
+  noteUpdate: (root: string, id: string, body: string): Promise<NoteResult> => call('notes.update', { root, id, body }),
+  notesDelete: (root: string, ids: string[]): Promise<{ ok: boolean }> => call('notes.delete', { root, ids })
 }
 
 export function errorMessage(error: unknown): string {

@@ -1,4 +1,4 @@
-import type { DiffHunk, DiffLine, FileDiff, SelectionFile } from '../shared/protocol.ts'
+import type { DiffHunk, DiffLine, FileDiff, NoteSide, SelectionFile } from '../shared/protocol.ts'
 import { api, errorMessage } from './api.ts'
 import { h, icon } from './dom.ts'
 import { changedRange, changeStarts, splitRows } from './diffmodel.ts'
@@ -7,6 +7,7 @@ import { shortHash, statusName } from './format.ts'
 import { t } from '../shared/i18n.ts'
 import { highlightLines, languageFor, markRange } from './highlight.ts'
 import { findKey, withKey } from './keys.ts'
+import { mountNotes, type NotesView } from './notes.ts'
 
 export type DiffMode = 'split' | 'unified'
 
@@ -37,10 +38,9 @@ function wordRanges(hunks: DiffHunk[]): Map<DiffLine, [number, number]> {
   return ranges
 }
 
-/** Highlighted HTML per line: each hunk's old side (context and `-`) and new side (context and `+`) are highlighted on their own. */
+/** HTML per line, highlighted when the language is known: each hunk's old side (context and `-`) and new side (context and `+`) are highlighted on their own. */
 function highlightHunks(hunks: DiffHunk[], language: string | null): Map<DiffLine, string> {
   const html = new Map<DiffLine, string>()
-  if (!language) return html
   for (const hunk of hunks) {
     for (const [side, skip] of [['new', '-'], ['old', '+']] as const) {
       const lines = hunk.lines.filter((line) => line.kind !== skip)
@@ -52,25 +52,19 @@ function highlightHunks(hunks: DiffHunk[], language: string | null): Map<DiffLin
   return html
 }
 
-function code(line: DiffLine | undefined, ranges: Map<DiffLine, [number, number]>, html: Map<DiffLine, string>): HTMLElement {
+/** A cell of code; `sides` are the line's numbers on the sides the cell shows, which notes and selections go by. */
+function code(line: DiffLine | undefined, sides: Partial<Record<NoteSide, number>>, ranges: Map<DiffLine, [number, number]>, html: Map<DiffLine, string>, notes: NotesView): HTMLElement {
   if (!line) return h('div', { class: 'd-code d-empty' })
   const range = ranges.get(line)
-  const cls = `d-code ${line.kind === '+' ? 'add' : line.kind === '-' ? 'del' : ''}`
-  const colored = html.get(line)
-  if (colored !== undefined) {
-    const el = h('div', { class: cls })
-    const marked = range && range[0] !== range[1] ? markRange(colored, range[0], range[1], 'word') : colored
-    el.innerHTML = marked || '\u200b'
-    return el
+  let marked = html.get(line) ?? ''
+  if (range && range[0] !== range[1]) marked = markRange(marked, range[0], range[1], 'word')
+  for (const side of ['old', 'new'] as const) {
+    const n = sides[side]
+    if (n !== undefined) marked = notes.mark(marked, side, n, line.text.length)
   }
-  if (!range || range[0] === range[1]) return h('div', { class: cls }, line.text || '\u200b')
-  return h(
-    'div',
-    { class: cls },
-    line.text.slice(0, range[0]),
-    h('span', { class: 'word' }, line.text.slice(range[0], range[1])),
-    line.text.slice(range[1])
-  )
+  const el = h('div', { class: `d-code ${line.kind === '+' ? 'add' : line.kind === '-' ? 'del' : ''}`, 'data-old': sides.old, 'data-new': sides.new })
+  el.innerHTML = marked || '\u200b'
+  return el
 }
 
 const num = (value: number | undefined, kind?: string) =>
@@ -79,12 +73,20 @@ const num = (value: number | undefined, kind?: string) =>
 const hunkRow = (hunk: DiffHunk) =>
   h('div', { class: 'd-hunk' }, `@@ -${hunk.oldStart} +${hunk.newStart} @@`, hunk.section ? h('span', { class: 'section' }, hunk.section) : null)
 
-/** The single place that turns hunks into rows. */
-function renderLines(diff: FileDiff, mode: DiffMode): { rows: HTMLElement[]; changes: HTMLElement[] } {
+/** The single place that turns hunks into rows; the rows of notes follow the lines they end on. */
+function renderLines(diff: FileDiff, mode: DiffMode, notes: NotesView): { rows: HTMLElement[]; changes: HTMLElement[] } {
   const ranges = wordRanges(diff.hunks)
   const html = highlightHunks(diff.hunks, languageFor(diff.path))
   const rows: HTMLElement[] = []
   const changed: boolean[] = []
+  // A note row belongs to the block of the line above it, so F7 does not stop at it.
+  const after = (side: NoteSide, line: number | undefined) => {
+    if (line === undefined) return
+    for (const row of notes.rowsAfter(side, line, mode)) {
+      rows.push(row)
+      changed.push(changed[changed.length - 1])
+    }
+  }
   for (const hunk of diff.hunks) {
     if (diff.hunks.length > 1 || hunk.oldStart > 1 || hunk.newStart > 1) {
       rows.push(hunkRow(hunk))
@@ -94,14 +96,25 @@ function renderLines(diff: FileDiff, mode: DiffMode): { rows: HTMLElement[]; cha
       for (const { left, right } of splitRows(hunk)) {
         const isChange = left?.kind !== ' ' || right?.kind !== ' '
         rows.push(
-          h('div', { class: `d-row${isChange ? ' change' : ''}` }, num(left?.old, left?.kind), code(left, ranges, html), num(right?.new, right?.kind), code(right, ranges, html))
+          h(
+            'div',
+            { class: `d-row${isChange ? ' change' : ''}` },
+            num(left?.old, left?.kind),
+            code(left, { old: left?.old }, ranges, html, notes),
+            num(right?.new, right?.kind),
+            code(right, { new: right?.new }, ranges, html, notes)
+          )
         )
         changed.push(isChange)
+        after('old', left?.old)
+        after('new', right?.new)
       }
     } else {
       for (const line of hunk.lines) {
-        rows.push(h('div', { class: `d-row${line.kind === ' ' ? '' : ' change'}` }, num(line.old, line.kind), num(line.new, line.kind), code(line, ranges, html)))
+        rows.push(h('div', { class: `d-row${line.kind === ' ' ? '' : ' change'}` }, num(line.old, line.kind), num(line.new, line.kind), code(line, { old: line.old, new: line.new }, ranges, html, notes)))
         changed.push(line.kind !== ' ')
+        after('old', line.old)
+        after('new', line.new)
       }
     }
   }
@@ -113,8 +126,8 @@ export function showDiffPlaceholder(container: HTMLElement): void {
   container.replaceChildren(h('div', { class: 'diff-view' }, h('div', { class: 'diff-note muted' }, t('diffSelectFile'))))
 }
 
-/** Shows `files[index]` in the container; Alt+↑/↓ moves between files, F7 between changes. */
-export function mountDiff(container: HTMLElement, options: DiffOptions): { dispose(): void } {
+/** Shows `files[index]` in the container; Alt+↑/↓ moves between files, F7 between changes, Ctrl+Shift+A notes the selection. */
+export function mountDiff(container: HTMLElement, options: DiffOptions): { notes: NotesView; dispose(): void } {
   const { root, files, onPrefs, onIndex } = options
   let index = Math.max(0, Math.min(options.index, files.length - 1))
   let mode = options.mode
@@ -127,6 +140,31 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { dispo
   const counter = h('span', { class: 'muted' })
   const info = h('div', { class: 'diff-info mono muted' })
   const body = h('div', { class: 'diff-body', tabindex: '-1' })
+  const notes = mountNotes({
+    root,
+    files,
+    rerender: () => {
+      const top = body.scrollTop
+      render()
+      body.scrollTop = top
+    },
+    show: (next, whole, then) => {
+      const ready = next === index && (wholeFile || !whole) && diff !== null
+      if (next !== index) {
+        index = next
+        onIndex(index)
+      }
+      if (whole && !wholeFile) {
+        wholeFile = true
+        onPrefs(mode, wholeFile)
+      }
+      if (ready) then()
+      else
+        void load().then((shown) => {
+          if (shown) then()
+        })
+    }
+  })
   const arrow = (name: 'left' | 'right', tip: string, run: () => void) => h('button', { class: 'tool', title: tip, 'aria-label': tip, onclick: run }, icon(name))
   const prevFile = arrow('left', t('diffPrevFile'), () => go(index - 1))
   const nextFile = arrow('right', t('diffNextFile'), () => go(index + 1))
@@ -149,6 +187,7 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { dispo
       h('span', { class: 'sep' }),
       title,
       h('div', { class: 'spacer' }),
+      ...notes.buttons,
       h('div', { class: 'seg' }, splitButton, unifiedButton),
       wholeButton
     ),
@@ -188,26 +227,31 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { dispo
       return
     }
     const digits = String(Math.max(...diff.hunks.map((x) => Math.max(x.oldStart, x.newStart) + x.lines.length))).length
-    const rendered = renderLines(diff, mode)
+    const lines = h('div', { class: `diff-lines ${mode}`, style: `--num-w: ${digits + 2}ch` })
+    notes.attach(lines, diff, files[index], mode)
+    const rendered = renderLines(diff, mode, notes)
     changes = rendered.changes
-    const lines = h('div', { class: `diff-lines ${mode}`, style: `--num-w: ${digits + 2}ch` }, ...rendered.rows)
+    lines.append(...rendered.rows)
     body.replaceChildren(...(diff.truncated ? [note(t('diffTruncated'))] : []), lines)
   }
 
-  async function load(): Promise<void> {
+  /** Loads and shows the current file; true when it is shown, not overtaken by another load or failed. */
+  async function load(): Promise<boolean> {
     const mine = ++token
     syncHeader()
     diff = null
     body.replaceChildren(h('div', { class: 'diff-note muted' }, t('diffLoading')))
     try {
       const result = await api.rangeDiff(root, files[index], wholeFile)
-      if (mine !== token) return
+      if (mine !== token) return false
       diff = result
       render()
       body.scrollTop = 0
       if (wholeFile && changes.length) jump(1, -Infinity)
+      return true
     } catch (error) {
       if (mine === token) body.replaceChildren(h('div', { class: 'diff-note error' }, errorMessage(error)))
+      return false
     }
   }
 
@@ -252,7 +296,9 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { dispo
     if ((event.altKey && event.key === 'ArrowUp') || (plain && event.key === 'ArrowLeft')) go(index - 1)
     else if ((event.altKey && event.key === 'ArrowDown') || (plain && event.key === 'ArrowRight')) go(index + 1)
     else if (event.key === 'F7') jump(event.shiftKey ? -1 : 1)
-    else {
+    else if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.code === 'KeyA') {
+      if (!notes.addFromSelection()) return
+    } else {
       const key = findKey(event, ['diff'])?.id
       if (key === 'layout') setMode(mode === 'split' ? 'unified' : 'split')
       else if (key === 'wholeFile') setWhole(!wholeFile)
@@ -265,9 +311,11 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { dispo
   container.replaceChildren(view)
   void load()
   return {
+    notes,
     dispose() {
       token++
       document.removeEventListener('keydown', onKey)
+      notes.dispose()
     }
   }
 }

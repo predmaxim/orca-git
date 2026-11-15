@@ -71,6 +71,20 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   between the files of the selection it was opened from with ← / → (keys or header buttons) or Alt+↑ /
   Alt+↓ (counter "3/5 files"); the panel's Files section highlights the file the tab shows. Merge
   commits are compared with their first parent.
+- **Review notes** in the Diff tab: select text in the code, then press the button that appears at the
+  end of the selection or `Ctrl+Shift+A`, and write a note for an agent in markdown (Enter saves,
+  Shift+Enter adds a line, Esc cancels). A note belongs to one side: the column the selection starts in
+  (split), or in unified the line it starts on (a deleted line is the old side, any other the new one);
+  while you select, the other side stays out of the selection. The note is tied to the content of the
+  file on its side (its blob), so it shows in every diff where that side is the same, also after a
+  rebase or an amend that left the file alone. Its card stands under the last selected line, in the
+  half of its side in split, with the selected text highlighted, the note's state (not sent, sent, or
+  the agent's verdict), Edit, Delete and, for a sent note without an answer, Send again; links open
+  in the browser. **Notes (N)** in the tab's header lists every note of the repository with its file,
+  lines, side, the start of the quote and of the text and its state; Copy all copies them as markdown,
+  Delete all asks once more. A click on a note opens its file, with Whole file when its lines are
+  outside the changed regions, and scrolls to it. Notes are kept in the plugin's storage, up to 200
+  per repository.
 - **Looks like Orca**: the sidebar is drawn as Orca draws its own: section headers in its small
   uppercase labels with the count on the right, no lines between sections, [Lucide](https://lucide.dev)
   icons (the set Orca uses), outline buttons, its field and icon-button sizes. Colors come from the
@@ -111,9 +125,10 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
     and goes back to the commit list.
   - Files: `Shift+E` expands all folders, or collapses them when all are open.
   - Details: ↑ / ↓ move between the commits, Enter or Space opens one.
-  - Diff tab: `Shift+S` switches between Split (side by side) and Unified, `Shift+W` Whole file, once
-    you click into the tab. `0` only brings the tab forward, and a click takes you back to the panel:
-    Orca gives plugins no way to move keyboard focus between the panel and the tab.
+  - Diff tab: `Shift+S` switches between Split (side by side) and Unified, `Shift+W` Whole file,
+    `Ctrl+Shift+A` adds a review note on the selected text, once you click into the tab. `0` only
+    brings the tab forward, and a click takes you back to the panel: Orca gives plugins no way to move
+    keyboard focus between the panel and the tab.
   - Changed in 0.4.0, to follow the rule: `f` fold is now `Shift+Z`, `r` Refresh `Shift+R`, the filters
     `b` `u` `d` `p` are `Shift+B` `Shift+U` `Shift+D` `Shift+P` (pressed again they clear, so the old
     Shift+letter clear is the same key), `.` regex `Shift+X`, `c` match case `Shift+C`, `e` / `c` in
@@ -348,7 +363,7 @@ The diff is highlighted with [highlight.js](https://highlightjs.org) 11.12.0 (BS
 
 Review notes and the agent's answers are markdown, read with the lexer of [marked](https://marked.js.org) 18.2.0 (MIT): the one file `lib/marked.esm.js` byte for byte in `src/vendor/marked/` (license next to it). Only the lexer is used; `src/ui/markdown.ts` turns its tokens into DOM nodes, never into HTML.
 
-Interface icons are [Lucide](https://lucide.dev) (ISC), the bodies of 32 icons from `lucide-static` 0.469.0 inlined in `src/ui/dom.ts` with the license notice.
+Interface icons are [Lucide](https://lucide.dev) (ISC), the bodies of 33 icons from `lucide-static` 0.469.0 inlined in `src/ui/dom.ts` with the license notice.
 
 ## License
 
