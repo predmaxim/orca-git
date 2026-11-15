@@ -127,9 +127,9 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { dispo
   const counter = h('span', { class: 'muted' })
   const info = h('div', { class: 'diff-info mono muted' })
   const body = h('div', { class: 'diff-body', tabindex: '-1' })
-  const arrow = (label: string, tip: string, run: () => void) => h('button', { class: 'tool', title: tip, 'aria-label': tip, onclick: run }, label)
-  const prevFile = arrow('←', t('diffPrevFile'), () => go(index - 1))
-  const nextFile = arrow('→', t('diffNextFile'), () => go(index + 1))
+  const arrow = (name: 'left' | 'right', tip: string, run: () => void) => h('button', { class: 'tool', title: tip, 'aria-label': tip, onclick: run }, icon(name))
+  const prevFile = arrow('left', t('diffPrevFile'), () => go(index - 1))
+  const nextFile = arrow('right', t('diffNextFile'), () => go(index + 1))
   const splitButton = h('button', { class: 'tool', title: withKey(t('diffSplitTip'), 'layout'), onclick: () => setMode('split') }, t('diffSplit'))
   const unifiedButton = h('button', { class: 'tool', title: withKey(t('diffUnifiedTip'), 'layout'), onclick: () => setMode('unified') }, t('diffUnified'))
   const wholeButton = h('button', { class: 'tool', title: withKey(t('diffWholeFileTip'), 'wholeFile'), onclick: () => setWhole(!wholeFile) }, t('diffWholeFile'))
@@ -139,8 +139,8 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { dispo
     h(
       'div',
       { class: 'diff-header' },
-      h('button', { class: 'tool', title: t('diffPrevChangeTip'), onclick: () => jump(-1) }, t('diffPrevChange')),
-      h('button', { class: 'tool', title: t('diffNextChangeTip'), onclick: () => jump(1) }, t('diffNextChange')),
+      h('button', { class: 'tool', title: t('diffPrevChangeTip'), onclick: () => jump(-1) }, icon('up'), h('span', null, t('diffChange'))),
+      h('button', { class: 'tool', title: t('diffNextChangeTip'), onclick: () => jump(1) }, icon('down'), h('span', null, t('diffChange'))),
       h('span', { class: 'sep' }),
       prevFile,
       counter,

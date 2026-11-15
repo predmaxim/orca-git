@@ -36,7 +36,8 @@ export function renderBranches(container: HTMLElement, host: BranchesHost, query
       h(
         'div',
         {
-          class: 'node-row group',
+          // The top groups (local, remote, tags) are labelled as Orca labels its sidebar sections.
+          class: `node-row group${depth ? '' : ' top'}`,
           style: `padding-left:${4 + depth * 14}px`,
           dataset: { key: id },
           role: 'treeitem',

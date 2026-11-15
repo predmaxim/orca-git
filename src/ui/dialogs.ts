@@ -395,7 +395,7 @@ export async function askRebasePlan(commits: RangeCommit[], pushed: string[], ba
 
 /** A non-dismissable spinner while the worker runs a long action; what is behind it takes neither the pointer nor keys. */
 export function busy(text: string): () => void {
-  const el = h('div', { class: 'busy' }, h('div', { class: 'pill' }, h('div', { class: 'spin' }), text))
+  const el = h('div', { class: 'busy' }, h('div', { class: 'pill' }, icon('loader', 'spin'), text))
   const behind = Array.from(document.body.children) as HTMLElement[]
   const focused = document.activeElement as HTMLElement | null
   for (const part of behind) part.inert = true

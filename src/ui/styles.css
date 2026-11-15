@@ -25,22 +25,25 @@
   /* Selection is a fill, never bold; a little stronger in the list that has focus. */
   --selected-focus: color-mix(in srgb, var(--accent-fg) 10%, var(--accent));
   --toggle-on: var(--accent);
-  --field-bg: color-mix(in srgb, var(--input) 30%, transparent);
   --focus-ring: 0 0 0 3px color-mix(in srgb, var(--ring) 50%, transparent);
-  --font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
-  --font-code: 'JetBrainsMono Nerd Font', 'JetBrains Mono', ui-monospace, monospace;
+  /* Orca's own fallbacks; --orca-font-* once Orca hands frames its app font (stablyai/orca#42575). */
+  --font-ui: var(--orca-font-family, "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  --font-code: var(--orca-font-mono, "SF Mono", SFMono-Regular, ui-monospace, "Cascadia Code", Menlo, Consolas, "Liberation Mono", monospace);
+  /* States Orca has no colour for, as the user's other Orca plugins draw them; backgrounds are tints of them. */
+  --state-done: #4ade80;
+  --state-wait: #fbbf24;
+  --state-info: #7aa7ff;
   --row-h: 24px;
   color-scheme: dark;
 }
 
 :root.light {
   --toggle-on: color-mix(in srgb, var(--fg) 12%, transparent);
-  --field-bg: transparent;
   color-scheme: light;
 }
 
 /* Orca gives frames no git, diff or status colors: these are WebStorm 2026.2's (Islands Dark, then Islands Light).
-   Graph lanes come from its log color generator, ref icons from VersionControl.GitLog, the rest from the editor scheme and Banner.* */
+   Graph lanes come from its log color generator, ref icons from VersionControl.GitLog, the rest from the editor scheme. */
 :root {
   --c0: #3d5499;
   --c1: #3d993d;
@@ -59,11 +62,6 @@
   --st-deleted: #6f737a;
   --diff-add: #294436;
   --diff-del: #484a4a;
-  --success-bg: #203b2a;
-  --success-border: #29583c;
-  --warning-bg: #44321d;
-  --warning-border: #694820;
-  --warning-fg: #d59637;
 }
 
 :root.light {
@@ -84,11 +82,6 @@
   --st-deleted: #6c707e;
   --diff-add: #bee6be;
   --diff-del: #d6d6d6;
-  --success-bg: #f5faf3;
-  --success-border: #bbdbc2;
-  --warning-bg: #fff6e9;
-  --warning-border: #f4cd9a;
-  --warning-fg: #a56906;
 }
 
 * {
@@ -107,7 +100,15 @@ body {
 
 /* On body, not html: --orca-radius comes in rem, which must stay the browser's 16px as in Orca. */
 body {
-  font: 13px/1.5 var(--font-ui);
+  font: 13px/1.45 var(--font-ui);
+  letter-spacing: 0.01em;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The native list of a select takes the page's colours, not the field's: without these, a dark theme shows white on white. */
+select option {
+  background: var(--popover);
+  color: var(--popover-fg);
 }
 
 button,
@@ -162,9 +163,32 @@ input[type='radio'] {
   background-color: color-mix(in srgb, var(--fg) 36%, transparent);
 }
 
+/* Lucide icons (dom.ts): 14px in text, 16px alone in an icon button and in menus, as Orca draws them. */
 .icon {
   flex: none;
   display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.tool > .icon:only-child,
+.menu-icon > .icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* A loading button turns its icon, not the button with its hover plate. */
+.icon.spin,
+.tool.loading > .icon {
+  animation: spin 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon.spin,
+  .tool.loading > .icon {
+    animation: none;
+    opacity: 0.5;
+  }
 }
 
 .mono {
@@ -186,9 +210,18 @@ input[type='radio'] {
   align-items: center;
   gap: 4px;
   padding: 6px 8px;
-  border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
   min-height: 38px;
+}
+
+.toolbar.filters {
+  min-height: 0;
+  padding: 0 8px 4px;
+}
+
+.search-row {
+  flex: none;
+  padding: 2px 8px 6px;
 }
 
 .toolbar .spacer {
@@ -213,7 +246,7 @@ input[type='radio'] {
 
 .tool:hover {
   background: var(--accent);
-  color: var(--accent-fg);
+  color: var(--fg);
 }
 
 .tool.on {
@@ -244,14 +277,11 @@ input[type='radio'] {
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 28px;
-  padding: 0 3px 0 8px;
-  border: 1px solid var(--input);
+  height: 32px;
+  padding: 0 4px 0 10px;
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--field-bg);
-  flex: 0 1 260px;
-  min-width: 120px;
-  margin-right: 4px;
+  background: var(--input);
 }
 
 .search:focus-within {
@@ -299,17 +329,24 @@ input[type='radio'] {
   outline-offset: 1px;
 }
 
+/* A block under the header: a tint of its state colour, the border a stronger one. */
 .banner {
+  --tone: var(--state-done);
   display: none;
   align-items: center;
   gap: 8px;
   margin: 6px 8px 0;
-  padding: 4px 4px 4px 10px;
-  border: 1px solid var(--success-border);
-  border-radius: var(--radius-sm);
-  background: var(--success-bg);
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--tone) 45%, transparent);
+  border-radius: calc(var(--radius) - 2px);
+  background: color-mix(in srgb, var(--tone) 10%, transparent);
   white-space: pre-wrap;
   user-select: text;
+}
+
+/* The close button keeps the block's padding: it reaches into it rather than make the block taller. */
+.banner > .tool {
+  margin: -4px -6px -4px 0;
 }
 
 .banner.show {
@@ -317,13 +354,11 @@ input[type='radio'] {
 }
 
 .banner.error {
-  border-color: color-mix(in srgb, var(--danger) 45%, var(--bg));
-  background: color-mix(in srgb, var(--danger) 14%, var(--bg));
+  --tone: var(--danger);
 }
 
 .banner.info {
-  border-color: color-mix(in srgb, var(--primary) 40%, var(--bg));
-  background: color-mix(in srgb, var(--primary) 14%, var(--bg));
+  --tone: var(--state-info);
 }
 
 .banner .text {
@@ -395,10 +430,6 @@ input[type='radio'] {
   flex: none;
 }
 
-.col-section:not(:first-child) {
-  border-top: 1px solid var(--border);
-}
-
 .col-splitter {
   flex: none;
   height: 0;
@@ -413,21 +444,28 @@ input[type='radio'] {
   inset: -3px 0;
 }
 
+/* No line between sections, as in Orca's sidebar: the edge shows one under the pointer. */
+.col-splitter:hover::after {
+  background: linear-gradient(var(--ring), var(--ring)) center / 100% 1px no-repeat;
+}
+
+/* Orca's sidebar header: more air above than below the label (its padding is 12px over, 8px under). */
 .sec-head {
   flex: none;
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 30px;
-  padding: 0 6px 0 4px;
-  color: var(--fg);
+  height: 36px;
+  padding: 4px 8px 0 6px;
+  color: var(--muted-fg);
   white-space: nowrap;
 }
 
+/* Orca's section label: 11px, semibold, uppercase, spaced, muted. */
 .sec-toggle {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
   height: 24px;
   padding: 0 6px 0 2px;
@@ -435,8 +473,10 @@ input[type='radio'] {
   border-radius: var(--radius-sm);
   background: none;
   color: inherit;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .sec-toggle .icon {
@@ -448,7 +488,7 @@ input[type='radio'] {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--muted-fg);
 }
 
@@ -541,7 +581,20 @@ input[type='radio'] {
 }
 
 .node-row.group > .label {
+  font-weight: 500;
+}
+
+/* The top groups take the section label, their count stays 11px in normal case. */
+.node-row.group.top > .label {
+  font-size: 11px;
   font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-fg);
+}
+
+.node-row.group.top > .count {
+  font-size: 11px;
 }
 
 .node-row .ic-local {
@@ -792,6 +845,13 @@ input[type='radio'] {
   color: var(--ref-head);
 }
 
+/* HEAD's star is filled, apart from the outlined branch and tag icons. */
+.ic-head,
+.ref.head .icon,
+.ref.current .icon {
+  fill: currentColor;
+}
+
 .ref.current span {
   color: var(--fg);
 }
@@ -824,9 +884,9 @@ input[type='radio'] {
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border: 1px solid var(--input);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--field-bg);
+  background: transparent;
   color: var(--fg);
   font: inherit;
   text-align: left;
@@ -1172,18 +1232,20 @@ input[type='radio'] {
 }
 
 .option-group {
-  padding: 6px 8px 2px;
-  font-size: 12px;
-  color: var(--muted-fg);
+  padding: 8px 8px 4px;
+  font-size: 11px;
   font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-fg);
 }
 
 .field {
-  height: 30px;
+  height: 32px;
   padding: 0 10px;
-  border: 1px solid var(--input);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--field-bg);
+  background: var(--input);
   outline: 0;
 }
 
@@ -1263,8 +1325,10 @@ textarea.field {
 
 .keys h3 {
   margin: 0 0 4px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   color: var(--muted-fg);
 }
 
@@ -1280,19 +1344,21 @@ textarea.field {
   font: 12px var(--font-code);
 }
 
+/* Buttons: an outline, a filled primary, a solid red destructive confirm. */
 .btn {
-  height: 30px;
+  height: 28px;
   padding: 0 12px;
-  border: 0;
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--secondary);
-  color: var(--secondary-fg);
+  background: transparent;
+  color: inherit;
   font-weight: 500;
+  white-space: nowrap;
   cursor: default;
 }
 
 .btn:hover {
-  background: color-mix(in srgb, var(--secondary) 80%, transparent);
+  background: var(--hover);
 }
 
 .btn:focus-visible {
@@ -1301,6 +1367,7 @@ textarea.field {
 }
 
 .btn.primary {
+  border-color: var(--primary);
   background: var(--primary);
   color: var(--primary-fg);
 }
@@ -1309,17 +1376,19 @@ textarea.field {
   background: color-mix(in srgb, var(--primary) 90%, transparent);
 }
 
-/* As Orca's destructive button: white text, the fill softened in the dark theme. */
 .btn.danger {
+  border-color: var(--danger);
   background: var(--danger);
   color: #fff;
 }
 
 .btn.danger:hover {
-  background: color-mix(in srgb, var(--danger) 90%, transparent);
+  background: color-mix(in srgb, var(--danger) 85%, black);
 }
 
+/* As Orca's destructive button: the dark theme softens the fill, or white text on its light red falls under 3:1. */
 :root:not(.light) .btn.danger {
+  border-color: transparent;
   background: color-mix(in srgb, var(--danger) 60%, transparent);
 }
 
@@ -1402,19 +1471,20 @@ input[type='radio']:focus-visible {
   display: flex;
   gap: 8px;
   padding: 8px 10px;
-  border: 1px solid var(--warning-border);
-  border-radius: var(--radius-sm);
-  background: var(--warning-bg);
+  border: 1px solid color-mix(in srgb, var(--state-wait) 45%, transparent);
+  border-radius: calc(var(--radius) - 2px);
+  background: color-mix(in srgb, var(--state-wait) 10%, transparent);
 }
 
 .warning .icon {
-  color: var(--warning-fg);
+  color: var(--state-wait);
   margin-top: 2px;
 }
 
+/* A warning about a destructive step is a red outline only: the solid red is its confirm button. */
 .warning.danger {
-  border-color: color-mix(in srgb, var(--danger) 45%, var(--popover));
-  background: color-mix(in srgb, var(--danger) 14%, var(--popover));
+  border-color: color-mix(in srgb, var(--danger) 70%, transparent);
+  background: transparent;
 }
 
 .warning.danger .icon {
@@ -1502,15 +1572,6 @@ input[type='radio']:focus-visible {
   display: flex;
   gap: 4px;
   align-items: center;
-}
-
-.spin {
-  width: 14px;
-  height: 14px;
-  border: 2px solid color-mix(in srgb, var(--muted-fg) 35%, transparent);
-  border-top-color: var(--fg);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
 }
 
 @keyframes spin {
@@ -1717,6 +1778,7 @@ input[type='radio']:focus-visible {
 
 .diff-lines {
   font: 13px/1.5 var(--font-code);
+  letter-spacing: 0;
   tab-size: 4;
   min-width: min-content;
 }

@@ -26,10 +26,12 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
 
 - **Sections**: Branches, Commits, Files and Details stack in a column, like the WebStorm Git tool window. Click
   a header to collapse a section to one line with its summary (current branch, number of selected
-  commits); drag the line between open sections to resize them. The layout is remembered.
+  commits); drag the edge between open sections to resize them (a line shows under the pointer). The
+  layout is remembered.
 - **Commit graph**: colored lanes, merges, ref labels (`origin & main`, tags, HEAD), commits not
   reachable from HEAD are dimmed.
-- **Filters**: text or hash (with regex `.*` and match case `Cc`), Branch, User, Date and Paths.
+- **Filters**: text or hash (with regex `.*` and match case `Cc`) in a search across the full width of the
+  Commits section; Branch, User, Date and Paths in a row under it.
 - **Branch tree**: HEAD, Local, Remote and Tags, with branches grouped into folders by prefix (`feature/`,
   `fix/`); search by name. A repository opens with HEAD selected, so the log shows the current branch. Click a branch to filter the log by it (click again to clear and show all branches), double-click
   to jump to its commit. Right-click for checkout, new branch from it, rename,
@@ -50,12 +52,16 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   between the files of the selection it was opened from with ← / → (keys or header buttons) or Alt+↑ /
   Alt+↓ (counter "3/5 files"); the panel's Files section highlights the file the tab shows. Merge
   commits are compared with their first parent.
-- **Looks like Orca**: whatever Orca passes to plugins comes from the current Orca theme, light or
-  dark: backgrounds, text, borders, inputs and the focus ring, selection, menus, dialogs, buttons and
-  corner radius (its 20 `--orca-*` tokens). What Orca does not pass follows WebStorm (Islands Dark and
-  Islands Light): file status colors, added and removed lines and words in the diff, graph lanes and
-  ref icons. The interface uses the system font; code uses JetBrainsMono Nerd Font or JetBrains Mono
-  when installed.
+- **Looks like Orca**: the sidebar is drawn as Orca draws its own: section headers in its small
+  uppercase labels with the count on the right, no lines between sections, [Lucide](https://lucide.dev)
+  icons (the set Orca uses), outline buttons, its field and icon-button sizes. Colors come from the
+  current Orca theme, light or dark: backgrounds, text, borders, inputs and the focus ring, selection,
+  menus, dialogs, buttons and corner radius (its 20 `--orca-*` tokens). Notices are tinted green
+  (done), red (error), blue (info) and yellow (warning). What Orca does not pass follows WebStorm
+  (Islands Dark and Islands Light): file status colors, added and removed lines and words in the diff,
+  graph lanes and ref icons. Orca does not pass its app font to plugins yet
+  ([stablyai/orca#42575](https://github.com/stablyai/orca/issues/42575)), so the plugin uses Orca's own
+  fallbacks: Geist when installed, else the system sans-serif, and for code the system monospace font.
 - **Multi-select**: click, Ctrl/⌘-click, Shift-click, arrows, Page Up/Down, Home/End, Ctrl+A.
 - **Keyboard, like lazygit**: keys while focus is in the panel and not in a field, menu or dialog.
   They go by the physical key, so they work in any keyboard layout; `?` lists them all, and tooltips
@@ -318,6 +324,8 @@ keeps them all.
 ## Third-party code
 
 The diff is highlighted with [highlight.js](https://highlightjs.org) 11.12.0 (BSD-3-Clause), vendored as ES modules in `src/vendor/highlight/` (core and 26 language files, 128 KiB, license next to them). They are the npm package `@highlightjs/cdn-assets` byte for byte; the plugin has no build step.
+
+Interface icons are [Lucide](https://lucide.dev) (ISC), the bodies of 29 icons from `lucide-static` 0.469.0 inlined in `src/ui/dom.ts` with the license notice.
 
 ## License
 

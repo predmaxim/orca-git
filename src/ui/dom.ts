@@ -58,44 +58,57 @@ export function mountTree(container: HTMLElement, rows: HTMLElement[], depths: n
   heir?.focus()
 }
 
-/** An inline SVG icon from the set below. */
+/** An inline SVG icon from the set below; decorative, its button or text carries the meaning. Its size comes from CSS. */
 export function icon(name: keyof typeof ICONS, cls = ''): SVGSVGElement {
   const tpl = document.createElement('template')
-  tpl.innerHTML = `<svg class="icon ${cls}" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">${ICONS[name]}</svg>`
+  tpl.innerHTML =
+    `<svg class="icon ${cls}" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor"` +
+    ` stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`
   return tpl.content.firstElementChild as SVGSVGElement
 }
 
-const stroke = (d: string) => `<path d="${d}" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>`
-
+// Icons: Lucide (https://lucide.dev), the set Orca draws its own UI with, so the panel looks like the app around it.
+// Lucide is under the ISC License:
+//   Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT). All other copyright (c)
+//   for Lucide are held by Lucide Contributors 2022.
+//   Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted,
+//   provided that the above copyright notice and this permission notice appear in all copies.
+//   THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL
+//   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+//   INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+//   ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+//   THIS SOFTWARE.
+// Bodies from lucide-static 0.469.0; the Lucide name of each is in its comment.
 export const ICONS = {
-  branch: `<circle cx="5" cy="3.5" r="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="5" cy="12.5" r="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="11" cy="5.5" r="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/>${stroke('M5 5v6M11 7c0 3-6 2-6 4')}`,
-  tag: `${stroke('M2.5 2.5h5l6 6-5 5-6-6z')}<circle cx="5.5" cy="5.5" r="1" fill="currentColor"/>`,
-  search: `<circle cx="7" cy="7" r="4.2" fill="none" stroke="currentColor" stroke-width="1.2"/>${stroke('M10.2 10.2 14 14')}`,
-  refresh: stroke('M13 8a5 5 0 1 1-1.5-3.6M13 2.5v3h-3'),
-  chevronDown: stroke('M4 6l4 4 4-4'),
-  chevronRight: stroke('M6 4l4 4-4 4'),
-  close: stroke('M4 4l8 8M12 4l-8 8'),
-  tree: stroke('M2.5 3h11M2.5 3v10M2.5 8h4M2.5 13h4M9 8h4.5M9 13h4.5'),
-  details: `<rect x="2" y="2.5" width="12" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/>${stroke('M9.5 2.5v11')}`,
-  folder: stroke('M2 4.5h4l1.5 1.5H14v7H2z'),
-  file: stroke('M4 2h5l3 3v9H4zM9 2v3h3'),
-  up: stroke('M8 13V3M4 7l4-4 4 4'),
-  down: stroke('M8 3v10M4 9l4 4 4-4'),
-  star: `<path d="M8 2.2l1.7 3.6 3.9.5-2.9 2.7.8 3.9L8 11l-3.5 1.9.8-3.9-2.9-2.7 3.9-.5z" fill="currentColor"/>`,
-  check: stroke('M3.5 8.5l3 3 6-7'),
-  warning: `${stroke('M8 2l6.5 11.5h-13zM8 6.5v3.5')}<circle cx="8" cy="12" r=".7" fill="currentColor"/>`,
-  copy: `<rect x="5.5" y="5.5" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/>${stroke('M3.5 10.5h-1v-8h8v1')}`,
-  cherry: `<circle cx="4.5" cy="11.5" r="2.2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="11.5" cy="12" r="2.2" fill="none" stroke="currentColor" stroke-width="1.2"/>${stroke('M4.5 9.3C5 6 7 3.8 10 2.5M11.5 9.8C11 7 10.3 4.8 10 2.5M10 2.5c1.6.2 3 1 3.5 2.5')}`,
-  checkout: stroke('M2.5 8h8M7.5 5l3 3-3 3M10.5 2.5h3v11h-3'),
-  reset: stroke('M3 8a5 5 0 1 0 1.5-3.6M3 2.5v3h3'),
-  revert: stroke('M5.5 3.5l-3 3 3 3M2.5 6.5H10a3.5 3.5 0 0 1 0 7H7'),
-  undo: stroke('M6.5 3L4 5.5 6.5 8M4 5.5h6a3 3 0 0 1 0 6H5.5'),
-  edit: stroke('M10.5 2.5l3 3-8 8h-3v-3zM9 4l3 3'),
-  fixup: stroke('M8 2.5v7M5 6.5l3 3 3-3M3 13.5h10'),
-  squash: stroke('M8 1.5V6M5.5 3.5L8 6l2.5-2.5M8 14.5V10M5.5 12.5L8 10l2.5 2.5M3 8h10'),
-  drop: stroke('M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.5h6.6L12 4M6.5 6.5v5M9.5 6.5v5'),
-  rebase: stroke('M2.5 4h7M2.5 8h7M2.5 12h7M12.5 3v10M10.5 11l2 2 2-2'),
-  patch: stroke('M4 2h5l3 3v9H4zM9 2v3h3M6.5 8h3M8 6.5v3M6.5 11.5h3')
+  branch: '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>', // git-branch
+  tag: '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>', // tag
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>', // search
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>', // refresh-cw
+  chevronDown: '<path d="m6 9 6 6 6-6"/>', // chevron-down
+  chevronRight: '<path d="m9 18 6-6-6-6"/>', // chevron-right
+  expandAll: '<path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>', // chevrons-up-down
+  collapseAll: '<path d="m7 20 5-5 5 5"/><path d="m7 4 5 5 5-5"/>', // chevrons-down-up
+  close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>', // x
+  up: '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>', // arrow-up
+  down: '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>', // arrow-down
+  left: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>', // arrow-left
+  right: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>', // arrow-right
+  star: '<path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"/>', // star
+  check: '<path d="M20 6 9 17l-5-5"/>', // check
+  warning: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>', // triangle-alert
+  loader: '<path d="M21 12a9 9 0 1 1-6.219-8.56"/>', // loader-circle
+  copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>', // copy
+  cherry: '<path d="M2 17a5 5 0 0 0 10 0c0-2.76-2.5-5-5-3-2.5-2-5 .24-5 3Z"/><path d="M12 17a5 5 0 0 0 10 0c0-2.76-2.5-5-5-3-2.5-2-5 .24-5 3Z"/><path d="M7 14c3.22-2.91 4.29-8.75 5-12 1.66 2.38 4.94 9 5 12"/><path d="M22 9c-4.29 0-7.14-2.33-10-7 5.71 0 10 4.67 10 7Z"/>', // cherry
+  checkout: '<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/>', // log-in
+  reset: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>', // rotate-ccw
+  revert: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/>', // undo-2
+  undo: '<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>', // undo
+  edit: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>', // pencil
+  fixup: '<path d="M12 17V3"/><path d="m6 11 6 6 6-6"/><path d="M19 21H5"/>', // arrow-down-to-line
+  squash: '<path d="M12 22v-6"/><path d="M12 8V2"/><path d="M4 12H2"/><path d="M10 12H8"/><path d="M16 12h-2"/><path d="M22 12h-2"/><path d="m15 19-3-3-3 3"/><path d="m15 5-3 3-3-3"/>', // fold-vertical
+  drop: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>', // trash-2
+  rebase: '<path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="M11 4h10"/><path d="M11 8h7"/><path d="M11 12h4"/>', // arrow-down-wide-narrow
+  patch: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M9 10h6"/><path d="M12 13V7"/><path d="M9 17h6"/>' // file-diff
 } as const
 
 export function clear(el: Element): void {

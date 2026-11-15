@@ -78,8 +78,8 @@ const app = document.getElementById('app')!
 const searchInput = h('input', { placeholder: t('searchPlaceholder'), spellcheck: false, 'aria-label': t('searchAria') }) as HTMLInputElement
 const regexToggle = h('button', { class: `toggle${prefs.regex ? ' on' : ''}`, title: withKey(t('regexTip'), 'regex') }, '.*')
 const caseToggle = h('button', { class: `toggle${prefs.matchCase ? ' on' : ''}`, title: withKey(t('matchCaseTip'), 'matchCase') }, 'Cc')
-const refreshButton = h('button', { class: 'tool', title: withKey(t('refresh'), 'refresh') }, icon('refresh'))
-const fetchButton = h('button', { class: 'tool', title: withKey(t('fetch'), 'fetch') }, icon('down'))
+const refreshButton = h('button', { class: 'tool', title: withKey(t('refresh'), 'refresh'), 'aria-label': t('refresh') }, icon('refresh'))
+const fetchButton = h('button', { class: 'tool', title: withKey(t('fetch'), 'fetch'), 'aria-label': t('fetch') }, icon('down'))
 
 const filterBar = createFilterBar({
   get filter() {
@@ -93,7 +93,9 @@ const filterBar = createFilterBar({
 })
 
 const toolbar = h('div', { class: 'toolbar' }, h('div', { class: 'spacer' }), refreshButton, fetchButton)
-const filterRow = h('div', { class: 'toolbar' }, h('label', { class: 'search' }, icon('search'), searchInput, regexToggle, caseToggle), ...filterBar.elements)
+// The search takes the full width of the commits; the filters get their own row under it.
+const searchRow = h('div', { class: 'search-row' }, h('label', { class: 'search' }, icon('search'), searchInput, regexToggle, caseToggle))
+const filterRow = h('div', { class: 'toolbar filters' }, ...filterBar.elements)
 
 const bannerText = h('div', { class: 'text' })
 const bannerActions = h('div', { style: 'display:flex;gap:12px' })
@@ -102,7 +104,7 @@ const banner = h(
   { class: 'banner', role: 'status' },
   bannerText,
   bannerActions,
-  h('button', { class: 'tool', title: t('dismiss'), onclick: () => hideBanner() }, icon('close'))
+  h('button', { class: 'tool', title: t('dismiss'), 'aria-label': t('dismiss'), onclick: () => hideBanner() }, icon('close'))
 )
 
 const treeSearch = h('input', { class: 'field tree-search', placeholder: t('searchBranches'), spellcheck: false }) as HTMLInputElement
@@ -123,12 +125,12 @@ const logPane = h('section', { class: 'pane log' }, header, viewport, empty)
 
 const column = createColumn(['branches', 'commits', 'files', 'details'], prefs.sections, onSections)
 column.section('branches').body.append(treeSearch, tree)
-column.section('commits').body.append(filterRow, logPane)
+column.section('commits').body.append(searchRow, filterRow, logPane)
 const filesSection = column.section('files')
 const filesPane = filesSection.body
 filesSection.header.append(
-  h('button', { class: 'tool', title: withKey(t('expandAll'), 'folders'), 'aria-label': t('expandAll'), onclick: () => setAllFolders(true) }, icon('chevronDown')),
-  h('button', { class: 'tool', title: withKey(t('collapseAll'), 'folders'), 'aria-label': t('collapseAll'), onclick: () => setAllFolders(false) }, icon('chevronRight'))
+  h('button', { class: 'tool', title: withKey(t('expandAll'), 'folders'), 'aria-label': t('expandAll'), onclick: () => setAllFolders(true) }, icon('expandAll')),
+  h('button', { class: 'tool', title: withKey(t('collapseAll'), 'folders'), 'aria-label': t('collapseAll'), onclick: () => setAllFolders(false) }, icon('collapseAll'))
 )
 renderFilesNote(t('filesPlaceholder'))
 const detailsPane = column.section('details').body
@@ -361,7 +363,7 @@ function renderRows(): void {
     const children: HTMLElement[] = []
     for (let i = first; i < last; i++) children.push(rowElement(i))
     if (hasMore && last >= rows.length) {
-      children.push(h('div', { class: 'loading-more', style: `top:${rows.length * rowH}px` }, h('div', { class: 'spin' })))
+      children.push(h('div', { class: 'loading-more', style: `top:${rows.length * rowH}px` }, icon('loader', 'spin')))
     }
     sizer.replaceChildren(...children)
     renderEmpty()
@@ -1469,7 +1471,13 @@ function commitEntries(): MenuEntry[] | null {
 // ---------- Toolbar & host events ----------
 
 // A refresh that finds nothing new changes nothing on screen: say it ran.
-refreshButton.addEventListener('click', () => void refreshAll().then(() => repo && !loadError && showBanner(t('refreshed'), 'success')))
+refreshButton.addEventListener('click', () => {
+  // The icon turns while the refresh runs, not the button with its hover plate.
+  refreshButton.classList.add('loading')
+  void refreshAll()
+    .then(() => repo && !loadError && showBanner(t('refreshed'), 'success'))
+    .finally(() => refreshButton.classList.remove('loading'))
+})
 fetchButton.addEventListener('click', async () => {
   if (!repo) return
   const root = repo.root
