@@ -23,6 +23,9 @@ test('a review folder holds the notes, the guide and a place for answers', () =>
   for (const part of ['## Note aaaaaaaaaaaa', 'File: src/a.ts', 'Lines: 3-4, new side', `git show ${'c'.repeat(40)}:src/a.ts`, '    x\n    y', 'why?', join(paths.answers, '<note id>.md'), ONCE]) assert.ok(text.includes(part), part)
   assert.equal(readFileSync(paths.guide, 'utf8'), REVIEW_GUIDE)
   assert.ok(REVIEW_GUIDE.includes(ONCE))
+  for (const part of ['Keep the answer very short, with no filler.', 'a screenshot of the design mockup']) assert.ok(REVIEW_GUIDE.includes(part), part)
+  assert.ok(!REVIEW_GUIDE.includes('confidence'))
+  assert.ok(text.includes('very short and with no filler') && !text.includes('confidence'))
   assert.equal(statSync(paths.answers).isDirectory(), true)
 })
 

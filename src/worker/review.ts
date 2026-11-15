@@ -21,7 +21,7 @@ const indent = (text: string): string => text.split(/\r?\n/).map((line) => `    
 export function notesFile(notes: ReviewNote[], paths: ReviewPaths): string {
   const head = [
     '# Review notes',
-    `Write one answer file per note to \`${join(paths.answers, '<note id>.md')}\`. The first line is \`verdict: confirmed | refuted | unclear\`, the second \`fixed: yes | no\`, then a blank line, then markdown: what you checked, the evidence, your confidence (0-100), what you changed and what you did not check. Write each answer file once, when you are done with that note — after the fix, if you make one.`
+    `Write one answer file per note to \`${join(paths.answers, '<note id>.md')}\`. The first line is \`verdict: confirmed | refuted | unclear\`, the second \`fixed: yes | no\`, then a blank line, then the answer in markdown, very short and with no filler: the facts (a code snippet, a file:line reference, or a screenshot of the design mockup saved next to the answer file, with its full path), then your conclusion or opinion in one or two sentences. Write each answer file once, when you are done with that note — after the fix, if you make one.`
   ].join('\n\n')
   const each = notes.map((n) =>
     [

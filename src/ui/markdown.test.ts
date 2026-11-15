@@ -11,7 +11,7 @@ test('inline marks', () => {
 test('raw HTML and unsafe links stay text', () => {
   assert.deepEqual(mdTree('<script>alert(1)</script>'), ['<script>alert(1)</script>'])
   assert.deepEqual(mdTree('x <img src=x onerror=alert(1)> [y](javascript:alert(1)) ![alt](https://a/b.png)'),
-    [el('p', 'x <img src=x onerror=alert(1)> y alt')])
+    [el('p', 'x <img src=x onerror=alert(1)> y alt (https://a/b.png)')])
 })
 
 test('a web link keeps its address', () => {
@@ -49,4 +49,9 @@ test('a hard break', () => {
 
 test('a table', () => {
   assert.deepEqual(mdTree('| a | b |\n|---|---|\n| 1 | 2 |'), [el('table', el('tr', el('th', 'a'), el('th', 'b')), el('tr', el('td', '1'), el('td', '2')))])
+})
+
+test('an image is its caption and its address, as text', () => {
+  assert.deepEqual(mdTree('![mockup](/tmp/review/answers/a.png)'), [el('p', 'mockup (/tmp/review/answers/a.png)')])
+  assert.deepEqual(mdTree('![](shot.png)'), [el('p', 'shot.png')])
 })

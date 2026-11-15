@@ -45,7 +45,7 @@ function one(t: Token): MdNode[] {
       const children = many(t.tokens)
       return SAFE_HREF.test(t.href ?? '') ? [{ tag: 'a', href: t.href, children }] : children
     }
-    case 'image': return [decode(t.text ?? '')]
+    case 'image': return [[decode(t.text ?? ''), t.href && t.text ? `(${t.href})` : t.href].filter(Boolean).join(' ')]
     case 'text': return t.tokens ? many(t.tokens) : [decode(t.text ?? '')]
     case 'escape': return [t.text ?? '']
     default: return [t.text ?? t.raw ?? '']

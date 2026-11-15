@@ -98,7 +98,9 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   the three paths. If the agent does not start, the folder is removed and the notes go back to unsent;
   the reason shows under the button. One send per repository runs at a time.
 - **Answers under the notes**: the agent writes one file per note to `answers/<note id>.md`: `verdict:
-  confirmed | refuted | unclear`, optionally `fixed: yes | no`, a blank line and markdown. The plugin reads
+  confirmed | refuted | unclear`, optionally `fixed: yes | no`, a blank line and a very short markdown answer:
+  the facts (code, `file:line` or a screenshot of the design mockup) and a conclusion. An image path in an
+  answer is shown as text (caption and address), the image itself is not shown. The plugin reads
   them when the agent's status changes and when the notes are listed, and shows under the note the verdict
   label, "Fixed" and the markdown. An answer file the agent rewrites replaces the answer shown the next
   time the answers are read. Deleting or editing the last note of a send removes its folder.
