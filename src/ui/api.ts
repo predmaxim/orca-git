@@ -94,10 +94,10 @@ export const api = {
   focusDiff: (root: string): Promise<{ ok: boolean; reason?: string }> => call('diff.focus', { root }),
   diffState: (root: string): Promise<DiffTabState | null> => call('diff.state', { root }),
   diffIndex: (root: string, index: number): Promise<{ ok: boolean }> => call('diff.index', { root, index }),
-  notes: (root: string): Promise<{ notes: ReviewNote[] }> => call('notes.list', { root }),
+  notes: (root: string): Promise<{ notes: ReviewNote[]; warning?: string }> => call('notes.list', { root }),
   noteAdd: (root: string, draft: NoteDraft): Promise<NoteResult> => call('notes.add', { root, draft }),
   noteUpdate: (root: string, id: string, body: string): Promise<NoteResult> => call('notes.update', { root, id, body }),
-  notesDelete: (root: string, ids: string[]): Promise<{ ok: boolean }> => call('notes.delete', { root, ids }),
+  notesDelete: (root: string, ids: string[]): Promise<{ ok: boolean; reason?: string }> => call('notes.delete', { root, ids }),
   notesSend: (root: string, ids: string[], agent: string): Promise<{ ok: true; review: string } | { ok: false; reason: string }> =>
     call('notes.send', { root, ids, agent })
 }

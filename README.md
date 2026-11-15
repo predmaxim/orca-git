@@ -97,7 +97,8 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
 - **Answers under the notes**: the agent writes one file per note to `answers/<note id>.md`: `verdict:
   confirmed | refuted | unclear`, optionally `fixed: yes | no`, a blank line and markdown. The plugin reads
   them when the agent's status changes and when the notes are listed, and shows under the note the verdict
-  label, "Fixed" and the markdown. Deleting or editing the last note of a send removes its folder.
+  label, "Fixed" and the markdown. An answer file the agent rewrites replaces the answer shown the next
+  time the answers are read. Deleting or editing the last note of a send removes its folder.
 - **Looks like Orca**: the sidebar is drawn as Orca draws its own: section headers in its small
   uppercase labels with the count on the right, no lines between sections, [Lucide](https://lucide.dev)
   icons (the set Orca uses), outline buttons, its field and icon-button sizes. Colors come from the

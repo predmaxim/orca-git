@@ -21,7 +21,7 @@ const indent = (text: string): string => text.split(/\r?\n/).map((line) => `    
 export function notesFile(notes: ReviewNote[], paths: ReviewPaths): string {
   const head = [
     '# Review notes',
-    `Write one answer file per note to \`${join(paths.answers, '<note id>.md')}\`. The first line is \`verdict: confirmed | refuted | unclear\`, the second \`fixed: yes | no\`, then a blank line, then markdown: what you checked, the evidence, your confidence (0-100), what you changed and what you did not check.`
+    `Write one answer file per note to \`${join(paths.answers, '<note id>.md')}\`. The first line is \`verdict: confirmed | refuted | unclear\`, the second \`fixed: yes | no\`, then a blank line, then markdown: what you checked, the evidence, your confidence (0-100), what you changed and what you did not check. Write each answer file once, when you are done with that note — after the fix, if you make one.`
   ].join('\n\n')
   const each = notes.map((n) =>
     [
@@ -117,19 +117,35 @@ export function removeReview(root: string, review: string): void {
 const VERDICTS: readonly string[] = ['confirmed', 'refuted', 'unclear']
 const MAX_ANSWER = 65536
 
-/** `verdict:` and `fixed:` lines in any order and case, a blank line, the markdown; null without a known verdict. */
+const blank = (line: string): boolean => line.trim() === ''
+
+/**
+ * Blank lines and one markdown heading may come first; then `verdict:` and `fixed:` lines in any order and case, up to
+ * a blank line, then the markdown. Keys may be wrapped in `*`, `_` or backticks, values also in quotes and end with a
+ * period, as agents decorate them. Null without a known verdict, or with any other line before the blank one.
+ */
 export function parseAnswer(text: string, now = Date.now()): NoteReply | null {
   const lines = text.replace(/^\uFEFF/, '').replace(/\r/g, '').split('\n')
-  const end = lines.indexOf('')
+  let at = 0
+  while (at < lines.length && blank(lines[at])) at++
+  if (at < lines.length && lines[at].trimStart().startsWith('#')) {
+    at++
+    while (at < lines.length && blank(lines[at])) at++
+  }
   const head = new Map<string, string>()
-  for (const line of end < 0 ? lines : lines.slice(0, end)) {
-    const m = /^([A-Za-z]+)\s*:\s*(.*)$/.exec(line)
-    if (m && !head.has(m[1].toLowerCase())) head.set(m[1].toLowerCase(), m[2].trim().toLowerCase())
+  for (; at < lines.length && !blank(lines[at]); at++) {
+    const colon = lines[at].indexOf(':')
+    const key = colon < 0 ? '' : lines[at].slice(0, colon).replace(/^[\s*_`]+|[\s*_`]+$/g, '').toLowerCase()
+    if (key !== 'verdict' && key !== 'fixed') return null
+    const value = lines[at].slice(colon + 1).replace(/^[\s*_`'"]+|[\s*_`'"]+$/g, '').replace(/\.$/, '').trim().toLowerCase()
+    if (!head.has(key)) head.set(key, value)
   }
   const verdict = head.get('verdict')
   if (!verdict || !VERDICTS.includes(verdict)) return null
-  const body = (end < 0 ? '' : lines.slice(end + 1).join('\n')).trim().slice(0, MAX_REPLY)
-  return { verdict: verdict as NoteVerdict, fixed: head.get('fixed') === 'yes', body, at: now }
+  let body = lines.slice(at + 1).join('\n').trim().slice(0, MAX_REPLY)
+  // The cut must not leave half of a surrogate pair.
+  if (/[\uD800-\uDBFF]$/.test(body)) body = body.slice(0, -1)
+  return { verdict: verdict as NoteVerdict, fixed: ['yes', 'true'].includes(head.get('fixed') ?? ''), body, at: now }
 }
 
 const { O_RDONLY, O_NOFOLLOW = 0, O_NONBLOCK = 0 } = constants
@@ -155,11 +171,15 @@ function readAnswerFile(path: string): string | null {
   }
 }
 
-/** The answers found for the sent notes that have none: answers/<note id>.md, a regular file of at most 65536 bytes, never through a link. */
+/**
+ * The answers found for the sent notes, answered ones too (the agent may have rewritten its file): answers/<note id>.md,
+ * a regular file of at most 65536 bytes, never through a link. A note whose id is not 12 hex is skipped: frames share the
+ * storage, so a stored id is not guaranteed.
+ */
 export function readAnswers(root: string, notes: ReviewNote[], now = Date.now()): Map<string, NoteReply> {
   const found = new Map<string, NoteReply>()
   for (const note of notes) {
-    if (!note.review || note.reply || !ID.test(note.review)) continue
+    if (!note.review || !ID.test(note.review) || !ID.test(note.id)) continue
     const text = readAnswerFile(join(reviewPaths(root, note.review).answers, `${note.id}.md`))
     const reply = text === null ? null : parseAnswer(text, now)
     if (reply) found.set(note.id, reply)

@@ -363,12 +363,16 @@ export default function activate(orca: OrcaWorkerApi): void {
 
   handle('notes.list', async ({ root }) => {
     const key = (await gitFor(root)).root
+    let warning = ''
     try {
       await ingest(key)
     } catch (error) {
       orca.log(`answers not read: ${errorText(error)}`)
+      // Most likely the stored value would pass Orca's 262144 bytes: the user has to know, and can free space.
+      warning = t('notesAnswersFailed', { error: errorText(error) })
     }
-    return { notes: await listNotes(orca.storage, key) }
+    const notes = await listNotes(orca.storage, key)
+    return warning ? { notes, warning } : { notes }
   })
 
   handle('notes.add', async ({ root, draft }) => {

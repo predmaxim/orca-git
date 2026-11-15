@@ -119,14 +119,18 @@ export function markUnsent(store: NoteStore, root: string, ids: string[]): Promi
   })
 }
 
-/** Stores the answers by note id; true if any note changed. */
+/** Whether two answers say the same: when they were read does not count. */
+const sameReply = (stored: NoteReply | undefined, read: NoteReply): boolean =>
+  stored?.verdict === read.verdict && stored.fixed === read.fixed && stored.body === read.body
+
+/** Stores the answers by note id, in place of a stored answer that says something else; true if any note changed. */
 export function setReplies(store: NoteStore, root: string, replies: Map<string, NoteReply>): Promise<boolean> {
   return serial(async () => {
     const notes = await read(store, root)
     let changed = false
     const next = notes.map((n) => {
       const reply = replies.get(n.id)
-      if (!reply || !n.review || JSON.stringify(n.reply) === JSON.stringify(reply)) return n
+      if (!reply || !n.review || sameReply(n.reply, reply)) return n
       changed = true
       return { ...n, reply }
     })

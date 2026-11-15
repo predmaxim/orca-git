@@ -21,7 +21,7 @@ You are a fresh, independent reviewer. The user left notes on a diff. Each note 
 
 ## Answer
 
-One file per note, at the path the notes file gives: \`verdict:\` on the first line, \`fixed: yes\` or \`fixed: no\` on the second, a blank line, then markdown with what you checked, the evidence, your confidence, what you changed (files and lines) and what you did not check.
+One file per note, at the path the notes file gives: \`verdict:\` on the first line, \`fixed: yes\` or \`fixed: no\` on the second, a blank line, then markdown with what you checked, the evidence, your confidence, what you changed (files and lines) and what you did not check. Write each answer file once, when you are done with that note — after the fix, if you make one.
 
 When every note is answered, report briefly in the chat: how many were confirmed, refuted and unclear, and what you changed.
 `

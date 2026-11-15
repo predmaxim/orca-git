@@ -6,10 +6,12 @@ import * as main from './main.ts'
 import { parseAnswer, promptRefusal, readAnswers, removeReview, reviewPaths, reviewPrompt, writeReview } from './review.ts'
 import { REVIEW_GUIDE } from './reviewGuide.ts'
 import { t } from '../shared/i18n.ts'
+import type { NoteReply } from '../shared/protocol.ts'
 import { notesKey } from './notes.ts'
 import { draft, fixture, host, refusingStorage } from './testkit.ts'
 
 const note = () => ({ ...draft(), id: 'aaaaaaaaaaaa', createdAt: 1 })
+const ONCE = 'Write each answer file once, when you are done with that note — after the fix, if you make one.'
 
 test('a review folder holds the notes, the guide and a place for answers', () => {
   const root = mkdtempSync(join(tmpdir(), 'git-log-review-'))
@@ -18,8 +20,9 @@ test('a review folder holds the notes, the guide and a place for answers', () =>
   const paths = reviewPaths(root, 'bbbbbbbbbbbb')
   assert.equal(paths.dir, join(root, '.orca-git-log', 'review-bbbbbbbbbbbb'))
   const text = readFileSync(paths.notes, 'utf8')
-  for (const part of ['## Note aaaaaaaaaaaa', 'File: src/a.ts', 'Lines: 3-4, new side', `git show ${'c'.repeat(40)}:src/a.ts`, '    x\n    y', 'why?', join(paths.answers, '<note id>.md')]) assert.ok(text.includes(part), part)
+  for (const part of ['## Note aaaaaaaaaaaa', 'File: src/a.ts', 'Lines: 3-4, new side', `git show ${'c'.repeat(40)}:src/a.ts`, '    x\n    y', 'why?', join(paths.answers, '<note id>.md'), ONCE]) assert.ok(text.includes(part), part)
   assert.equal(readFileSync(paths.guide, 'utf8'), REVIEW_GUIDE)
+  assert.ok(REVIEW_GUIDE.includes(ONCE))
   assert.equal(statSync(paths.answers).isDirectory(), true)
 })
 
@@ -72,11 +75,31 @@ test('removing a review does not go through a linked .orca-git-log', () => {
 
 test('an answer reads as a verdict, a fixed mark and markdown', () => {
   assert.deepEqual(parseAnswer('verdict: confirmed\nfixed: yes\n\nDone in `a.ts:3`.', 7), { verdict: 'confirmed', fixed: true, body: 'Done in `a.ts:3`.', at: 7 })
-  assert.deepEqual(parseAnswer('﻿Fixed: no\r\nVerdict: Refuted\r\n\r\nNo.\r\n', 7), { verdict: 'refuted', fixed: false, body: 'No.', at: 7 })
+  assert.deepEqual(parseAnswer('\uFEFFFixed: no\r\nVerdict: Refuted\r\n\r\nNo.\r\n', 7), { verdict: 'refuted', fixed: false, body: 'No.', at: 7 })
   assert.deepEqual(parseAnswer('verdict: unclear\n\nWhich file?', 7), { verdict: 'unclear', fixed: false, body: 'Which file?', at: 7 })
   assert.equal(parseAnswer('verdict: maybe\n\nx'), null)
   assert.equal(parseAnswer('Looks fine to me.'), null)
   assert.equal(parseAnswer(`verdict: confirmed\n\n${'b'.repeat(9000)}`)?.body.length, 8000)
+})
+
+test('an answer may carry the markdown agents decorate it with', () => {
+  const cases: [string, NoteReply | null][] = [
+    ['verdict: **confirmed**\nfixed: yes\n\nok', { verdict: 'confirmed', fixed: true, body: 'ok', at: 7 }],
+    ['`verdict`: confirmed\n`fixed`: `true`\n\nok', { verdict: 'confirmed', fixed: true, body: 'ok', at: 7 }],
+    ['**verdict:** refuted\n**fixed:** no\n\nok', { verdict: 'refuted', fixed: false, body: 'ok', at: 7 }],
+    ['verdict: Confirmed.\nfixed: "yes"\n\nok', { verdict: 'confirmed', fixed: true, body: 'ok', at: 7 }],
+    ['# Answer\n\nverdict: refuted\n\nno', { verdict: 'refuted', fixed: false, body: 'no', at: 7 }],
+    ['\n\nverdict: unclear\n\nwhat?', { verdict: 'unclear', fixed: false, body: 'what?', at: 7 }],
+    ['verdict: confirmed\nfixed: yes\n   \nthe body', { verdict: 'confirmed', fixed: true, body: 'the body', at: 7 }],
+    ['verdict: confirmed', { verdict: 'confirmed', fixed: false, body: '', at: 7 }],
+    ['verdict: unclear\nverdict: confirmed\nfixed: yes\nfixed: no', { verdict: 'unclear', fixed: true, body: '', at: 7 }],
+    ['verdict: confirmed\nLooks fine', null],
+    ['verdict: confirmed\nconfidence: 90\n\nok', null],
+    ['# Answer\n# Again\n\nverdict: confirmed', null]
+  ]
+  for (const [text, reply] of cases) assert.deepEqual(parseAnswer(text, 7), reply, JSON.stringify(text))
+  // Cut before a pair that would not fit, not inside it.
+  assert.equal(parseAnswer(`verdict: confirmed\n\n${'b'.repeat(7999)}\u{1F600}`)?.body, 'b'.repeat(7999))
 })
 
 test('an answer that is a link, too large or not a file is skipped', () => {
@@ -97,7 +120,16 @@ test('an answer that is a link, too large or not a file is skipped', () => {
   rmSync(file, { recursive: true })
   writeFileSync(file, 'verdict: confirmed\n\nx')
   assert.equal(readAnswers(root, [sent], 5).get(sent.id)?.at, 5)
-  assert.equal(readAnswers(root, [{ ...sent, reply: { verdict: 'unclear', fixed: false, body: '', at: 1 } }]).size, 0)
+  // An answered note is read again: the agent may have rewritten its answer.
+  assert.equal(readAnswers(root, [{ ...sent, reply: { verdict: 'unclear', fixed: false, body: '', at: 1 } }]).size, 1)
+})
+
+test('a stored note id that is not 12 hex reads no answer', () => {
+  const root = mkdtempSync(join(tmpdir(), 'git-log-review-'))
+  writeReview(root, 'bbbbbbbbbbbb', [note()])
+  // Where answers/../x.md lands.
+  writeFileSync(join(reviewPaths(root, 'bbbbbbbbbbbb').dir, 'x.md'), 'verdict: confirmed\n\nx')
+  assert.equal(readAnswers(root, [{ ...note(), id: '../x', review: 'bbbbbbbbbbbb', sentAt: 1 }]).size, 0)
 })
 
 const answerFile = (root: string, review: string, id: string, text: string) => writeFileSync(join(reviewPaths(root, review).answers, `${id}.md`), text)
@@ -154,6 +186,53 @@ test('the list itself picks up an answer', async () => {
   const sent = (await worker.request('notes.send', { root, ids: [added.id], agent: 'claude' })) as any
   answerFile(root, sent.review, added.id, 'verdict: unclear\n\nWhich?')
   assert.equal((((await worker.request('notes.list', { root })) as any).notes[0]).reply.verdict, 'unclear')
+})
+
+test('an answer the agent rewrites replaces the stored one; an unchanged one is left alone', async () => {
+  const root = fixture()
+  const h = host(root, { 'agent.launch': { terminalId: 't-1' } })
+  const worker = await mountWorker(main, { host: h })
+  const { note: added } = (await worker.request('notes.add', { root, draft: draft() })) as any
+  const sent = (await worker.request('notes.send', { root, ids: [added.id], agent: 'claude' })) as any
+  const list = async () => (await worker.request('notes.list', { root })) as any
+  answerFile(root, sent.review, added.id, 'verdict: confirmed\nfixed: no\n\nLooking into it.')
+  assert.equal((await list()).notes[0].reply.fixed, false)
+  answerFile(root, sent.review, added.id, 'verdict: confirmed\nfixed: yes\n\nFixed in a.ts.')
+  const posted = worker.posts.length
+  const listed = await list()
+  assert.equal(listed.notes[0].reply.fixed, true)
+  assert.equal(listed.notes[0].reply.body, 'Fixed in a.ts.')
+  assert.equal(listed.warning, undefined)
+  assert.equal(worker.posts.length, posted + 1)
+  // Listed again with the file unchanged: nothing is written, nothing posted, the time it was read stays.
+  assert.equal((await list()).notes[0].reply.at, listed.notes[0].reply.at)
+  assert.equal(worker.posts.length, posted + 1)
+})
+
+test('answers that cannot be stored come back with the notes as a warning', async () => {
+  const root = fixture()
+  const replied = (key: string, value: any) => key === notesKey(root) && value.notes.some((n: any) => n.reply)
+  const h = host(root, { 'agent.launch': { terminalId: 't-1' }, ...refusingStorage(replied) })
+  const worker = await mountWorker(main, { host: h })
+  const { note: added } = (await worker.request('notes.add', { root, draft: draft() })) as any
+  const sent = (await worker.request('notes.send', { root, ids: [added.id], agent: 'claude' })) as any
+  answerFile(root, sent.review, added.id, 'verdict: confirmed\n\nDone.')
+  const listed = (await worker.request('notes.list', { root })) as any
+  assert.equal(listed.notes.length, 1)
+  assert.equal(listed.notes[0].reply, undefined)
+  assert.equal(typeof listed.warning, 'string')
+  assert.match(listed.warning, /262144/)
+})
+
+test('a delete the store refuses says why', async () => {
+  const root = fixture()
+  let refuse = false
+  const worker = await mountWorker(main, { host: host(root, refusingStorage(() => refuse)) })
+  const { note: added } = (await worker.request('notes.add', { root, draft: draft() })) as any
+  refuse = true
+  const answer = (await worker.request('notes.delete', { root, ids: [added.id] })) as any
+  assert.equal(answer.ok, false)
+  assert.match(answer.reason, /262144/)
 })
 
 test('deleting the last note of a review removes its folder', async () => {

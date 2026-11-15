@@ -368,10 +368,10 @@ declare module 'orca' {
     'diff.state': { input: { root: string }; output: DiffTabState | null }
     /** The Diff tab stepped to another file of its state. */
     'diff.index': { input: { root: string; index: number }; output: { ok: boolean } }
-    'notes.list': { input: { root: string }; output: { notes: ReviewNote[] } }
+    'notes.list': { input: { root: string }; output: { notes: ReviewNote[]; warning?: string } }
     'notes.add': { input: { root: string; draft: NoteDraft }; output: NoteResult }
     'notes.update': { input: { root: string; id: string; body: string }; output: NoteResult }
-    'notes.delete': { input: { root: string; ids: string[] }; output: { ok: boolean } }
+    'notes.delete': { input: { root: string; ids: string[] }; output: { ok: boolean; reason?: string } }
     'notes.send': { input: { root: string; ids: string[]; agent: string }; output: { ok: true; review: string } | { ok: false; reason: string } }
   }
   interface PluginPanelEvents {
