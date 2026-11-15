@@ -36,7 +36,8 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   offers a force push with lease: its confirmation lists the commits the remote would lose, offers a
   backup of the remote's tip, and the push is refused if the remote changed since the last fetch.
 - **Current branch** at the top left, next to Refresh, Fetch and Push: the branch (or the commit of a detached
-  HEAD), ↑ the commits to push and ↓ the commits to pull against its upstream as of the last fetch, and a
+  HEAD), the commits to pull (↙, blue) and to push (↗, green) against its upstream as of the last fetch,
+  in WebStorm's colors and with its 99+ for more, and a
   yellow mark while a rebase, merge, cherry-pick or revert is in progress. Its tooltip names the
   repository folder and the upstream.
 - **Commit graph**: colored lanes, merges, ref labels (`origin & main`, tags, HEAD), commits not
@@ -345,7 +346,7 @@ keeps them all.
 
 The diff is highlighted with [highlight.js](https://highlightjs.org) 11.12.0 (BSD-3-Clause), vendored as ES modules in `src/vendor/highlight/` (core and 26 language files, 128 KiB, license next to them). They are the npm package `@highlightjs/cdn-assets` byte for byte; the plugin has no build step.
 
-Interface icons are [Lucide](https://lucide.dev) (ISC), the bodies of 30 icons from `lucide-static` 0.469.0 inlined in `src/ui/dom.ts` with the license notice.
+Interface icons are [Lucide](https://lucide.dev) (ISC), the bodies of 32 icons from `lucide-static` 0.469.0 inlined in `src/ui/dom.ts` with the license notice.
 
 ## License
 

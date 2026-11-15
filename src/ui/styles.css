@@ -57,6 +57,9 @@
   --ref-remote: #b589ec;
   --ref-tag: #868a91;
   --ref-head: #f5d273;
+  /* Incoming and outgoing commits: GitIncomingOutgoingUi's INCOMING_FOREGROUND and OUTGOING_FOREGROUND. */
+  --git-incoming: #548af7;
+  --git-outgoing: #57965c;
   --st-added: #73bd79;
   --st-modified: #70aeff;
   --st-deleted: #6f737a;
@@ -75,6 +78,8 @@
   --ref-remote: #834df0;
   --ref-tag: #6c707e;
   --ref-head: #ffaf0f;
+  --git-incoming: #3574f0;
+  --git-outgoing: #369650;
   --st-added: #067d17;
   --st-modified: #0033b3;
   --st-deleted: #6c707e;
@@ -243,18 +248,28 @@ input[type='radio'] {
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 1px;
+  gap: 6px;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+
+.head-state .sync > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.head-state .sync .in {
+  color: var(--git-incoming);
+}
+
+.head-state .sync .out {
+  color: var(--git-outgoing);
 }
 
 .head-state .sync .icon {
   width: 13px;
   height: 13px;
-}
-
-.head-state .sync .icon:not(:first-child) {
-  margin-left: 5px;
 }
 
 .head-state .op {

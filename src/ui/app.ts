@@ -632,9 +632,11 @@ function renderHead(): void {
     return
   }
   const local = head.branch ? refs?.locals.find((ref) => ref.name === head.branch) : undefined
-  const sync: (Node | string)[] = []
-  if (local?.ahead) sync.push(icon('up'), String(local.ahead))
-  if (local?.behind) sync.push(icon('down'), String(local.behind))
+  // As WebStorm's branch widget: incoming then outgoing, each in its color, a count over 99 shown as 99+.
+  const count = (n: number) => (n > 99 ? '99+' : String(n))
+  const sync: Node[] = []
+  if (local?.behind) sync.push(h('span', { class: 'in' }, icon('incoming'), count(local.behind)))
+  if (local?.ahead) sync.push(h('span', { class: 'out' }, icon('outgoing'), count(local.ahead)))
   const counts = t('aheadBehindTip', { ahead: local?.ahead ?? 0, behind: local?.behind ?? 0 })
   headState.title = [repo.root, local?.upstream ? t('trackingTip', { upstream: local.upstream }) : '', sync.length ? counts : ''].filter(Boolean).join('\n')
   headState.replaceChildren()
