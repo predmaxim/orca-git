@@ -8,6 +8,13 @@ test('a token spanning lines is closed and reopened on each line', () => {
   assert.ok(out[1].startsWith('<span class="hljs-string">'))
 })
 
+test('a doc comment is marked apart from other comments, on each of its lines', () => {
+  const out = highlightLines(['/** a', ' * b */', '// c', '/* d */', '/**/'], 'typescript')
+  assert.ok(out[0].startsWith('<span class="hljs-comment hljs-doc">'))
+  assert.ok(out[1].startsWith('<span class="hljs-comment hljs-doc">'))
+  assert.ok(!out.slice(2).join('').includes('hljs-doc'))
+})
+
 test('unknown languages and long lines are only escaped', () => {
   assert.deepEqual(highlightLines(['<b>'], null), ['&lt;b&gt;'])
   const long = highlightLines(['const a = 1', 'x'.repeat(2001)], 'typescript')

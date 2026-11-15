@@ -30,6 +30,9 @@ export interface BranchRef {
   full: string
   hash: string
   upstream?: string
+  /** Commits of a local branch its upstream lacks, and the other way round, as of the last fetch; absent when 0. */
+  ahead?: number
+  behind?: number
 }
 
 export interface RefsResult {

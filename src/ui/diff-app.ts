@@ -7,6 +7,33 @@ import { pickLocale, setLocale } from '../shared/i18n.ts'
 
 setLocale(pickLocale(orca.locale))
 
+// The code's colors follow the `diffColors` setting (styles.css keys its palettes on this attribute); a change applies at once.
+const applyColors = () =>
+  void orca.settings
+    .get()
+    .then((settings) => (document.documentElement.dataset.diffColors = settings.diffColors === 'webstorm' ? 'webstorm' : 'orca'))
+    .catch(() => undefined)
+applyColors()
+// An Orca without the listener (older than the one this was made on) applies a change when the tab reopens.
+orca.settings.onDidChange?.(({ key }) => key === 'diffColors' && applyColors())
+
+type Typography = { cssFontFamily: string; fontSize: number; fontWeight: string; lineHeight: number; fontLigatures: boolean }
+/** Orca's file editor font, for the Orca colors; Monaco reads a line height under 8 as a multiple of the font size and 0 as its own default. */
+const applyTypography = (font: Typography) => {
+  const style = document.documentElement.style
+  style.setProperty('--editor-font', font.cssFontFamily)
+  style.setProperty('--editor-size', `${font.fontSize}px`)
+  style.setProperty('--editor-weight', font.fontWeight)
+  if (font.lineHeight >= 8) style.setProperty('--editor-line', `${font.lineHeight}px`)
+  else if (font.lineHeight > 0) style.setProperty('--editor-line', String(font.lineHeight))
+  else style.removeProperty('--editor-line')
+  style.setProperty('--editor-ligatures', font.fontLigatures ? 'normal' : 'none')
+}
+if (orca.host.has('editor.readTypography')) {
+  orca.host.call('editor.readTypography').then(applyTypography, () => undefined)
+  orca.on('editor.typography.changed', applyTypography)
+}
+
 const PREFS_KEY = 'git-log.prefs.diff'
 
 interface Prefs {

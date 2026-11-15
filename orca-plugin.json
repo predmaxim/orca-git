@@ -70,6 +70,15 @@
         "enum": ["branch", "tag"],
         "enumLabels": ["Branch", "Tag"],
         "default": "branch"
+      },
+      {
+        "key": "diffColors",
+        "title": "Diff colors",
+        "description": "Colors of the code in the Diff tab. Orca: the colors and font of Orca's file editor with a theme that brings no editor colors of its own (Monaco's dark and light themes); Orca does not pass a theme's editor colors to plugins. WebStorm: the editor colors of WebStorm 2026.2 (Islands Dark and Islands Light), background included.",
+        "type": "string",
+        "enum": ["orca", "webstorm"],
+        "enumLabels": ["Orca", "WebStorm"],
+        "default": "orca"
       }
     ]
   },

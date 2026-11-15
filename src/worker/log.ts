@@ -110,17 +110,24 @@ export async function readHead(git: Git): Promise<{ branch: string | null; hash:
   }
 }
 
+/** `ahead 2, behind 1` from `%(upstream:track,nobracket)`; nothing for an upstream in sync or gone. */
+const parseTrack = (track: string): { ahead?: number; behind?: number } => {
+  const ahead = Number(/ahead (\d+)/.exec(track)?.[1] ?? 0)
+  const behind = Number(/behind (\d+)/.exec(track)?.[1] ?? 0)
+  return { ...(ahead ? { ahead } : {}), ...(behind ? { behind } : {}) }
+}
+
 export function parseRefs(stdout: string): Pick<RefsResult, 'locals' | 'remotes' | 'tags'> {
   const locals: BranchRef[] = []
   const remotes: BranchRef[] = []
   const tags: BranchRef[] = []
   // Each field ends with NUL and each record with a newline after that: an upstream name from the config can hold a newline, never a NUL.
   const fields = stdout.split('\0')
-  for (let i = 0; i + 4 <= fields.length; i += 4) {
-    const [ref, object, peeled, upstream] = fields.slice(i, i + 4)
+  for (let i = 0; i + 5 <= fields.length; i += 5) {
+    const [ref, object, peeled, upstream, track] = fields.slice(i, i + 5)
     const full = ref.replace(/^\n/, '')
     const hash = peeled || object
-    if (full.startsWith('refs/heads/')) locals.push({ name: full.slice(11), full, hash, ...(upstream ? { upstream } : {}) })
+    if (full.startsWith('refs/heads/')) locals.push({ name: full.slice(11), full, hash, ...(upstream ? { upstream, ...parseTrack(track) } : {}) })
     else if (full.startsWith('refs/remotes/')) {
       if (!REMOTE_HEAD.test(full)) remotes.push({ name: full.slice(13), full, hash })
     } else if (full.startsWith('refs/tags/')) tags.push({ name: full.slice(10), full, hash })
@@ -132,7 +139,7 @@ export async function readRefs(git: Git): Promise<RefsResult> {
   const [refs, head, users, me] = await Promise.all([
     git.out([
       'for-each-ref',
-      '--format=%(refname)%00%(objectname)%00%(*objectname)%00%(upstream:short)%00',
+      '--format=%(refname)%00%(objectname)%00%(*objectname)%00%(upstream:short)%00%(upstream:track,nobracket)%00',
       'refs/heads',
       'refs/remotes',
       'refs/tags'

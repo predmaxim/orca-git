@@ -7,7 +7,7 @@ import { dirPaths, renderFileTree } from './filetree.ts'
 import { renderBranches } from './branches.ts'
 import { renderCommitList, renderPlaceholder } from './details.ts'
 import { askCheckout, askName, askPatch, askRebasePlan, askReset, busy, confirm, dialog, editMessage, overwrittenWarning, pushedWarning } from './dialogs.ts'
-import { h, icon } from './dom.ts'
+import { append, h, icon } from './dom.ts'
 import { createFilterBar } from './filters.ts'
 import { KEYS, withKey, type KeyScope } from './keys.ts'
 import { reachableFrom, refLabels, relativeDate, fullDate, shortHash } from './format.ts'
@@ -92,7 +92,8 @@ const filterBar = createFilterBar({
   focusList: () => viewport.focus()
 })
 
-const toolbar = h('div', { class: 'toolbar' }, h('div', { class: 'spacer' }), refreshButton, fetchButton)
+const headState = h('div', { class: 'head-state' })
+const toolbar = h('div', { class: 'toolbar' }, headState, refreshButton, fetchButton)
 // The search takes the full width of the commits; the filters get their own row under it.
 const searchRow = h('div', { class: 'search-row' }, h('label', { class: 'search' }, icon('search'), searchInput, regexToggle, caseToggle))
 const filterRow = h('div', { class: 'toolbar filters' }, ...filterBar.elements)
@@ -261,6 +262,7 @@ function rewriteBlocker(hashes: string[], fixupParent: boolean): string | undefi
 }
 
 function renderEmpty(): void {
+  renderHead()
   let text = ''
   let retry = false
   if (!repo) text = loadError ?? t('diffLoading')
@@ -618,9 +620,31 @@ if (prefs.matchCase) filter.matchCase = true
 /** The ref "Show Backup" highlighted in the tree. */
 let revealed: string | null = null
 
+/** Left of Refresh: the current branch (or the detached commit), how far it is from its upstream, and an operation left in progress. */
+function renderHead(): void {
+  const head = repo && !loadError ? repo.head : null
+  if (!repo || !head?.hash) {
+    headState.replaceChildren()
+    headState.removeAttribute('title')
+    return
+  }
+  const local = head.branch ? refs?.locals.find((ref) => ref.name === head.branch) : undefined
+  const sync: (Node | string)[] = []
+  if (local?.ahead) sync.push(icon('up'), String(local.ahead))
+  if (local?.behind) sync.push(icon('down'), String(local.behind))
+  const counts = t('aheadBehindTip', { ahead: local?.ahead ?? 0, behind: local?.behind ?? 0 })
+  headState.title = [repo.root, local?.upstream ? t('trackingTip', { upstream: local.upstream }) : '', sync.length ? counts : ''].filter(Boolean).join('\n')
+  headState.replaceChildren()
+  append(headState, [
+    icon(head.branch ? 'branch' : 'commit'),
+    h('span', { class: 'name' }, head.branch ?? shortHash(head.hash)),
+    sync.length ? h('span', { class: 'sync', 'aria-label': counts }, ...sync) : null,
+    repo.operation ? h('span', { class: 'op' }, repo.operation) : null
+  ])
+}
+
 function renderTree(): void {
-  const head = repo?.head
-  column.section('branches').setSummary(head?.branch ?? (head?.hash ? shortHash(head.hash) : ''))
+  renderHead()
   renderBranches(
     tree,
     {

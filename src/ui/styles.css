@@ -60,8 +60,6 @@
   --st-added: #73bd79;
   --st-modified: #70aeff;
   --st-deleted: #6f737a;
-  --diff-add: #294436;
-  --diff-del: #484a4a;
 }
 
 :root.light {
@@ -80,8 +78,6 @@
   --st-added: #067d17;
   --st-modified: #0033b3;
   --st-deleted: #6c707e;
-  --diff-add: #bee6be;
-  --diff-del: #d6d6d6;
 }
 
 * {
@@ -224,8 +220,57 @@ input[type='radio'] {
   padding: 2px 8px 6px;
 }
 
-.toolbar .spacer {
+/* Left of the toolbar's actions: the current branch as a row name, how far it is from its upstream, an operation in progress. */
+.head-state {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-fg);
+}
+
+.head-state .name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.head-state .sync {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.head-state .sync .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.head-state .sync .icon:not(:first-child) {
+  margin-left: 5px;
+}
+
+.head-state .op {
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--state-wait) 45%, transparent);
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--state-wait) 12%, transparent);
+  color: var(--state-wait);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+/* The wait yellow is too light for text on a light background: a darker shade of it there. */
+:root.light .head-state .op {
+  color: color-mix(in srgb, var(--state-wait) 50%, black);
 }
 
 .tool {
@@ -1677,9 +1722,6 @@ input[type='radio']:focus-visible {
 .diff-view {
   --bg: var(--orca-background);
   --fg: var(--orca-foreground);
-  /* WebStorm fills a changed line lighter when it marks the changed words: 40% of the color over the editor. */
-  --add-line: color-mix(in srgb, var(--diff-add) 40%, var(--bg));
-  --del-line: color-mix(in srgb, var(--diff-del) 40%, var(--bg));
   flex: 1;
   min-height: 0;
   display: flex;
@@ -1766,6 +1808,8 @@ input[type='radio']:focus-visible {
   overflow: auto;
   outline: 0;
   user-select: text;
+  background: var(--code-bg);
+  color: var(--code-fg);
 }
 
 .diff-note {
@@ -1783,6 +1827,15 @@ input[type='radio']:focus-visible {
   min-width: min-content;
 }
 
+/* Orca's colors come with Orca's editor font, which diff-app.ts reads from Orca. */
+:root:not([data-diff-colors='webstorm']) .diff-lines {
+  font-family: var(--editor-font, var(--font-code));
+  font-size: var(--editor-size, 13px);
+  font-weight: var(--editor-weight, normal);
+  line-height: var(--editor-line, 1.5);
+  font-variant-ligatures: var(--editor-ligatures, normal);
+}
+
 .diff-lines .d-row {
   display: grid;
 }
@@ -1798,16 +1851,16 @@ input[type='radio']:focus-visible {
 .diff-lines .d-num {
   padding: 0 6px;
   text-align: right;
-  color: var(--muted-fg);
+  color: var(--code-num);
   user-select: none;
 }
 
 .diff-lines .d-num.add {
-  background: var(--add-line);
+  background: var(--line-add-words);
 }
 
 .diff-lines .d-num.del {
-  background: var(--del-line);
+  background: var(--line-del-words);
 }
 
 .diff-lines .d-code {
@@ -1821,86 +1874,183 @@ input[type='radio']:focus-visible {
 }
 
 .diff-lines .d-code.add {
-  background: var(--diff-add);
+  background: var(--line-add);
 }
 
 .diff-lines .d-code.del {
-  background: var(--diff-del);
+  background: var(--line-del);
 }
 
 .diff-lines .d-code.add:has(.word) {
-  background: var(--add-line);
+  background: var(--line-add-words);
 }
 
 .diff-lines .d-code.del:has(.word) {
-  background: var(--del-line);
+  background: var(--line-del-words);
 }
 
 .diff-lines .d-code.d-empty {
-  background: repeating-linear-gradient(135deg, transparent 0 4px, color-mix(in srgb, var(--fg) 5%, transparent) 4px 5px);
+  background: repeating-linear-gradient(135deg, transparent 0 4px, var(--code-empty) 4px 5px);
 }
 
 .diff-lines .add .word {
-  background: var(--diff-add);
+  background: var(--word-add);
   border-radius: 2px;
 }
 
 .diff-lines .del .word {
-  background: var(--diff-del);
+  background: var(--word-del);
   border-radius: 2px;
 }
 
 .diff-lines .d-hunk {
   padding: 2px 10px;
   color: var(--muted-fg);
-  background: var(--muted);
+  background: var(--code-hunk);
   border-block: 1px solid var(--border);
   user-select: none;
 }
 
 .diff-lines .d-hunk .section {
   margin-left: 12px;
-  color: var(--fg);
+  color: var(--code-fg);
   opacity: 0.75;
 }
 
-/* Syntax colors in the WebStorm palette: Orca gives frames no token colors, only the dark/light class. */
+/* Code colors by the diffColors setting (data-diff-colors on <html>, set by diff-app.ts); Orca gives frames no editor colors.
+   Orca: Monaco's vs-dark and vs, which Orca 1.4.258's file editor uses with a theme that brings no editor colors, on Orca's
+   background. WebStorm: WebStorm 2026.2.3's Islands Dark (IslandSchemeDark.xml over Darcula) and Islands Light
+   (expUI_lightScheme.xml over Default). */
 :root {
-  --hl-keyword: #cf8e6d;
-  --hl-string: #6aab73;
-  --hl-number: #2aacb8;
-  --hl-comment: #7a7e85;
-  --hl-function: #56a8f5;
-  --hl-attr: #c77dbb;
-  --hl-tag: #d5b778;
-  --hl-type: #16baac;
-  --hl-meta: #b3ae60;
+  --code-bg: var(--orca-background);
+  --code-fg: #d4d4d4;
+  --code-num: #858585;
+  --code-hunk: var(--orca-muted);
+  --code-empty: #cccccc33;
+  --line-add: rgb(155 185 85 / 20%);
+  --line-del: rgb(255 0 0 / 20%);
+  --line-add-words: var(--line-add);
+  --line-del-words: var(--line-del);
+  --word-add: #9ccc2c33;
+  --word-del: #ff000033;
+  --hl-keyword: #569cd6;
+  --hl-string: #ce9178;
+  --hl-number: #b5cea8;
+  --hl-regexp: #b46695;
+  --hl-comment: #608b4e;
+  --hl-comment-style: normal;
+  --hl-doc: #608b4e;
+  --hl-doc-style: normal;
+  --hl-doctag: #608b4e;
+  --hl-doctag-line: none;
+  --hl-function: #d4d4d4;
+  --hl-field: #d4d4d4;
+  --hl-type: #3dc9b0;
+  --hl-meta: #cc6666;
+  --hl-tag: #569cd6;
+  --hl-xml-attr: #9cdcfe;
 }
 
 :root.light {
+  --code-fg: #000000;
+  --code-num: #237893;
+  --code-empty: #22222233;
+  --word-add: #9ccc2c40;
+  --hl-keyword: #0000ff;
+  --hl-string: #a31515;
+  --hl-number: #098658;
+  --hl-regexp: #800000;
+  --hl-comment: #008000;
+  --hl-doc: #008000;
+  --hl-doctag: #008000;
+  --hl-function: #000000;
+  --hl-field: #000000;
+  --hl-type: #008080;
+  --hl-meta: #808080;
+  --hl-tag: #800000;
+  --hl-xml-attr: #ff0000;
+}
+
+:root[data-diff-colors='webstorm'] {
+  --code-bg: #191a1c;
+  --code-fg: #bcbec4;
+  --code-num: #4b5059;
+  --code-hunk: #2b2d30;
+  --code-empty: #bcbec40d;
+  --line-add: #294436;
+  --line-del: #484a4a;
+  /* WebStorm fills a changed line lighter when it marks the changed words: 40% of the color over the editor. */
+  --line-add-words: color-mix(in srgb, #294436 40%, #191a1c);
+  --line-del-words: color-mix(in srgb, #484a4a 40%, #191a1c);
+  --word-add: #294436;
+  --word-del: #484a4a;
+  --hl-keyword: #cf8e6d;
+  --hl-string: #6aab73;
+  --hl-number: #2aacb8;
+  --hl-regexp: #42c3d4;
+  --hl-comment: #7a7e85;
+  --hl-comment-style: normal;
+  --hl-doc: #5f826b;
+  --hl-doc-style: italic;
+  --hl-doctag: #67a37c;
+  --hl-doctag-line: underline;
+  --hl-function: #56a8f5;
+  --hl-field: #c77dbb;
+  /* No class-name color in Islands Dark: a class is an identifier. */
+  --hl-type: #bcbec4;
+  --hl-meta: #b3ae60;
+  --hl-tag: #d5b778;
+  --hl-xml-attr: #bcbec4;
+}
+
+:root.light[data-diff-colors='webstorm'] {
+  --code-bg: #ffffff;
+  --code-fg: #080808;
+  --code-num: #aeb3c2;
+  --code-hunk: #e4e6eb;
+  --code-empty: #0808080d;
+  --line-add: #bee6be;
+  --line-del: #d6d6d6;
+  --line-add-words: color-mix(in srgb, #bee6be 40%, #ffffff);
+  --line-del-words: color-mix(in srgb, #d6d6d6 40%, #ffffff);
+  --word-add: #bee6be;
+  --word-del: #d6d6d6;
   --hl-keyword: #0033b3;
   --hl-string: #067d17;
   --hl-number: #1750eb;
+  --hl-regexp: #264eff;
   --hl-comment: #8c8c8c;
+  --hl-comment-style: italic;
+  --hl-doc: #8c8c8c;
+  --hl-doc-style: italic;
+  --hl-doctag: #8c8c8c;
+  --hl-doctag-line: underline;
   --hl-function: #00627a;
-  --hl-attr: #871094;
-  --hl-tag: #0033b3;
-  --hl-type: #008080;
+  --hl-field: #871094;
+  --hl-type: #080808;
   --hl-meta: #9e880d;
+  /* Tags and attributes have no color of their own in Light: they take the keyword's and DEFAULT_ATTRIBUTE's. */
+  --hl-tag: #0033b3;
+  --hl-xml-attr: #174ad4;
 }
 
+/* highlight.js tokens by what they are; parameters, `this` and markup attributes are told apart by where they sit. */
 .diff-lines .hljs-keyword,
 .diff-lines .hljs-literal,
-.diff-lines .hljs-selector-tag,
-.diff-lines .hljs-doctag {
+.diff-lines .hljs-built_in,
+.diff-lines .hljs-variable.language_,
+.diff-lines .hljs-selector-tag {
   color: var(--hl-keyword);
 }
 
 .diff-lines .hljs-string,
-.diff-lines .hljs-regexp,
 .diff-lines .hljs-symbol,
 .diff-lines .hljs-addition {
   color: var(--hl-string);
+}
+
+.diff-lines .hljs-regexp {
+  color: var(--hl-regexp);
 }
 
 .diff-lines .hljs-number {
@@ -1910,7 +2060,17 @@ input[type='radio']:focus-visible {
 .diff-lines .hljs-comment,
 .diff-lines .hljs-quote {
   color: var(--hl-comment);
-  font-style: italic;
+  font-style: var(--hl-comment-style);
+}
+
+.diff-lines .hljs-comment.hljs-doc {
+  color: var(--hl-doc);
+  font-style: var(--hl-doc-style);
+}
+
+.diff-lines .hljs-doctag {
+  color: var(--hl-doctag);
+  text-decoration: var(--hl-doctag-line);
 }
 
 .diff-lines .hljs-title.function_,
@@ -1923,7 +2083,11 @@ input[type='radio']:focus-visible {
 .diff-lines .hljs-property,
 .diff-lines .hljs-variable,
 .diff-lines .hljs-template-variable {
-  color: var(--hl-attr);
+  color: var(--hl-field);
+}
+
+.diff-lines .hljs-params .hljs-attr {
+  color: var(--code-fg);
 }
 
 .diff-lines .hljs-tag,
@@ -1931,8 +2095,11 @@ input[type='radio']:focus-visible {
   color: var(--hl-tag);
 }
 
+.diff-lines .hljs-tag .hljs-attr {
+  color: var(--hl-xml-attr);
+}
+
 .diff-lines .hljs-type,
-.diff-lines .hljs-built_in,
 .diff-lines .hljs-title.class_ {
   color: var(--hl-type);
 }

@@ -450,3 +450,17 @@ test('only reads are killed after a time limit, unless the caller sets one', () 
   assert.equal(timeoutFor(['-c', 'rebase.updateRefs=false', 'rebase', '-i', 'HEAD~2']), 0)
   assert.equal(timeoutFor(['fetch', '--all'], { timeoutMs: 100_000 }), 100_000)
 })
+
+test('a local branch tells how far it is ahead of and behind its upstream', async () => {
+  const { root, hashes } = repo(3)
+  const other = sh(root, 'commit-tree', `${hashes[0]}^{tree}`, '-p', hashes[0], '-m', 'x')
+  sh(root, 'branch', 'base', other)
+  sh(root, 'branch', 'plain', hashes[0])
+  sh(root, 'branch', '-q', '--set-upstream-to=base', 'main')
+  const { locals } = await readRefs(createGit(root))
+  assert.deepEqual(locals.map(({ name, upstream, ahead, behind }) => [name, upstream, ahead, behind]), [
+    ['base', undefined, undefined, undefined],
+    ['main', 'base', 2, 1],
+    ['plain', undefined, undefined, undefined]
+  ])
+})

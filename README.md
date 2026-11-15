@@ -25,9 +25,13 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
 ## Features
 
 - **Sections**: Branches, Commits, Files and Details stack in a column, like the WebStorm Git tool window. Click
-  a header to collapse a section to one line with its summary (current branch, number of selected
-  commits); drag the edge between open sections to resize them (a line shows under the pointer). The
-  layout is remembered.
+  a header to collapse a section to one line with its summary (number of selected commits or files);
+  drag the edge between open sections to resize them (a line shows under the pointer). The layout is
+  remembered.
+- **Current branch** at the top left, next to Refresh and Fetch: the branch (or the commit of a detached
+  HEAD), ↑ the commits to push and ↓ the commits to pull against its upstream as of the last fetch, and a
+  yellow mark while a rebase, merge, cherry-pick or revert is in progress. Its tooltip names the
+  repository folder and the upstream.
 - **Commit graph**: colored lanes, merges, ref labels (`origin & main`, tags, HEAD), commits not
   reachable from HEAD are dimmed.
 - **Filters**: text or hash (with regex `.*` and match case `Cc`) in a search across the full width of the
@@ -46,9 +50,16 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
 - **Details section**: one row per selected commit (short hash, title, author); click a row to expand
   the full message, author, committer, date and branches. A single selected commit is expanded at once.
 - **Diff tab**: one editor tab per repository; the next file you open replaces its content. Side by
-  side or unified, with changed words highlighted and syntax highlighting for 24 languages (light and
-  dark palettes in the style of WebStorm, the plugin's own because Orca does not pass theme token colors
-  to plugins). Toggle **Whole file** for full context, jump between changes with F7 / Shift+F7 and
+  side or unified, with changed words highlighted and syntax highlighting for 24 languages, in the colors
+  the **Diff colors** setting picks. **Orca** (the default): the colors and font of Orca's file editor
+  with a theme that brings no editor colors of its own (Monaco's dark and light themes), because Orca
+  does not pass a theme's editor colors to plugins
+  ([stablyai/orca#40879](https://github.com/stablyai/orca/issues/40879)); a theme with its own editor
+  colors shows other colors in Orca's editor. **WebStorm**: WebStorm 2026.2's Islands Dark and Islands
+  Light, the editor background included. The highlighter knows tokens, not meaning: it cannot tell a
+  local function from a global one the way WebStorm does, so a few names are colored by their place
+  instead (parameters plain, object keys and properties as fields). A change of the setting applies at
+  once. Toggle **Whole file** for full context, jump between changes with F7 / Shift+F7 and
   between the files of the selection it was opened from with ← / → (keys or header buttons) or Alt+↑ /
   Alt+↓ (counter "3/5 files"); the panel's Files section highlights the file the tab shows. Merge
   commits are compared with their first parent.
@@ -58,8 +69,8 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   current Orca theme, light or dark: backgrounds, text, borders, inputs and the focus ring, selection,
   menus, dialogs, buttons and corner radius (its 20 `--orca-*` tokens). Notices are tinted green
   (done), red (error), blue (info) and yellow (warning). What Orca does not pass follows WebStorm
-  (Islands Dark and Islands Light): file status colors, added and removed lines and words in the diff,
-  graph lanes and ref icons. Orca does not pass its app font to plugins yet
+  (Islands Dark and Islands Light): file status colors, graph lanes and ref icons; the code in the Diff
+  tab follows the **Diff colors** setting. Orca does not pass its app font to plugins yet
   ([stablyai/orca#42575](https://github.com/stablyai/orca/issues/42575)), so the plugin uses Orca's own
   fallbacks: Geist when installed, else the system sans-serif, and for code the system monospace font.
 - **Multi-select**: click, Ctrl/⌘-click, Shift-click, arrows, Page Up/Down, Home/End, Ctrl+A.
@@ -325,7 +336,7 @@ keeps them all.
 
 The diff is highlighted with [highlight.js](https://highlightjs.org) 11.12.0 (BSD-3-Clause), vendored as ES modules in `src/vendor/highlight/` (core and 26 language files, 128 KiB, license next to them). They are the npm package `@highlightjs/cdn-assets` byte for byte; the plugin has no build step.
 
-Interface icons are [Lucide](https://lucide.dev) (ISC), the bodies of 29 icons from `lucide-static` 0.469.0 inlined in `src/ui/dom.ts` with the license notice.
+Interface icons are [Lucide](https://lucide.dev) (ISC), the bodies of 30 icons from `lucide-static` 0.469.0 inlined in `src/ui/dom.ts` with the license notice.
 
 ## License
 

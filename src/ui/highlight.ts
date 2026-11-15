@@ -62,6 +62,8 @@ export function highlightLines(lines: string[], language: string | null): string
   } catch {
     return lines.map(escapeHtml)
   }
+  // A comment opening with /** is a doc comment, which WebStorm colors apart from the others.
+  html = html.replace(/<span class="hljs-comment">\/\*\*(?!\/)/g, '<span class="hljs-comment hljs-doc">/**')
   const open: string[] = []
   return html.split('\n').map((line) => {
     const prefix = open.join('')
