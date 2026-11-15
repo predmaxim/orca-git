@@ -85,6 +85,15 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   Delete all asks once more. A click on a note opens its file, with Whole file when its lines are
   outside the changed regions, and scrolls to it. Notes are kept in the plugin's storage, up to 200
   per repository.
+- **Send notes to an agent**: **Send to a new agent (N)** in the Diff tab's header (shown while a note
+  is unsent) opens a menu of agent kinds (the ones Orca lists, plus claude and codex; the last one used
+  first): all unsent notes, or only those of the file shown. The plugin writes a folder
+  `.orca-git-log/review-<id>/` in the workspace with `notes.md` (every note: file, lines, the commit it
+  was written on, the selected text, the comment, and how to answer), `SKILL.md` (a short guide for an
+  independent reviewer) and an empty `answers/`, adds `.orca-git-log/` to the repository's
+  `.git/info/exclude`, and starts a new agent in that workspace whose prompt names the three paths. The
+  notes are then marked sent. If the agent does not start, the folder is removed and the notes stay
+  unsent; the reason shows under the button.
 - **Looks like Orca**: the sidebar is drawn as Orca draws its own: section headers in its small
   uppercase labels with the count on the right, no lines between sections, [Lucide](https://lucide.dev)
   icons (the set Orca uses), outline buttons, its field and icon-button sizes. Colors come from the
@@ -236,6 +245,9 @@ Variables such as `GIT_DIR` that would point git at another repository are remov
 environment, and its `PATH` keeps only absolute folders, so nothing git starts by name (`cp`, `ssh`,
 `gpg`) comes from the repository.
 
+Sending review notes needs two more permissions, to start agents (`agent:launch`) and to read their
+status (`agent:read`): after an update that adds them Orca asks for approval again.
+
 ### Develop
 
 ```sh
@@ -356,6 +368,8 @@ keeps them all.
   the panel matches the focused one through its terminal titles; if that is not enough it asks you to pick,
   and remembers the choice. It does not notice a switch between two such workspaces and can keep showing
   the other one's repository; a file opened from it then opens its Diff tab in that other, hidden workspace.
+- Notes can only be sent to a new agent in a terminal of the workspace. The model and how the agent
+  starts are Orca's choice. "Sent" means Orca started the agent, not that it read the notes.
 
 ## Third-party code
 
@@ -363,7 +377,7 @@ The diff is highlighted with [highlight.js](https://highlightjs.org) 11.12.0 (BS
 
 Review notes and the agent's answers are markdown, read with the lexer of [marked](https://marked.js.org) 18.2.0 (MIT): the one file `lib/marked.esm.js` byte for byte in `src/vendor/marked/` (license next to it). Only the lexer is used; `src/ui/markdown.ts` turns its tokens into DOM nodes, never into HTML.
 
-Interface icons are [Lucide](https://lucide.dev) (ISC), the bodies of 33 icons from `lucide-static` 0.469.0 inlined in `src/ui/dom.ts` with the license notice.
+Interface icons are [Lucide](https://lucide.dev) (ISC), the bodies of 34 icons from `lucide-static` 0.469.0 inlined in `src/ui/dom.ts` with the license notice.
 
 ## License
 

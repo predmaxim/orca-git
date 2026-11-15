@@ -19,6 +19,9 @@ export interface DiffOptions {
   wholeFile: boolean
   /** Called when the user switches layout or context, to remember it. */
   onPrefs(mode: DiffMode, wholeFile: boolean): void
+  /** The agent the notes were last sent to, and the call that remembers a new choice. */
+  noteAgent?: string
+  onNoteAgent(agent: string): void
   /** Called when the user moves to another file with the arrows. */
   onIndex(index: number): void
 }
@@ -128,7 +131,7 @@ export function showDiffPlaceholder(container: HTMLElement): void {
 
 /** Shows `files[index]` in the container; Alt+↑/↓ moves between files, F7 between changes, Ctrl+Shift+A notes the selection. */
 export function mountDiff(container: HTMLElement, options: DiffOptions): { notes: NotesView; dispose(): void } {
-  const { root, files, onPrefs, onIndex } = options
+  const { root, files, onPrefs, onIndex, onNoteAgent } = options
   let index = Math.max(0, Math.min(options.index, files.length - 1))
   let mode = options.mode
   let wholeFile = options.wholeFile
@@ -143,6 +146,8 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { notes
   const notes = mountNotes({
     root,
     files,
+    agent: options.noteAgent,
+    onAgent: onNoteAgent,
     rerender: () => {
       const top = body.scrollTop
       render()

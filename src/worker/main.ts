@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { appendFileSync, closeSync, constants, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import type { OrcaWorkerApi, PanelRequestContext } from 'orca/worker'
@@ -13,7 +14,8 @@ import { readDetails, readLogPage, readRefs } from './log.ts'
 import { resolveRepo, toplevel } from './repo.ts'
 import { readFileDiff } from './diff.ts'
 import { readRangeDiff, readSelectionFiles } from './selection.ts'
-import { addNote, deleteNotes, listNotes, updateNote } from './notes.ts'
+import { addNote, deleteNotes, listNotes, markSent, updateNote } from './notes.ts'
+import { removeReview, reviewPrompt, writeReview } from './review.ts'
 import { createPatch } from './patch.ts'
 import { checkPush, runPush } from './push.ts'
 import { gitTooOld } from './rebase.ts'
@@ -58,6 +60,7 @@ async function setting<T>(key: string, fallback: T): Promise<T> {
   }
 }
 
+const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 const gitPath = () => setting('gitPath', 'git').then((path) => (typeof path === 'string' && path.trim()) || 'git')
 
 /**
@@ -357,6 +360,39 @@ export default function activate(orca: OrcaWorkerApi): void {
     const gone = await deleteNotes(orca.storage, key, ids)
     if (gone.length) orca.panels.post('notes.changed', { root: key })
     return { ok: true }
+  })
+
+  handle('notes.send', async ({ root, ids, agent }) => {
+    const git = await gitFor(root)
+    const key = git.root
+    const notes = (await listNotes(orca.storage, key)).filter((n) => Array.isArray(ids) && ids.includes(n.id) && n.sentAt === undefined)
+    if (!notes.length) return { ok: false, reason: t('reviewNothing') }
+    if (typeof agent !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(agent)) return { ok: false, reason: t('noteInvalid') }
+    const workspace = await workspaceFor(orca, key, await gitPath())
+    if (!workspace) return { ok: false, reason: t('diffNoWorkspace') }
+    await exclude(git, key, '.orca-git-log/')
+    const review = randomBytes(6).toString('hex')
+    const made = writeReview(key, review, notes)
+    if (!made.ok) return { ok: false, reason: made.reason }
+    const prompt = reviewPrompt(made.paths)
+    if (prompt.length > 4096) {
+      removeReview(key, review)
+      return { ok: false, reason: t('reviewPromptTooLong') }
+    }
+    try {
+      await orca.host.call('agent.launch', { workspaceId: workspace.id, agent, prompt })
+    } catch (error) {
+      removeReview(key, review)
+      return { ok: false, reason: t('reviewLaunchFailed', { error: errorText(error) }) }
+    }
+    // The agent is already working in the folder: it stays even when the mark cannot be saved.
+    try {
+      await markSent(orca.storage, key, notes.map((n) => n.id), review)
+    } catch (error) {
+      return { ok: false, reason: t('notesSaveFailed', { error: errorText(error) }) }
+    }
+    orca.panels.post('notes.changed', { root: key })
+    return { ok: true, review }
   })
 }
 

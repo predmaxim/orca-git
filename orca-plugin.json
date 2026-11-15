@@ -86,6 +86,8 @@
     { "kind": "workspace:read" },
     { "kind": "workspace:write" },
     { "kind": "settings:own" },
-    { "kind": "storage:own" }
+    { "kind": "storage:own" },
+    { "kind": "agent:launch" },
+    { "kind": "agent:read" }
   ]
 }

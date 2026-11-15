@@ -7,8 +7,8 @@ import type { DiffMode } from './diff.ts'
 import { h, icon, ICONS } from './dom.ts'
 import { markRange } from './highlight.ts'
 import { mdDom } from './markdown.ts'
-import { showPopover } from './menu.ts'
-import { anchor, coveredRange, notesOf, notesText, pickSide, sideLines } from './notemodel.ts'
+import { showMenu, showPopover, type MenuEntry } from './menu.ts'
+import { anchor, coveredRange, notesOf, notesText, pickSide, sideLines, unsent } from './notemodel.ts'
 
 export interface NotesView {
   /** The header buttons: Notes (N) and, from Task 6, Send to agent (N). */
@@ -78,6 +78,9 @@ export function mountNotes(options: {
   rerender(): void
   /** Shows `files[index]`, with the whole file when `whole`, then calls `then`. */
   show(index: number, whole: boolean, then: () => void): void
+  /** The agent the notes were last sent to, and the call that remembers a new choice. */
+  agent?: string
+  onAgent(agent: string): void
 }): NotesView {
   const { root, files } = options
   let notes: ReviewNote[] = []
@@ -102,7 +105,15 @@ export function mountNotes(options: {
     { class: 'tool note-add', title: t('noteAdd'), 'aria-label': t('noteAdd'), onmousedown: (event: MouseEvent) => event.preventDefault(), onclick: () => add() },
     icon('note')
   )
-  const syncCount = () => (count.textContent = `${t('notesButton')} (${notes.length})`)
+  const sendCount = h('span')
+  const sendButton = h('button', { class: 'tool', title: t('notesSend', { count: 0 }), 'aria-label': t('notesSend', { count: 0 }), onclick: () => void openSend() }, icon('send'), sendCount)
+  const syncCount = () => {
+    count.textContent = `${t('notesButton')} (${notes.length})`
+    const open = unsent(notes).length
+    sendCount.textContent = String(open)
+    sendButton.title = sendButton.ariaLabel = t('notesSend', { count: open })
+    sendButton.style.display = open ? '' : 'none'
+  }
   syncCount()
   const blobOf = (side: NoteSide) => (side === 'old' ? diff?.oldBlob : diff?.newBlob)
 
@@ -276,6 +287,57 @@ export function mountNotes(options: {
     })
   }
 
+  /** Whether the note `n` is of the file shown. */
+  const ofFile = (n: ReviewNote) => file !== null && n.path === (n.side === 'new' ? file.path : (file.oldPath ?? file.path))
+
+  /** The agent kinds Orca offers, plus claude and codex; the last one chosen first. */
+  async function agents(): Promise<string[]> {
+    let listed: string[] = []
+    try {
+      if (orca.host.has('agents.list')) {
+        const answer = await orca.host.call('agents.list')
+        listed = (Array.isArray(answer?.agents) ? answer.agents : []).map((a: { agent?: unknown }) => a?.agent).filter((a: unknown): a is string => typeof a === 'string' && a !== '')
+      }
+    } catch {
+      listed = []
+    }
+    const all = [...new Set([...listed, 'claude', 'codex'])]
+    return options.agent && all.includes(options.agent) ? [options.agent, ...all.filter((a) => a !== options.agent)] : all
+  }
+
+  let sending = false
+  async function send(ids: string[], agent: string): Promise<void> {
+    if (sending) return
+    sending = true
+    options.onAgent(agent)
+    let reason: string | null = null
+    try {
+      const result = await api.notesSend(root, ids, agent)
+      if (!result.ok) reason = result.reason
+    } catch (caught) {
+      reason = errorMessage(caught)
+    } finally {
+      sending = false
+    }
+    if (reason !== null) showPopover(sendButton, h('div', { class: 'd-note-error' }, reason))
+  }
+
+  async function openSend(): Promise<void> {
+    const all = unsent(notes)
+    if (!all.length) return
+    const kinds = await agents()
+    const here = all.filter(ofFile)
+    const group = (label: string, list: ReviewNote[]): MenuEntry[] => [
+      { label, disabled: true, run: () => undefined },
+      ...kinds.map((agent): MenuEntry => ({ label: t('notesNewAgent', { agent }), run: () => void send(list.map((n) => n.id), agent) }))
+    ]
+    const rect = sendButton.getBoundingClientRect()
+    showMenu(rect.left, rect.bottom + 4, [
+      ...group(t('notesSendAll', { count: all.length }), all),
+      ...(here.length && here.length < all.length ? ['separator' as const, ...group(t('notesSendFile', { count: here.length }), here)] : [])
+    ], sendButton)
+  }
+
   function item(n: ReviewNote, error: HTMLElement): HTMLElement {
     const index = files.findIndex((f) => (n.side === 'new' ? f.path : (f.oldPath ?? f.path)) === n.path)
     return h(
@@ -329,7 +391,7 @@ export function mountNotes(options: {
   document.addEventListener('scroll', onScroll, true)
 
   return {
-    buttons: [button],
+    buttons: [button, sendButton],
     rowsAfter(side, line, mode) {
       const rows = shown.filter((n) => n.side === side && n.end.line === line).map((n) => row(side, mode, editor?.id === n.id ? editor.el : card(n)))
       const open = editor

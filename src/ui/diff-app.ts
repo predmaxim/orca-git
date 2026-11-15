@@ -38,6 +38,8 @@ const PREFS_KEY = 'git-log.prefs.diff'
 interface Prefs {
   diffMode?: DiffMode
   diffWholeFile?: boolean
+  /** The agent the notes were last sent to. */
+  noteAgent?: string
 }
 
 const prefs: Prefs = (() => {
@@ -88,6 +90,11 @@ async function show(): Promise<void> {
       onPrefs: (mode, wholeFile) => {
         prefs.diffMode = mode
         prefs.diffWholeFile = wholeFile
+        localStorage.setItem(PREFS_KEY, JSON.stringify(prefs))
+      },
+      noteAgent: prefs.noteAgent,
+      onNoteAgent: (agent) => {
+        prefs.noteAgent = agent
         localStorage.setItem(PREFS_KEY, JSON.stringify(prefs))
       },
       // The worker keeps the index (a recreated tab opens on this file) and tells the sidebar.

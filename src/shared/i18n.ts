@@ -477,7 +477,16 @@ export const en = {
   notesFull: 'Too many notes for this repository: delete some first.',
   noteInvalid: 'This note cannot be saved.',
   noteMissing: 'The note no longer exists.',
-  notesSaveFailed: 'Could not save the note: {error}'
+  notesSaveFailed: 'Could not save the note: {error}',
+  notesSend: 'Send to a new agent ({count})',
+  notesSendAll: 'All unsent ({count})',
+  notesSendFile: 'This file ({count})',
+  notesNewAgent: 'New agent: {agent}',
+  reviewNothing: 'No unsent notes to send.',
+  reviewDirTaken: '{path} is not a folder the plugin can write to.',
+  reviewWriteFailed: 'Could not write the review notes: {code}',
+  reviewPromptTooLong: 'The path of this repository is too long to send notes.',
+  reviewLaunchFailed: 'The agent did not start: {error}'
 } satisfies Record<string, Message>
 
 export const ru: Record<keyof typeof en, Message> = {
@@ -955,7 +964,16 @@ export const ru: Record<keyof typeof en, Message> = {
   notesFull: 'Слишком много заметок в этом репозитории: сначала удалите часть.',
   noteInvalid: 'Эту заметку нельзя сохранить.',
   noteMissing: 'Заметки уже нет.',
-  notesSaveFailed: 'Не удалось сохранить заметку: {error}'
+  notesSaveFailed: 'Не удалось сохранить заметку: {error}',
+  notesSend: 'Отправить новому агенту ({count})',
+  notesSendAll: 'Все неотправленные ({count})',
+  notesSendFile: 'Этот файл ({count})',
+  notesNewAgent: 'Новый агент: {agent}',
+  reviewNothing: 'Нет неотправленных заметок.',
+  reviewDirTaken: '{path} — не папка, в которую плагин может писать.',
+  reviewWriteFailed: 'Не удалось записать заметки: {code}',
+  reviewPromptTooLong: 'Путь репозитория слишком длинный для отправки заметок.',
+  reviewLaunchFailed: 'Агент не запустился: {error}'
 }
 
 export type MessageKey = keyof typeof en
