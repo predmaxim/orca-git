@@ -31,7 +31,8 @@ const checkBody = (body: unknown): string | null => {
 export function checkDraft(input: unknown): NoteDraft | null {
   const d = input as any
   if (!d || typeof d !== 'object') return null
-  if (typeof d.path !== 'string' || d.path.length < 1 || d.path.length > 4096) return null
+  // A control character in the path would forge lines of notes.md.
+  if (typeof d.path !== 'string' || d.path.length < 1 || d.path.length > 4096 || /[\x00-\x1f\x7f]/.test(d.path)) return null
   if (d.side !== 'old' && d.side !== 'new') return null
   if (typeof d.blob !== 'string' || !HEX.test(d.blob) || /^0+$/.test(d.blob)) return null
   if (typeof d.rev !== 'string' || !HEX.test(d.rev)) return null
@@ -103,6 +104,18 @@ export function markSent(store: NoteStore, root: string, ids: string[], review: 
   return serial(async () => {
     const notes = await read(store, root)
     await write(store, root, notes.map((n) => (ids.includes(n.id) ? { ...n, review, sentAt: now } : n)))
+  })
+}
+
+/** Takes the sent mark off the notes `ids`: the agent they were sent to did not start. */
+export function markUnsent(store: NoteStore, root: string, ids: string[]): Promise<void> {
+  return serial(async () => {
+    const notes = await read(store, root)
+    await write(store, root, notes.map((n) => {
+      if (!ids.includes(n.id)) return n
+      const { review, sentAt, ...rest } = n
+      return rest
+    }))
   })
 }
 

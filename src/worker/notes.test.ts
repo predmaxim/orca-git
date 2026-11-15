@@ -19,7 +19,8 @@ test('a note is stored with an id and a cut quote', async () => {
 test('a draft that is not a note is refused and nothing is stored', async () => {
   const store = memory()
   for (const bad of [null, draft({ side: 'both' }), draft({ blob: '0'.repeat(40) }), draft({ body: '  ' }), draft({ body: 'b'.repeat(4001) }),
-    draft({ start: { line: 2, col: 0 }, end: { line: 2, col: 0 } }), draft({ start: { line: 0, col: 0 } }), draft({ path: '' })]) {
+    draft({ start: { line: 2, col: 0 }, end: { line: 2, col: 0 } }), draft({ start: { line: 0, col: 0 } }), draft({ path: '' }),
+    draft({ path: 'a.ts\n## Note x' }), draft({ path: 'a\u007f.ts' })]) {
     assert.equal((await addNote(store, '/r', bad)).ok, false)
   }
   assert.deepEqual(await listNotes(store, '/r'), [])

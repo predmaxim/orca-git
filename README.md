@@ -91,13 +91,13 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   `.orca-git-log/review-<id>/` in the workspace with `notes.md` (every note: file, lines, the commit it
   was written on, the selected text, the comment, and how to answer), `SKILL.md` (a short guide for an
   independent reviewer) and an empty `answers/`, adds `.orca-git-log/` to the repository's
-  `.git/info/exclude`, and starts a new agent in that workspace whose prompt names the three paths. The
-  notes are then marked sent. If the agent does not start, the folder is removed and the notes stay
-  unsent; the reason shows under the button.
+  `.git/info/exclude`, marks the notes sent and starts a new agent in that workspace whose prompt names
+  the three paths. If the agent does not start, the folder is removed and the notes go back to unsent;
+  the reason shows under the button. One send per repository runs at a time.
 - **Answers under the notes**: the agent writes one file per note to `answers/<note id>.md`: `verdict:
   confirmed | refuted | unclear`, optionally `fixed: yes | no`, a blank line and markdown. The plugin reads
   them when the agent's status changes and when the notes are listed, and shows under the note the verdict
-  label, "Fixed" and the markdown. Deleting the last note of a send removes its folder.
+  label, "Fixed" and the markdown. Deleting or editing the last note of a send removes its folder.
 - **Looks like Orca**: the sidebar is drawn as Orca draws its own: section headers in its small
   uppercase labels with the count on the right, no lines between sections, [Lucide](https://lucide.dev)
   icons (the set Orca uses), outline buttons, its field and icon-button sizes. Colors come from the
@@ -373,7 +373,8 @@ keeps them all.
   and remembers the choice. It does not notice a switch between two such workspaces and can keep showing
   the other one's repository; a file opened from it then opens its Diff tab in that other, hidden workspace.
 - Notes can only be sent to a new agent in a terminal of the workspace. The model and how the agent
-  starts are Orca's choice. "Sent" means Orca started the agent, not that it read the notes.
+  starts are Orca's choice. "Sent" means Orca started the agent, not that it read the notes. A
+  repository whose path holds a control character or a backtick cannot send notes.
 - An answer appears when the agent has written its file in that form (a known `verdict:`, at most 64 KiB,
   a regular file); anything else is ignored. `fixed` is the agent's word: the plugin does not check it.
 

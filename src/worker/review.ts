@@ -41,6 +41,13 @@ export function reviewPrompt(paths: ReviewPaths): string {
   return `Review notes from the user are in ${paths.notes}. Work through every note: check it against the code, answer it (confirmed, refuted or unclear) with your evidence, and fix the code for each note you confirm. Use this project's own review skills and rules first (.claude/skills, .agents/skills, AGENTS.md, CLAUDE.md); where they say nothing, follow ${paths.guide}. Write one answer file per note into ${paths.answers}, in the form the notes file describes.`
 }
 
+/** Why `prompt` cannot go to `agent.launch`, or null: Orca takes at most 4096 characters, and the prompt must stay one line with no backtick whatever the repository path holds. */
+export function promptRefusal(prompt: string): string | null {
+  if (prompt.length > 4096) return t('reviewPromptTooLong')
+  if (/[\x00-\x1f\x7f`]/.test(prompt)) return t('reviewPathUnusable')
+  return null
+}
+
 /** Whether `path` is a real folder: a link or a file in its place is not. */
 function isFolder(path: string): boolean {
   try {

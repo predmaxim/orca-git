@@ -3,7 +3,7 @@ import { appendFileSync, closeSync, constants, existsSync, fstatSync, mkdirSync,
 import { dirname, join, resolve } from 'node:path'
 import type { OrcaWorkerApi, PanelRequestContext } from 'orca/worker'
 import { pickLocale, setLocale, t } from '../shared/i18n.ts'
-import type { ActionResult, DiffTabState, RepoResult } from '../shared/protocol.ts'
+import type { ActionResult, DiffTabState, RepoResult, ReviewNote } from '../shared/protocol.ts'
 import { checkRewrite, runAction } from './actions.ts'
 import { checkBackup, checkReset, deleteBackup, runGuarded } from './backup.ts'
 import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
@@ -14,8 +14,8 @@ import { readDetails, readLogPage, readRefs } from './log.ts'
 import { resolveRepo, toplevel } from './repo.ts'
 import { readFileDiff } from './diff.ts'
 import { readRangeDiff, readSelectionFiles } from './selection.ts'
-import { addNote, deleteNotes, listNotes, markSent, pendingRoots, setReplies, updateNote } from './notes.ts'
-import { readAnswers, removeReview, reviewPrompt, writeReview } from './review.ts'
+import { addNote, deleteNotes, listNotes, markSent, markUnsent, pendingRoots, setReplies, updateNote } from './notes.ts'
+import { promptRefusal, readAnswers, removeReview, reviewPrompt, writeReview } from './review.ts'
 import { createPatch } from './patch.ts'
 import { checkPush, runPush } from './push.ts'
 import { gitTooOld } from './rebase.ts'
@@ -30,6 +30,8 @@ const watchedBy = new Map<string, string>()
 const diffStates = new Map<string, DiffTabState>()
 /** Roots with a request running that changes the repository. */
 const changing = new Set<string>()
+/** Roots with a `notes.send` running: a second one at once would start a second agent. */
+const sending = new Set<string>()
 
 /**
  * Runs `change` on `root` (as `gitFor` accepted it) unless another change to it is running: that one is refused, not
@@ -376,55 +378,87 @@ export default function activate(orca: OrcaWorkerApi): void {
     return result
   })
 
+  /** Removes the folders of `reviews` that no note of `root` references any more. */
+  const dropReviews = async (root: string, reviews: (string | undefined)[]): Promise<void> => {
+    const left = new Set((await listNotes(orca.storage, root)).map((n) => n.review))
+    for (const review of new Set(reviews)) if (review && !left.has(review)) removeReview(root, review)
+  }
+
   handle('notes.update', async ({ root, id, body }) => {
     const key = (await gitFor(root)).root
+    const before = (await listNotes(orca.storage, key)).find((n) => n.id === id)?.review
     const result = await updateNote(orca.storage, key, id, body)
-    if (result.ok) orca.panels.post('notes.changed', { root: key })
+    if (result.ok) {
+      // The edit took the note out of its review: the folder goes with the last note of it.
+      await dropReviews(key, [before])
+      orca.panels.post('notes.changed', { root: key })
+    }
     return result
   })
 
   handle('notes.delete', async ({ root, ids }) => {
     const key = (await gitFor(root)).root
-    const gone = await deleteNotes(orca.storage, key, ids)
+    let gone: ReviewNote[]
+    try {
+      gone = await deleteNotes(orca.storage, key, ids)
+    } catch (error) {
+      return { ok: false, reason: t('notesSaveFailed', { error: errorText(error) }) }
+    }
     if (gone.length) {
-      const left = new Set((await listNotes(orca.storage, key)).map((n) => n.review))
-      for (const review of new Set(gone.map((n) => n.review))) if (review && !left.has(review)) removeReview(key, review)
+      await dropReviews(key, gone.map((n) => n.review))
       orca.panels.post('notes.changed', { root: key })
     }
     return { ok: true }
   })
 
-  handle('notes.send', async ({ root, ids, agent }) => {
-    const git = await gitFor(root)
-    const key = git.root
+  /** Writes the review folder, marks the notes sent, then starts the agent; a refused launch takes the mark off again. */
+  const sendNotes = async (git: Git, key: string, ids: unknown, agent: unknown): Promise<{ ok: true; review: string } | { ok: false; reason: string }> => {
     const notes = (await listNotes(orca.storage, key)).filter((n) => Array.isArray(ids) && ids.includes(n.id) && n.sentAt === undefined)
     if (!notes.length) return { ok: false, reason: t('reviewNothing') }
-    if (typeof agent !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(agent)) return { ok: false, reason: t('noteInvalid') }
+    if (typeof agent !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(agent)) return { ok: false, reason: t('reviewBadAgent', { agent: String(agent).slice(0, 64) }) }
     const workspace = await workspaceFor(orca, key, await gitPath())
-    if (!workspace) return { ok: false, reason: t('diffNoWorkspace') }
+    if (!workspace) return { ok: false, reason: t('reviewNoWorkspace') }
     await exclude(git, key, '.orca-git-log/')
     const review = randomBytes(6).toString('hex')
     const made = writeReview(key, review, notes)
     if (!made.ok) return { ok: false, reason: made.reason }
     const prompt = reviewPrompt(made.paths)
-    if (prompt.length > 4096) {
+    const refusal = promptRefusal(prompt)
+    if (refusal) {
       removeReview(key, review)
-      return { ok: false, reason: t('reviewPromptTooLong') }
+      return { ok: false, reason: refusal }
+    }
+    const sent = notes.map((n) => n.id)
+    // Marked before the launch: a mark that failed after it would leave a running agent and unsent notes, which a second send would give to another agent.
+    try {
+      await markSent(orca.storage, key, sent, review)
+    } catch (error) {
+      removeReview(key, review)
+      return { ok: false, reason: t('notesSaveFailed', { error: errorText(error) }) }
     }
     try {
       await orca.host.call('agent.launch', { workspaceId: workspace.id, agent, prompt })
     } catch (error) {
+      // When the mark cannot be taken off either, the notes stay sent: Send again gives them to a new agent.
+      await markUnsent(orca.storage, key, sent).catch((cause) => orca.log(`notes left marked sent: ${errorText(cause)}`))
       removeReview(key, review)
+      orca.panels.post('notes.changed', { root: key })
       return { ok: false, reason: t('reviewLaunchFailed', { error: errorText(error) }) }
-    }
-    // The agent is already working in the folder: it stays even when the mark cannot be saved.
-    try {
-      await markSent(orca.storage, key, notes.map((n) => n.id), review)
-    } catch (error) {
-      return { ok: false, reason: t('notesSaveFailed', { error: errorText(error) }) }
     }
     orca.panels.post('notes.changed', { root: key })
     return { ok: true, review }
+  }
+
+  handle('notes.send', async ({ root, ids, agent }) => {
+    const git = await gitFor(root)
+    const key = git.root
+    if (sending.has(key)) return { ok: false, reason: t('reviewBusy') }
+    sending.add(key)
+    try {
+      return await sendNotes(git, key, ids, agent)
+    } finally {
+      sending.delete(key)
+    }
   })
 }
 

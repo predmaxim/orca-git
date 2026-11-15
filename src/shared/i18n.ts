@@ -486,7 +486,13 @@ export const en = {
   reviewDirTaken: '{path} is not a folder the plugin can write to.',
   reviewWriteFailed: 'Could not write the review notes: {code}',
   reviewPromptTooLong: 'The path of this repository is too long to send notes.',
-  reviewLaunchFailed: 'The agent did not start: {error}'
+  reviewLaunchFailed: 'The agent did not start: {error}',
+  reviewBusy: 'These notes are being sent already.',
+  reviewPathUnusable: 'The path of this repository holds characters that cannot be sent to an agent.',
+  reviewBadAgent: 'This agent cannot be started: {agent}',
+  reviewNoWorkspace: 'No local Orca workspace holds this repository, so there is nowhere to start an agent.',
+  notesAnswersFailed: "The agent's answers could not be saved: {error}. Delete notes you no longer need.",
+  notesLoadFailed: 'The notes could not be loaded: {error}'
 } satisfies Record<string, Message>
 
 export const ru: Record<keyof typeof en, Message> = {
@@ -973,7 +979,13 @@ export const ru: Record<keyof typeof en, Message> = {
   reviewDirTaken: '{path} — не папка, в которую плагин может писать.',
   reviewWriteFailed: 'Не удалось записать заметки: {code}',
   reviewPromptTooLong: 'Путь репозитория слишком длинный для отправки заметок.',
-  reviewLaunchFailed: 'Агент не запустился: {error}'
+  reviewLaunchFailed: 'Агент не запустился: {error}',
+  reviewBusy: 'Эти заметки уже отправляются.',
+  reviewPathUnusable: 'В пути репозитория есть символы, которые нельзя отправить агенту.',
+  reviewBadAgent: 'Этого агента нельзя запустить: {agent}',
+  reviewNoWorkspace: 'Ни один локальный workspace Orca не содержит этот репозиторий: агента запустить негде.',
+  notesAnswersFailed: 'Не удалось сохранить ответы агента: {error}. Удалите ненужные заметки.',
+  notesLoadFailed: 'Не удалось загрузить заметки: {error}'
 }
 
 export type MessageKey = keyof typeof en

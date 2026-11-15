@@ -3,7 +3,7 @@ import { mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { JsonValue } from 'orca'
-import { mockHost, type MockHost } from 'orca/testing'
+import { hostError, mockHost, type MockHost } from 'orca/testing'
 import type { NoteDraft } from '../shared/protocol.ts'
 import type { NoteStore } from './notes.ts'
 
@@ -46,6 +46,22 @@ export function host(root: string, results: Record<string, unknown> = {}, storag
 /** A valid draft: new side of src/a.ts, lines 3-4, with `over` on top. */
 export function draft(over: Record<string, unknown> = {}): NoteDraft {
   return { path: 'src/a.ts', side: 'new', blob: 'b'.repeat(40), rev: 'c'.repeat(40), start: { line: 3, col: 0 }, end: { line: 4, col: 1 }, quote: 'x\ny', body: 'why?', ...over } as NoteDraft
+}
+
+/** The plugin's storage as `results` of `host`: values in `data`, and a write `refuse` picks fails as Orca fails a value over 262144 bytes. */
+export function refusingStorage(refuse: (key: string, value: any) => boolean, data: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    'storage.get': ({ key }: { key: string }) => ({ value: key in data ? structuredClone(data[key]) : null }),
+    'storage.set': ({ key, value }: { key: string; value: unknown }) => {
+      if (refuse(key, value)) throw hostError('too_large', 'value exceeds 262144 bytes')
+      data[key] = structuredClone(value)
+      return { ok: true }
+    },
+    'storage.delete': ({ key }: { key: string }) => {
+      delete data[key]
+      return { ok: true }
+    }
+  }
 }
 
 /** A NoteStore on a Map. */

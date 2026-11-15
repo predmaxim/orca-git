@@ -3,10 +3,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assert, hostError, mountWorker, test } from 'orca/testing'
 import * as main from './main.ts'
-import { parseAnswer, readAnswers, removeReview, reviewPaths, reviewPrompt, writeReview } from './review.ts'
+import { parseAnswer, promptRefusal, readAnswers, removeReview, reviewPaths, reviewPrompt, writeReview } from './review.ts'
 import { REVIEW_GUIDE } from './reviewGuide.ts'
+import { t } from '../shared/i18n.ts'
 import { notesKey } from './notes.ts'
-import { draft, fixture, host } from './testkit.ts'
+import { draft, fixture, host, refusingStorage } from './testkit.ts'
 
 const note = () => ({ ...draft(), id: 'aaaaaaaaaaaa', createdAt: 1 })
 
@@ -40,6 +41,12 @@ test('the prompt names three paths, has no backtick and fits', () => {
   assert.equal(prompt.includes('`'), false)
   assert.equal(prompt.includes('\n'), false)
   assert.ok(prompt.length <= 4096)
+})
+
+test('a repository path with a control character or a backtick is refused, as is a prompt too long', () => {
+  for (const root of ['/r/a`b', '/r/a\nb', '/r/a\tb', '/r/a\x7fb']) assert.equal(promptRefusal(reviewPrompt(reviewPaths(root, 'bbbbbbbbbbbb'))), t('reviewPathUnusable'), JSON.stringify(root))
+  assert.equal(promptRefusal(reviewPrompt(reviewPaths('/r', 'bbbbbbbbbbbb'))), null)
+  assert.equal(promptRefusal(reviewPrompt(reviewPaths('/r'.repeat(2100), 'bbbbbbbbbbbb'))), t('reviewPromptTooLong'))
 })
 
 test('removing a review leaves everything else', () => {
@@ -164,8 +171,11 @@ test('sending launches a new agent and marks the notes', async () => {
   const h = host(root, { 'agent.launch': { terminalId: 't-1' } })
   const worker = await mountWorker(main, { host: h })
   const { note: added } = (await worker.request('notes.add', { root, draft: draft() })) as any
+  const posted = worker.posts.length
   const sent = (await worker.request('notes.send', { root, ids: [added.id], agent: 'claude' })) as any
   assert.equal(sent.ok, true)
+  // Posted once, when the notes are marked and the agent started.
+  assert.deepEqual(worker.posts.slice(posted), [{ event: 'notes.changed', payload: { root } }])
   const [call] = h.callsOf('agent.launch') as { workspaceId: string; agent: string; prompt: string }[]
   assert.equal(call.workspaceId, 'wt-1')
   assert.equal(call.agent, 'claude')
@@ -182,8 +192,49 @@ test('a launch that fails leaves the notes unsent and no folder', async () => {
   const { note: added } = (await worker.request('notes.add', { root, draft: draft() })) as any
   const sent = (await worker.request('notes.send', { root, ids: [added.id], agent: 'claude' })) as any
   assert.equal(sent.ok, false)
-  assert.equal(((await worker.request('notes.list', { root })) as any).notes[0].sentAt, undefined)
+  const [stored] = ((await worker.request('notes.list', { root })) as any).notes
+  assert.equal(stored.sentAt, undefined)
+  assert.equal(stored.review, undefined)
   assert.deepEqual(readdirSync(join(root, '.orca-git-log')), [])
+})
+
+test('a sent mark that cannot be saved starts no agent and leaves no folder', async () => {
+  const root = fixture()
+  const marked = (key: string, value: any) => key === notesKey(root) && value.notes.some((n: any) => n.sentAt !== undefined)
+  const h = host(root, { 'agent.launch': { terminalId: 't-1' }, ...refusingStorage(marked) })
+  const worker = await mountWorker(main, { host: h })
+  const { note: added } = (await worker.request('notes.add', { root, draft: draft() })) as any
+  const sent = (await worker.request('notes.send', { root, ids: [added.id], agent: 'claude' })) as any
+  assert.equal(sent.ok, false)
+  assert.match(sent.reason, /262144/)
+  assert.equal(h.callsOf('agent.launch').length, 0)
+  assert.deepEqual(readdirSync(join(root, '.orca-git-log')), [])
+  assert.equal(((await worker.request('notes.list', { root })) as any).notes[0].sentAt, undefined)
+})
+
+test('one send at a time per repository', async () => {
+  const root = fixture()
+  const h = host(root, { 'agent.launch': { terminalId: 't-1' } })
+  const worker = await mountWorker(main, { host: h })
+  const { note: added } = (await worker.request('notes.add', { root, draft: draft() })) as any
+  const send = () => worker.request('notes.send', { root, ids: [added.id], agent: 'claude' }) as Promise<any>
+  const answers = await Promise.all([send(), send()])
+  assert.equal(h.callsOf('agent.launch').length, 1)
+  assert.deepEqual(answers.map((a) => a.ok).sort(), [false, true])
+  assert.equal(answers.find((a) => !a.ok).reason, t('reviewBusy'))
+})
+
+test('an edit removes the folder of the review no note references any more', async () => {
+  const root = fixture()
+  const h = host(root, { 'agent.launch': { terminalId: 't-1' } })
+  const worker = await mountWorker(main, { host: h })
+  const { note: a } = (await worker.request('notes.add', { root, draft: draft() })) as any
+  const { note: b } = (await worker.request('notes.add', { root, draft: draft() })) as any
+  const sent = (await worker.request('notes.send', { root, ids: [a.id, b.id], agent: 'claude' })) as any
+  assert.equal(((await worker.request('notes.update', { root, id: a.id, body: 'again' })) as any).ok, true)
+  assert.equal(existsSync(reviewPaths(root, sent.review).dir), true)
+  assert.equal(((await worker.request('notes.update', { root, id: b.id, body: 'again' })) as any).ok, true)
+  assert.equal(existsSync(reviewPaths(root, sent.review).dir), false)
 })
 
 test('nothing to send, a bad agent name', async () => {
@@ -192,6 +243,8 @@ test('nothing to send, a bad agent name', async () => {
   const worker = await mountWorker(main, { host: h })
   const { note: added } = (await worker.request('notes.add', { root, draft: draft() })) as any
   assert.equal(((await worker.request('notes.send', { root, ids: [], agent: 'claude' })) as any).ok, false)
-  assert.equal(((await worker.request('notes.send', { root, ids: [added.id], agent: '--help' })) as any).ok, false)
+  const bad = (await worker.request('notes.send', { root, ids: [added.id], agent: '--help' })) as any
+  assert.equal(bad.ok, false)
+  assert.equal(bad.reason, t('reviewBadAgent', { agent: '--help' }))
   assert.equal(h.callsOf('agent.launch').length, 0)
 })
