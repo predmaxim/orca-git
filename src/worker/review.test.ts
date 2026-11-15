@@ -1,9 +1,9 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assert, hostError, mountWorker, test } from 'orca/testing'
 import * as main from './main.ts'
-import { removeReview, reviewPaths, reviewPrompt, writeReview } from './review.ts'
+import { parseAnswer, readAnswers, removeReview, reviewPaths, reviewPrompt, writeReview } from './review.ts'
 import { REVIEW_GUIDE } from './reviewGuide.ts'
 import { draft, fixture, host } from './testkit.ts'
 
@@ -50,6 +50,97 @@ test('removing a review leaves everything else', () => {
   assert.equal(existsSync(reviewPaths(root, 'dddddddddddd').notes), true)
   removeReview(root, '../x')
   assert.deepEqual(readdirSync(join(root, '.orca-git-log')), ['review-dddddddddddd'])
+})
+
+test('removing a review does not go through a linked .orca-git-log', () => {
+  const root = mkdtempSync(join(tmpdir(), 'git-log-review-'))
+  const outside = mkdtempSync(join(tmpdir(), 'git-log-outside-'))
+  mkdirSync(join(outside, 'review-bbbbbbbbbbbb'))
+  writeFileSync(join(outside, 'review-bbbbbbbbbbbb', 'keep.txt'), 'x')
+  symlinkSync(outside, join(root, '.orca-git-log'))
+  removeReview(root, 'bbbbbbbbbbbb')
+  assert.equal(existsSync(join(outside, 'review-bbbbbbbbbbbb', 'keep.txt')), true)
+})
+
+test('an answer reads as a verdict, a fixed mark and markdown', () => {
+  assert.deepEqual(parseAnswer('verdict: confirmed\nfixed: yes\n\nDone in `a.ts:3`.', 7), { verdict: 'confirmed', fixed: true, body: 'Done in `a.ts:3`.', at: 7 })
+  assert.deepEqual(parseAnswer('﻿Fixed: no\r\nVerdict: Refuted\r\n\r\nNo.\r\n', 7), { verdict: 'refuted', fixed: false, body: 'No.', at: 7 })
+  assert.deepEqual(parseAnswer('verdict: unclear\n\nWhich file?', 7), { verdict: 'unclear', fixed: false, body: 'Which file?', at: 7 })
+  assert.equal(parseAnswer('verdict: maybe\n\nx'), null)
+  assert.equal(parseAnswer('Looks fine to me.'), null)
+  assert.equal(parseAnswer(`verdict: confirmed\n\n${'b'.repeat(9000)}`)?.body.length, 8000)
+})
+
+test('an answer that is a link, too large or not a file is skipped', () => {
+  const root = mkdtempSync(join(tmpdir(), 'git-log-review-'))
+  const sent = { ...note(), review: 'bbbbbbbbbbbb', sentAt: 1 }
+  writeReview(root, 'bbbbbbbbbbbb', [sent])
+  const file = join(reviewPaths(root, 'bbbbbbbbbbbb').answers, `${sent.id}.md`)
+  const outside = join(mkdtempSync(join(tmpdir(), 'git-log-outside-')), 'a.md')
+  writeFileSync(outside, 'verdict: confirmed\n\nx')
+  symlinkSync(outside, file)
+  assert.equal(readAnswers(root, [sent]).size, 0)
+  rmSync(file)
+  writeFileSync(file, `verdict: confirmed\n\n${'x'.repeat(70000)}`)
+  assert.equal(readAnswers(root, [sent]).size, 0)
+  rmSync(file)
+  mkdirSync(file)
+  assert.equal(readAnswers(root, [sent]).size, 0)
+  rmSync(file, { recursive: true })
+  writeFileSync(file, 'verdict: confirmed\n\nx')
+  assert.equal(readAnswers(root, [sent], 5).get(sent.id)?.at, 5)
+  assert.equal(readAnswers(root, [{ ...sent, reply: { verdict: 'unclear', fixed: false, body: '', at: 1 } }]).size, 0)
+})
+
+const answerFile = (root: string, review: string, id: string, text: string) => writeFileSync(join(reviewPaths(root, review).answers, `${id}.md`), text)
+const status = { workspaceId: null, paneKey: 'p', state: 'done', receivedAt: 1 } as const
+
+test('the agent event brings the answer in', async () => {
+  const root = fixture()
+  const h = host(root, { 'agent.launch': { terminalId: 't-1' } })
+  const worker = await mountWorker(main, { host: h, events: ['agent.status.changed'] })
+  const { note: added } = (await worker.request('notes.add', { root, draft: draft() })) as any
+  const sent = (await worker.request('notes.send', { root, ids: [added.id], agent: 'claude' })) as any
+  answerFile(root, sent.review, added.id, 'verdict: refuted\nfixed: no\n\nIt is right as it is.')
+  await worker.emit('agent.status.changed', status)
+  assert.deepEqual(worker.posts.slice(-1), [{ event: 'notes.changed', payload: { root } }])
+  const [stored] = ((await worker.request('notes.list', { root })) as any).notes
+  assert.equal(stored.reply.verdict, 'refuted')
+  assert.deepEqual(h.data().storage.pending, [])
+})
+
+test('a new worker picks up the answer', async () => {
+  const root = fixture()
+  const first = host(root, { 'agent.launch': { terminalId: 't-1' } })
+  const one = await mountWorker(main, { host: first })
+  const { note: added } = (await one.request('notes.add', { root, draft: draft() })) as any
+  const sent = (await one.request('notes.send', { root, ids: [added.id], agent: 'claude' })) as any
+  const second = host(root, undefined, first.data().storage as any)
+  const two = await mountWorker(main, { host: second, events: ['agent.status.changed'] })
+  answerFile(root, sent.review, added.id, 'verdict: confirmed\nfixed: yes\n\nDone.')
+  await two.emit('agent.status.changed', status)
+  assert.equal((((await two.request('notes.list', { root })) as any).notes[0]).reply.fixed, true)
+  assert.deepEqual(second.data().storage.pending, [])
+})
+
+test('the list itself picks up an answer', async () => {
+  const root = fixture()
+  const h = host(root, { 'agent.launch': { terminalId: 't-1' } })
+  const worker = await mountWorker(main, { host: h })
+  const { note: added } = (await worker.request('notes.add', { root, draft: draft() })) as any
+  const sent = (await worker.request('notes.send', { root, ids: [added.id], agent: 'claude' })) as any
+  answerFile(root, sent.review, added.id, 'verdict: unclear\n\nWhich?')
+  assert.equal((((await worker.request('notes.list', { root })) as any).notes[0]).reply.verdict, 'unclear')
+})
+
+test('deleting the last note of a review removes its folder', async () => {
+  const root = fixture()
+  const h = host(root, { 'agent.launch': { terminalId: 't-1' } })
+  const worker = await mountWorker(main, { host: h })
+  const { note: added } = (await worker.request('notes.add', { root, draft: draft() })) as any
+  const sent = (await worker.request('notes.send', { root, ids: [added.id], agent: 'claude' })) as any
+  await worker.request('notes.delete', { root, ids: [added.id] })
+  assert.equal(existsSync(reviewPaths(root, sent.review).dir), false)
 })
 
 test('sending launches a new agent and marks the notes', async () => {

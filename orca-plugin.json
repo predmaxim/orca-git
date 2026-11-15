@@ -21,6 +21,7 @@
   "pluginApi": 1,
   "main": "src/worker/main.ts",
   "contributes": {
+    "events": [{ "on": "agent.status.changed" }],
     "panels": [
       {
         "id": "log",

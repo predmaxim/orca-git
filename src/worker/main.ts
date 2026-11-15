@@ -14,8 +14,8 @@ import { readDetails, readLogPage, readRefs } from './log.ts'
 import { resolveRepo, toplevel } from './repo.ts'
 import { readFileDiff } from './diff.ts'
 import { readRangeDiff, readSelectionFiles } from './selection.ts'
-import { addNote, deleteNotes, listNotes, markSent, updateNote } from './notes.ts'
-import { removeReview, reviewPrompt, writeReview } from './review.ts'
+import { addNote, deleteNotes, listNotes, markSent, pendingRoots, setReplies, updateNote } from './notes.ts'
+import { readAnswers, removeReview, reviewPrompt, writeReview } from './review.ts'
 import { createPatch } from './patch.ts'
 import { checkPush, runPush } from './push.ts'
 import { gitTooOld } from './rebase.ts'
@@ -339,7 +339,29 @@ export default function activate(orca: OrcaWorkerApi): void {
     return { ok: true }
   })
 
-  handle('notes.list', async ({ root }) => ({ notes: await listNotes(orca.storage, (await gitFor(root)).root) }))
+  /** Stores the answers the agent has written for `root` and tells the panels. Throws when they cannot be read or stored. */
+  const ingest = async (root: string): Promise<void> => {
+    const found = readAnswers(root, await listNotes(orca.storage, root))
+    if (found.size && (await setReplies(orca.storage, root, found))) orca.panels.post('notes.changed', { root })
+  }
+
+  orca.events.on('agent.status.changed', async () => {
+    try {
+      for (const root of await pendingRoots(orca.storage)) await ingest(root)
+    } catch (error) {
+      orca.log(`answers not read: ${errorText(error)}`)
+    }
+  })
+
+  handle('notes.list', async ({ root }) => {
+    const key = (await gitFor(root)).root
+    try {
+      await ingest(key)
+    } catch (error) {
+      orca.log(`answers not read: ${errorText(error)}`)
+    }
+    return { notes: await listNotes(orca.storage, key) }
+  })
 
   handle('notes.add', async ({ root, draft }) => {
     const key = (await gitFor(root)).root
@@ -358,7 +380,11 @@ export default function activate(orca: OrcaWorkerApi): void {
   handle('notes.delete', async ({ root, ids }) => {
     const key = (await gitFor(root)).root
     const gone = await deleteNotes(orca.storage, key, ids)
-    if (gone.length) orca.panels.post('notes.changed', { root: key })
+    if (gone.length) {
+      const left = new Set((await listNotes(orca.storage, key)).map((n) => n.review))
+      for (const review of new Set(gone.map((n) => n.review))) if (review && !left.has(review)) removeReview(key, review)
+      orca.panels.post('notes.changed', { root: key })
+    }
     return { ok: true }
   })
 
