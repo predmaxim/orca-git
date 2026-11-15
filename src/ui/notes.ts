@@ -301,14 +301,15 @@ export function mountNotes(options: {
 
   /**
    * The review skills of the Notes list: each path with Remove, and Add a skill, which opens a path field with suggestions.
-   * Skills that could not be loaded show why, and nothing to change: a save would replace the stored list.
+   * Skills that could not be loaded show why, and nothing to change: a save would replace the stored list. A refused
+   * change shows here, under the field or the list: the notice line at the top of the list may be scrolled away.
    */
   function skillsSection(loaded: { skills: string[] } | { error: string }): HTMLElement {
     const el = h('div', { class: 'notes-skills' })
     const head = (count: number | null) =>
       h('div', { class: 'notes-skills-head' }, h('span', { class: 'notes-skills-title' }, t('skillsTitle')), count === null ? null : h('span', { class: 'count' }, String(count)))
     if ('error' in loaded) {
-      el.append(head(null), h('div', { class: 'd-note-error' }, loaded.error))
+      el.append(head(null), h('div', { class: 'd-note-error' }, t('notesLoadFailed', { error: loaded.error })))
       return el
     }
     let skills = loaded.skills
@@ -317,6 +318,10 @@ export function mountNotes(options: {
     let items: string[] = []
     let index = 0
     let lookups = 0
+    /** The save running: the next one waits for it and starts from the list it stored. */
+    let saving: Promise<unknown> = Promise.resolve()
+    const fieldError = h('div', { class: 'd-note-error', role: 'alert' })
+    const listError = h('div', { class: 'd-note-error', role: 'alert' })
     const addSkill = h('button', { class: 'btn', onclick: openField }, t('skillAdd'))
     const list = h('div', { class: 'notes-suggest', id: 'notes-skill-suggest', role: 'listbox', 'aria-label': t('skillPath') })
     const input = h('input', {
@@ -329,10 +334,13 @@ export function mountNotes(options: {
       'aria-controls': 'notes-skill-suggest',
       placeholder: t('skillPath'),
       'aria-label': t('skillPath'),
-      oninput: () => void suggest(),
+      oninput: () => {
+        refuse(null)
+        lookUp()
+      },
       onkeydown: onKey
     })
-    const field = h('div', { class: 'notes-skill-field' }, input, list, h('button', { class: 'btn', onclick: () => void add(input.value) }, t('skillDone')))
+    const field = h('div', { class: 'notes-skill-field' }, input, fieldError, list, h('button', { class: 'btn', onclick: () => void add(input.value) }, t('skillDone')))
 
     function draw(): void {
       el.replaceChildren(
@@ -346,8 +354,14 @@ export function mountNotes(options: {
             h('button', { class: 'tool', title: t('skillRemove', { path }), 'aria-label': t('skillRemove', { path }), onclick: () => void remove(path) }, icon('close'))
           )
         ),
+        listError,
         ...(adding ? [field] : skills.length < MAX_REVIEW_SKILLS ? [addSkill] : [])
       )
+    }
+
+    /** Shows why a change was refused at `at` (the field's line or the list's), and clears the other; null clears both. */
+    function refuse(at: HTMLElement | null, reason = ''): void {
+      for (const line of [fieldError, listError]) line.textContent = line === at ? reason : ''
     }
 
     function showItems(keepInView = false): void {
@@ -371,6 +385,13 @@ export function mountNotes(options: {
       if (keepInView) list.querySelector('.on')?.scrollIntoView({ block: 'nearest' })
     }
 
+    /** No suggestions until the listing for what the field holds now comes: Enter meanwhile takes the typed path. */
+    function lookUp(): void {
+      items = []
+      showItems()
+      void suggest()
+    }
+
     async function suggest(): Promise<void> {
       const mine = ++lookups
       const value = input.value
@@ -389,11 +410,9 @@ export function mountNotes(options: {
     function openField(): void {
       adding = true
       input.value = ''
-      items = []
-      showItems()
       draw()
       input.focus()
-      void suggest()
+      lookUp()
     }
 
     function onKey(event: KeyboardEvent): void {
@@ -413,35 +432,44 @@ export function mountNotes(options: {
       if (!path.endsWith('/')) return void add(path)
       input.value = path
       input.focus()
-      void suggest()
+      lookUp()
     }
 
-    /** Stores `next`; the worker answers the list it stored. A refusal shows in the list's notice line. */
-    async function save(next: string[]): Promise<boolean> {
-      try {
-        const result = await api.skillsSet(root, next)
-        if (!result.ok) {
-          notify(result.reason)
+    /**
+     * Stores the list `change` makes of the stored one, once the save before it has answered (the worker answers the list
+     * it stored); true when stored. A refusal shows at `at`.
+     */
+    function save(change: (stored: string[]) => string[], at: HTMLElement): Promise<boolean> {
+      const run = saving.then(async () => {
+        try {
+          const result = await api.skillsSet(root, change(skills))
+          if (!result.ok) {
+            refuse(at, result.reason)
+            return false
+          }
+          skills = result.skills
+          refuse(null)
+          return true
+        } catch (caught) {
+          refuse(at, errorMessage(caught))
           return false
         }
-        skills = result.skills
-        return true
-      } catch (caught) {
-        notify(errorMessage(caught))
-        return false
-      }
+      })
+      saving = run
+      return run
     }
 
     async function add(path: string): Promise<void> {
-      if (!(await save([...skills, path]))) return
+      if (!(await save((stored) => [...stored, path], fieldError))) return
       adding = false
       lookups++
       draw()
-      addSkill.focus()
+      // At ten skills there is no Add button: the focus stays in the list, on the last row.
+      ;(skills.length < MAX_REVIEW_SKILLS ? addSkill : Array.from(el.querySelectorAll<HTMLElement>('.notes-skill .tool')).pop())?.focus()
     }
 
     async function remove(path: string): Promise<void> {
-      if (!(await save(skills.filter((s) => s !== path)))) return
+      if (!(await save((stored) => stored.filter((s) => s !== path), listError))) return
       draw()
       ;(adding ? input : addSkill).focus()
     }

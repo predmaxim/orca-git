@@ -8,6 +8,7 @@ import { REVIEW_GUIDE } from './reviewGuide.ts'
 import { t } from '../shared/i18n.ts'
 import type { NoteReply } from '../shared/protocol.ts'
 import { notesKey } from './notes.ts'
+import { skillsKey } from './skills.ts'
 import { draft, fixture, host, refusingStorage } from './testkit.ts'
 
 const note = () => ({ ...draft(), id: 'aaaaaaaaaaaa', createdAt: 1 })
@@ -359,6 +360,32 @@ test('the review skills go into the notes file and the prompt points at them', a
   assert.equal(second.text.includes('Review skills'), false)
   assert.ok(second.prompt.includes("Use this project's own review skills and rules first"))
   assert.deepEqual(worker.refusals, [])
+})
+
+/** Sends one note of `root` whose storage holds `skills` as they are, as a frame could have stored them; the skill lines of notes.md. */
+async function sentSkills(root: string, skills: string[]): Promise<string[]> {
+  const h = host(root, { 'agent.launch': { terminalId: 't-1' } }, { [skillsKey(root)]: { root, skills } })
+  const worker = await mountWorker(main, { host: h })
+  const { note: added } = (await worker.request('notes.add', { root, draft: draft() })) as any
+  const sent = (await worker.request('notes.send', { root, ids: [added.id], agent: 'claude' })) as any
+  assert.equal(sent.ok, true)
+  const text = readFileSync(reviewPaths(root, sent.review).notes, 'utf8')
+  return text.split('\n').filter((line: string) => /^\d+\. /.test(line))
+}
+
+test('a stored skill path with a control character never reaches the notes file', async () => {
+  const root = fixture()
+  writeFileSync(join(root, 'rules.md'), '# rules')
+  // The file exists: only the control character keeps it out.
+  writeFileSync(join(root, 'a\nb.md'), '# forged')
+  assert.deepEqual(await sentSkills(root, ['a\nb.md', '', 'rules.md']), [`1. ${join(root, 'rules.md')}`])
+})
+
+test('a skill stored twice under two names is listed once, the first time', async () => {
+  const root = fixture()
+  writeFileSync(join(root, 'rules.md'), '# rules')
+  mkdirSync(join(root, 'docs'))
+  assert.deepEqual(await sentSkills(root, ['rules.md', './rules.md', 'docs/', 'docs']), [`1. ${join(root, 'rules.md')}`, `2. ${join(root, 'docs/')}`])
 })
 
 test('skills that cannot be read leave the send to go without them', async () => {

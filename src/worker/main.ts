@@ -477,7 +477,8 @@ export default function activate(orca: OrcaWorkerApi): void {
 
   handle('skills.set', async ({ root, skills }) => {
     const key = (await gitFor(root)).root
-    const checked = checkSkills(skills, key)
+    // A stored skill gone from the disk must not block the other changes.
+    const checked = checkSkills(skills, key, await listSkills(orca.storage, key))
     if (checked.ok) await saveSkills(orca.storage, key, checked.skills)
     return checked
   })

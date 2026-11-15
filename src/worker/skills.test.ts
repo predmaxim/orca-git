@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assert, mountWorker, test } from 'orca/testing'
@@ -50,6 +50,18 @@ test('a list of skills is trimmed, without repeats, at most ten, and every path 
   assert.deepEqual(checkSkills(names.slice(0, 10), many), { ok: true, skills: names.slice(0, 10) })
 })
 
+test('a path is stored without trailing slashes, so a folder with and without one is one entry', () => {
+  assert.deepEqual(checkSkills(['sub/', 'sub', 'sub//', '/'], root), { ok: true, skills: ['sub', '/'] })
+})
+
+test('only a path not stored yet has to exist', () => {
+  assert.deepEqual(checkSkills(['gone.md', 'a.md'], root, ['gone.md']), { ok: true, skills: ['gone.md', 'a.md'] })
+  assert.deepEqual(checkSkills(['gone'], root, ['gone/']), { ok: true, skills: ['gone'] })
+  const refused = checkSkills(['gone.md', 'other.md'], root, ['gone.md'])
+  assert.equal(refused.ok, false)
+  assert.match((refused as { reason: string }).reason, /other\.md/)
+})
+
 test('the worker stores the skills of a repository', async () => {
   const repo = fixture()
   writeFileSync(join(repo, 'rules.md'), '# rules')
@@ -62,4 +74,18 @@ test('the worker stores the skills of a repository', async () => {
   assert.deepEqual(await worker.request('skills.list', { root: repo }), { skills: ['rules.md'] })
   assert.ok(((await worker.request('skills.browse', { root: repo, dir: '' })) as any).files.includes('rules.md'))
   assert.deepEqual(worker.refusals, [])
+})
+
+test('a stored skill gone from the disk does not block removing another one', async () => {
+  const repo = fixture()
+  writeFileSync(join(repo, 'rules.md'), '# rules')
+  writeFileSync(join(repo, 'b.md'), '# b')
+  const worker = await mountWorker(main, { host: host(repo) })
+  assert.equal(((await worker.request('skills.set', { root: repo, skills: ['rules.md', 'b.md'] })) as any).ok, true)
+  rmSync(join(repo, 'rules.md'))
+  assert.deepEqual(await worker.request('skills.set', { root: repo, skills: ['rules.md'] }), { ok: true, skills: ['rules.md'] })
+  const refused = (await worker.request('skills.set', { root: repo, skills: ['rules.md', 'gone.md'] })) as any
+  assert.equal(refused.ok, false)
+  assert.match(refused.reason, /gone\.md/)
+  assert.deepEqual(await worker.request('skills.list', { root: repo }), { skills: ['rules.md'] })
 })

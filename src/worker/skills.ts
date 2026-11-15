@@ -2,13 +2,16 @@
 import { createHash } from 'node:crypto'
 import { readdirSync, statSync, type Stats } from 'node:fs'
 import { homedir } from 'node:os'
-import { isAbsolute, join } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 import { t } from '../shared/i18n.ts'
 import { MAX_REVIEW_SKILLS } from '../shared/notes.ts'
 import type { NoteStore } from './notes.ts'
 
 // A control character in a path would forge lines of notes.md.
 const CONTROL = /[\x00-\x1f\x7f]/
+
+/** A path as it is stored: trimmed, without trailing slashes (a lone «/» stays), so `docs` and `docs/` are one entry. */
+const tidy = (path: string): string => path.trim().replace(/(?<=.)\/+$/, '')
 
 export function skillsKey(root: string): string {
   return 'skills:' + createHash('sha256').update(root).digest('hex')
@@ -53,19 +56,23 @@ export function browseSkills(dir: string, root: string): { dirs: string[]; files
   return { dirs, files }
 }
 
-/** The list as it can be stored: strings trimmed, empty ones and repeats dropped; or why not. */
-export function checkSkills(input: unknown, root: string): { ok: true; skills: string[] } | { ok: false; reason: string } {
+/**
+ * The list as it can be stored: strings trimmed and without trailing slashes, empty ones and repeats dropped; or why not.
+ * Only a path not in `stored` (the list stored now) has to exist: a skill gone from the disk can stay or go.
+ */
+export function checkSkills(input: unknown, root: string, stored: string[] = []): { ok: true; skills: string[] } | { ok: false; reason: string } {
   const invalid = { ok: false as const, reason: t('skillInvalid') }
   if (!Array.isArray(input)) return invalid
+  const known = new Set(stored.map(tidy))
   const skills: string[] = []
   for (const item of input) {
     if (typeof item !== 'string') return invalid
-    const path = item.trim()
+    const path = tidy(item)
     if (path.length > 1024 || CONTROL.test(path)) return invalid
     if (path && !skills.includes(path)) skills.push(path)
   }
   if (skills.length > MAX_REVIEW_SKILLS) return { ok: false, reason: t('skillsFull') }
-  const missing = skills.find((path) => !exists(skillPathAbs(path, root)))
+  const missing = skills.find((path) => !known.has(path) && !exists(skillPathAbs(path, root)))
   return missing === undefined ? { ok: true, skills } : { ok: false, reason: t('skillMissing', { path: missing }) }
 }
 
@@ -79,11 +86,19 @@ export async function saveSkills(store: NoteStore, root: string, skills: string[
   else await store.delete(skillsKey(root))
 }
 
-/** The stored skills that exist now, as full paths, in order. Frames share the storage: what `checkSkills` refuses is dropped here too. */
+/**
+ * The stored skills that exist now, as full paths, in order, each once (`a.md` and `./a.md` are one: the first stays).
+ * Frames share the storage: what `checkSkills` refuses is dropped here too.
+ */
 export async function skillsForReview(store: NoteStore, root: string): Promise<string[]> {
-  return (await listSkills(store, root))
-    .filter((path) => path.trim() !== '')
-    .map((path) => skillPathAbs(path.trim(), root))
-    .filter((path) => !CONTROL.test(path) && exists(path))
-    .slice(0, MAX_REVIEW_SKILLS)
+  const found: string[] = []
+  const seen = new Set<string>()
+  for (const stored of await listSkills(store, root)) {
+    if (!stored.trim()) continue
+    const path = skillPathAbs(stored.trim(), root)
+    if (CONTROL.test(path) || seen.has(resolve(path)) || !exists(path)) continue
+    seen.add(resolve(path))
+    found.push(path)
+  }
+  return found.slice(0, MAX_REVIEW_SKILLS)
 }

@@ -55,3 +55,9 @@ test('an image is its caption and its address, as text', () => {
   assert.deepEqual(mdTree('![mockup](/tmp/review/answers/a.png)'), [el('p', 'mockup (/tmp/review/answers/a.png)')])
   assert.deepEqual(mdTree('![](shot.png)'), [el('p', 'shot.png')])
 })
+
+test('an image address is only ever text', () => {
+  assert.deepEqual(mdTree('![a](javascript:alert(1))'), [el('p', 'a (javascript:alert(1))')])
+  assert.deepEqual(mdTree('![cap]()'), [el('p', 'cap')])
+  assert.deepEqual(mdTree('![x](a"><script>alert(1)</script>)'), [el('p', 'x (a"><script>alert(1)</script>)')])
+})
