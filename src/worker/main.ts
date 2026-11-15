@@ -13,6 +13,7 @@ import { readDetails, readLogPage, readRefs } from './log.ts'
 import { resolveRepo, toplevel } from './repo.ts'
 import { readFileDiff } from './diff.ts'
 import { readRangeDiff, readSelectionFiles } from './selection.ts'
+import { addNote, deleteNotes, listNotes, updateNote } from './notes.ts'
 import { createPatch } from './patch.ts'
 import { checkPush, runPush } from './push.ts'
 import { gitTooOld } from './rebase.ts'
@@ -332,6 +333,29 @@ export default function activate(orca: OrcaWorkerApi): void {
     if (!state || !Number.isInteger(index) || index < 0 || index >= state.files.length) return { ok: false }
     diffStates.set(root, { ...state, index })
     orca.panels.post('diff.current', { root, path: state.files[index].path })
+    return { ok: true }
+  })
+
+  handle('notes.list', async ({ root }) => ({ notes: await listNotes(orca.storage, (await gitFor(root)).root) }))
+
+  handle('notes.add', async ({ root, draft }) => {
+    const key = (await gitFor(root)).root
+    const result = await addNote(orca.storage, key, draft)
+    if (result.ok) orca.panels.post('notes.changed', { root: key })
+    return result
+  })
+
+  handle('notes.update', async ({ root, id, body }) => {
+    const key = (await gitFor(root)).root
+    const result = await updateNote(orca.storage, key, id, body)
+    if (result.ok) orca.panels.post('notes.changed', { root: key })
+    return result
+  })
+
+  handle('notes.delete', async ({ root, ids }) => {
+    const key = (await gitFor(root)).root
+    const gone = await deleteNotes(orca.storage, key, ids)
+    if (gone.length) orca.panels.post('notes.changed', { root: key })
     return { ok: true }
   })
 }

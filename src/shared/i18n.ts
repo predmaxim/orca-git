@@ -453,7 +453,11 @@ export const en = {
   inRepository: 'In {name}: {text}',
   workerRestarted: 'The plugin\'s worker restarted while git was running, so how that change ended is not known. Check the log or git status.',
   shallowBoundary: 'This shallow clone\'s history starts at commit {hash}: its parent was never fetched, so git would take it for the first commit, which cuts the branch off its history or deletes files. Fetch the whole history with git fetch --unshallow, then try again.',
-  headMoved: 'HEAD has moved since this action was offered: a commit, checkout or reset was made meanwhile (in a terminal, say). Nothing was done.'
+  headMoved: 'HEAD has moved since this action was offered: a commit, checkout or reset was made meanwhile (in a terminal, say). Nothing was done.',
+  notesFull: 'Too many notes for this repository: delete some first.',
+  noteInvalid: 'This note cannot be saved.',
+  noteMissing: 'The note no longer exists.',
+  notesSaveFailed: 'Could not save the note: {error}'
 } satisfies Record<string, Message>
 
 export const ru: Record<keyof typeof en, Message> = {
@@ -907,7 +911,11 @@ export const ru: Record<keyof typeof en, Message> = {
   inRepository: 'В {name}: {text}',
   workerRestarted: 'Рабочий процесс плагина перезапустился, пока работал git, поэтому неизвестно, чем закончилось изменение. Проверьте журнал или git status.',
   shallowBoundary: 'История этого неполного клона (shallow clone) начинается с коммита {hash}: его родитель не загружен, и git принял бы его за первый коммит — ветка потеряла бы историю или удалились бы файлы. Загрузите всю историю командой git fetch --unshallow и повторите.',
-  headMoved: 'HEAD сдвинулся с тех пор, как было предложено это действие: тем временем сделан коммит, checkout или reset (например, в терминале). Ничего не сделано.'
+  headMoved: 'HEAD сдвинулся с тех пор, как было предложено это действие: тем временем сделан коммит, checkout или reset (например, в терминале). Ничего не сделано.',
+  notesFull: 'Слишком много заметок в этом репозитории: сначала удалите часть.',
+  noteInvalid: 'Эту заметку нельзя сохранить.',
+  noteMissing: 'Заметки уже нет.',
+  notesSaveFailed: 'Не удалось сохранить заметку: {error}'
 }
 
 export type MessageKey = keyof typeof en

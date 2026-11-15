@@ -85,6 +85,7 @@
   "capabilities": [
     { "kind": "workspace:read" },
     { "kind": "workspace:write" },
-    { "kind": "settings:own" }
+    { "kind": "settings:own" },
+    { "kind": "storage:own" }
   ]
 }
