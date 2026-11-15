@@ -11,3 +11,19 @@ declare module '*.min.js' {
   const language: unknown
   export default language
 }
+
+declare module '*/marked/marked.esm.js' {
+  type MarkedToken = {
+    type: string
+    raw?: string
+    text?: string
+    href?: string
+    ordered?: boolean
+    checked?: boolean
+    tokens?: MarkedToken[]
+    items?: MarkedToken[]
+    header?: { tokens: MarkedToken[] }[]
+    rows?: { tokens: MarkedToken[] }[][]
+  }
+  export function lexer(source: string): MarkedToken[]
+}
