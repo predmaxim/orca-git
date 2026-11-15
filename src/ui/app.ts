@@ -1471,12 +1471,16 @@ function commitEntries(): MenuEntry[] | null {
 // ---------- Toolbar & host events ----------
 
 // A refresh that finds nothing new changes nothing on screen: say it ran.
+// The icon turns while a refresh asked here runs, not the button with its hover plate; a click during one queues another.
+let refreshClicks = 0
 refreshButton.addEventListener('click', () => {
-  // The icon turns while the refresh runs, not the button with its hover plate.
+  refreshClicks++
   refreshButton.classList.add('loading')
   void refreshAll()
     .then(() => repo && !loadError && showBanner(t('refreshed'), 'success'))
-    .finally(() => refreshButton.classList.remove('loading'))
+    .finally(() => {
+      if (--refreshClicks === 0) refreshButton.classList.remove('loading')
+    })
 })
 fetchButton.addEventListener('click', async () => {
   if (!repo) return

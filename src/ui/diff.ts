@@ -139,8 +139,9 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { dispo
     h(
       'div',
       { class: 'diff-header' },
-      h('button', { class: 'tool', title: t('diffPrevChangeTip'), onclick: () => jump(-1) }, icon('up'), h('span', null, t('diffChange'))),
-      h('button', { class: 'tool', title: t('diffNextChangeTip'), onclick: () => jump(1) }, icon('down'), h('span', null, t('diffChange'))),
+      // The arrow icon is hidden from screen readers: the label says the direction.
+      h('button', { class: 'tool', title: t('diffPrevChangeTip'), 'aria-label': t('diffPrevChangeTip'), onclick: () => jump(-1) }, icon('up'), h('span', null, t('diffChange'))),
+      h('button', { class: 'tool', title: t('diffNextChangeTip'), 'aria-label': t('diffNextChangeTip'), onclick: () => jump(1) }, icon('down'), h('span', null, t('diffChange'))),
       h('span', { class: 'sep' }),
       prevFile,
       counter,
