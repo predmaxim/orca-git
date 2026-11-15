@@ -213,3 +213,16 @@ test('invalid hashes are refused', async () => {
   await assert.rejects(readSelectionFiles(git, Array(501).fill(h[0])), /Select at most 500 commits/)
   await assert.rejects(readRangeDiff(git, '--x', h[0], 'a'))
 })
+
+test('a range diff names the blob of each side', async () => {
+  const { root, hashes: h } = repoWith([write('a.txt', 'one\n'), write('a.txt', 'two\n'), write('b.txt', 'x\n')])
+  const git = createGit(root)
+  const diff = await readRangeDiff(git, h[0], h[1], 'a.txt')
+  assert.equal(diff.oldBlob, sh(root, 'rev-parse', `${h[0]}:a.txt`))
+  assert.equal(diff.newBlob, sh(root, 'rev-parse', `${h[1]}:a.txt`))
+  // The same content on a side is the same blob, whatever the commits.
+  assert.equal((await readRangeDiff(git, h[0], h[2], 'a.txt')).newBlob, diff.newBlob)
+  const added = await readRangeDiff(git, null, h[0], 'a.txt')
+  assert.equal(added.oldBlob, undefined)
+  assert.equal(added.newBlob, diff.oldBlob)
+})

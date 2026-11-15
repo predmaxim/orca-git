@@ -89,6 +89,6 @@ export async function readRangeDiff(git: Git, from: string | null, to: string, p
   if (!path || typeof path !== 'string') throw new Error(t('missingFilePath'))
   const paths = [...(oldPath && oldPath !== path ? [literal(oldPath)] : []), literal(path)]
   // --no-color: as in readFileDiff, color.diff=always would colour the lines.
-  const stdout = await git.out(['diff', '--no-color', '--no-ext-diff', '--no-textconv', '-M', `-U${wholeFile ? 1_000_000 : 3}`, from ?? (await emptyTree(git)), to, '--', ...paths])
+  const stdout = await git.out(['diff', '--no-color', '--no-ext-diff', '--no-textconv', '--full-index', '-M', `-U${wholeFile ? 1_000_000 : 3}`, from ?? (await emptyTree(git)), to, '--', ...paths])
   return { path, ...(oldPath ? { oldPath } : {}), ...parseUnifiedDiff(stdout) }
 }

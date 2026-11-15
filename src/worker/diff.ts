@@ -4,13 +4,16 @@ import { t } from '../shared/i18n.ts'
 
 /** Lines kept per file; beyond this the diff is marked truncated. */
 export const MAX_DIFF_LINES = 20_000
+const INDEX = /^index ([0-9a-f]{40}|[0-9a-f]{64})\.\.([0-9a-f]{40}|[0-9a-f]{64})/
 const HUNK = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@ ?(.*)$/
 
 /** Parses the unified diff of a single file. */
-export function parseUnifiedDiff(stdout: string, maxLines = MAX_DIFF_LINES): Pick<FileDiff, 'binary' | 'truncated' | 'hunks'> {
+export function parseUnifiedDiff(stdout: string, maxLines = MAX_DIFF_LINES): Pick<FileDiff, 'binary' | 'truncated' | 'hunks' | 'oldBlob' | 'newBlob'> {
   const hunks: DiffHunk[] = []
   let binary = false
   let truncated = false
+  let oldBlob: string | undefined
+  let newBlob: string | undefined
   let count = 0
   let hunk: DiffHunk | null = null
   let oldLine = 0
@@ -19,6 +22,12 @@ export function parseUnifiedDiff(stdout: string, maxLines = MAX_DIFF_LINES): Pic
     const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw
     if (!hunk) {
       if (/^Binary files .* differ$/.test(line) || line === 'GIT binary patch') binary = true
+      const index = INDEX.exec(line)
+      // An all-zero id is git's name for "no such side" (a new or deleted file).
+      if (index) {
+        if (!/^0+$/.test(index[1])) oldBlob = index[1]
+        if (!/^0+$/.test(index[2])) newBlob = index[2]
+      }
     }
     const header = HUNK.exec(line)
     if (header) {
@@ -41,7 +50,7 @@ export function parseUnifiedDiff(stdout: string, maxLines = MAX_DIFF_LINES): Pic
     else if (kind === '-') hunk.lines.push({ kind, text, old: oldLine++ })
     else hunk.lines.push({ kind, text, new: newLine++ })
   }
-  return { binary, truncated, hunks }
+  return { binary, truncated, hunks, ...(oldBlob ? { oldBlob } : {}), ...(newBlob ? { newBlob } : {}) }
 }
 
 const literal = (path: string) => `:(literal)${path}`
@@ -53,7 +62,7 @@ export async function readFileDiff(git: Git, hash: string, path: string, oldPath
   const parents = (await git.out(['rev-list', '--parents', '-n1', hash, '--'])).trim().split(' ').slice(1)
   const paths = [...(oldPath && oldPath !== path ? [literal(oldPath)] : []), literal(path)]
   // --no-color: -c color.ui=false does not override a color.diff=always the user set, and coloured lines parse as no hunk.
-  const options = ['--no-color', '--no-ext-diff', '--no-textconv', '-M', `-U${wholeFile ? 1_000_000 : 3}`]
+  const options = ['--no-color', '--no-ext-diff', '--no-textconv', '--full-index', '-M', `-U${wholeFile ? 1_000_000 : 3}`]
   const args = parents.length
     ? ['diff', ...options, parents[0], hash, '--', ...paths]
     : ['diff-tree', '-p', '--root', '--no-commit-id', ...options, hash, '--', ...paths]

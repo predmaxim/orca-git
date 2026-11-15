@@ -128,7 +128,19 @@ export interface FileDiff {
   /** The diff was cut short because it is too large. */
   truncated: boolean
   hunks: DiffHunk[]
+  /** Full blob ids of the two sides; absent for a side that does not exist (a new or deleted file) or when the file is only renamed. */
+  oldBlob?: string
+  newBlob?: string
 }
+
+export type NoteSide = 'old' | 'new'
+export interface NotePoint { line: number; col: number }
+export type NoteVerdict = 'confirmed' | 'refuted' | 'unclear'
+export interface NoteReply { verdict: NoteVerdict; fixed: boolean; body: string; at: number }
+/** A review note as the Diff tab sends it: anchored to the blob of one side of one file. */
+export interface NoteDraft { path: string; side: NoteSide; blob: string; rev: string; start: NotePoint; end: NotePoint; quote: string; body: string }
+export interface ReviewNote extends NoteDraft { id: string; createdAt: number; updatedAt?: number; review?: string; sentAt?: number; reply?: NoteReply }
+export type NoteResult = { ok: true; note: ReviewNote } | { ok: false; reason: string }
 
 export type RebaseAction = 'pick' | 'reword' | 'squash' | 'fixup' | 'drop'
 
@@ -356,6 +368,11 @@ declare module 'orca' {
     'diff.state': { input: { root: string }; output: DiffTabState | null }
     /** The Diff tab stepped to another file of its state. */
     'diff.index': { input: { root: string; index: number }; output: { ok: boolean } }
+    'notes.list': { input: { root: string }; output: { notes: ReviewNote[] } }
+    'notes.add': { input: { root: string; draft: NoteDraft }; output: NoteResult }
+    'notes.update': { input: { root: string; id: string; body: string }; output: NoteResult }
+    'notes.delete': { input: { root: string; ids: string[] }; output: { ok: boolean } }
+    'notes.send': { input: { root: string; ids: string[]; agent: string }; output: { ok: true; review: string } | { ok: false; reason: string } }
   }
   interface PluginPanelEvents {
     'repo.changed': { root: string }
@@ -367,5 +384,7 @@ declare module 'orca' {
     'diff.show': { root: string }
     /** The file the Diff tab of `root` now shows, for the sidebar to highlight. */
     'diff.current': { root: string; path: string }
+    /** The notes of `root` changed. */
+    'notes.changed': { root: string }
   }
 }
