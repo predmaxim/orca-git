@@ -644,3 +644,208 @@ test('deleting the last note of a review removes its folder', async () => { /* s
 - [ ] **Step 4:** расхождения из шага 3 исправить с тестом; то, что упирается в Orca, записать в «Limitations» и в `docs/orca-issues.md`.
 - [ ] **Step 5:** версия `0.8.0`; в бэклоге, «Состояние», — п. 13 сделан (этап 1), п. 11 ждёт этап 2; в спеке — статус «этап 1 реализован в 0.8.0».
 - [ ] **Step 6:** commit: `Release 0.8.0: review notes on selected text, sent to a new agent, with the agent's answer under each note`. Выпуск (push, тег `v0.8.0`, `orca plugin update predmaxim.git-log`) — по README «Release», только с согласия пользователя.
+
+---
+
+Tasks 9 и 10 добавлены 2026-11-16 по просьбе пользователя, после волны исправлений финального ревью (голова `f64eced`). Выполняются до живой сессии (Task 8, Step 3). Спека — редакция 3.
+
+### Task 9: Краткий ответ агента и путь картинки
+
+**Files:**
+- Modify: `src/worker/reviewGuide.ts`, `src/worker/review.ts` (`notesFile`), `src/ui/markdown.ts`, `README.md`
+- Test: `src/worker/review.test.ts`, `src/ui/markdown.test.ts`
+
+**Interfaces:**
+- Produces: новый текст `REVIEW_GUIDE`; новый абзац формы ответа в `notes.md`; токен `image` в `mdTree` даёт строку `<подпись> (<адрес>)`.
+
+`REVIEW_GUIDE` — дословно:
+
+```markdown
+# Working through review notes
+
+You are a fresh, independent reviewer. The user left notes on a diff. Each note is a claim (something is wrong) or a request (change this). Your value is an independent check: do not agree to be agreeable, and do not defend the code.
+
+## Stance
+
+- Take neither the note nor the code at its word. Comments, names and commit messages are claims too: check what the code does.
+- A note can be wrong. Refuting it with evidence is as useful as confirming it.
+- A preference is not a defect. If the code is correct and the project's rules do not ask for the change, say so.
+- The project's rules and its task description are the standard (AGENTS.md, CLAUDE.md, the project's skills and docs). Behaviour they prescribe is not a defect.
+
+## For each note
+
+1. Read the selected text in its place: `git show <commit>:<path>` prints the version the note was written on. Then find that code in the working tree and read the function, its callers and its tests, not only the selected lines.
+2. Decide: `confirmed` (the note is right), `refuted` (it is not, and why), or `unclear` (you cannot tell: say what you would need to know).
+3. Back the verdict with a fact that can be opened: a code snippet, a `file:line` reference, the output of a test you ran, the rule that applies, or a screenshot of the design mockup.
+4. If confirmed, fix it in the working tree with the smallest change that settles the note. Do not widen the fix to code the note does not cover.
+5. Do not switch branches, reset, stash or commit unless the project's rules tell you to.
+6. If the code the note points at has already changed in the working tree, say so.
+
+## Answer
+
+One file per note, at the path the notes file gives: `verdict:` on the first line, `fixed: yes` or `fixed: no` on the second, a blank line, then the answer in markdown.
+
+Keep the answer very short, with no filler. It holds only:
+
+- the facts: a code snippet, a `file:line` reference, or a screenshot of the design mockup (save the image next to the answer file and give its full path);
+- your conclusion or opinion, in one or two sentences. If you changed code, name the files and lines. If you could not check something, name it in a few words.
+
+Write each answer file once, when you are done with that note — after the fix, if you make one.
+
+When every note is answered, report briefly in the chat: how many were confirmed, refuted and unclear, and what you changed.
+```
+
+Абзац формы ответа в `notesFile` — второе предложение и дальше заменить (первое, с путём, остаётся):
+
+```
+The first line is `verdict: confirmed | refuted | unclear`, the second `fixed: yes | no`, then a blank line, then the answer in markdown, very short and with no filler: the facts (a code snippet, a file:line reference, or a screenshot of the design mockup saved next to the answer file, with its full path), then your conclusion or opinion in one or two sentences. Write each answer file once, when you are done with that note — after the fix, if you make one.
+```
+
+`mdTree`: токен `image` даёт строку `<alt> (<href>)`; без адреса — одну подпись, без подписи — один адрес; сущности в подписи раскрываются, как раньше, адрес не меняется.
+
+- [ ] **Step 1: тесты.** `src/ui/markdown.test.ts`: в тесте «raw HTML and unsafe links stay text» ожидаемая строка становится `'x <img src=x onerror=alert(1)> y alt (https://a/b.png)'`; новый тест:
+
+```ts
+test('an image is its caption and its address, as text', () => {
+  assert.deepEqual(mdTree('![mockup](/tmp/review/answers/a.png)'), [el('p', 'mockup (/tmp/review/answers/a.png)')])
+  assert.deepEqual(mdTree('![](shot.png)'), [el('p', 'shot.png')])
+})
+```
+
+`src/worker/review.test.ts`: тест, что `REVIEW_GUIDE` содержит строки `Keep the answer very short, with no filler.` и `a screenshot of the design mockup`, не содержит `confidence`; что `notes.md` из `writeReview` содержит `very short and with no filler` и не содержит `confidence`.
+- [ ] **Step 2:** `orca plugin test .` — новые проверки падают. **Step 3:** заменить текст руководства, абзац в `notesFile`, ветку `image`. **Step 4:** зелёные.
+- [ ] **Step 5:** README, «Features»: ответ агента — короткий: факты (код, `файл:строка` или скриншот макета) и вывод; путь картинки из ответа показан текстом, сама картинка не показывается.
+- [ ] **Step 6:** commit: `Ask the agent for a very short answer of facts and a conclusion, and show an image in an answer as its caption and address`.
+
+### Task 10: Скилы ревью — настройка репозитория
+
+**Files:**
+- Create: `src/worker/skills.ts`, `src/worker/skills.test.ts`, `src/ui/skillmodel.ts`, `src/ui/skillmodel.test.ts`
+- Modify: `src/shared/protocol.ts`, `src/shared/notes.ts`, `src/worker/main.ts`, `src/worker/review.ts`, `src/worker/review.test.ts`, `src/ui/api.ts`, `src/ui/notes.ts`, `src/ui/styles.css`, `src/shared/i18n.ts`, `README.md`, `docs/git-safety.md`
+
+**Interfaces:**
+- Consumes: `NoteStore` (`src/worker/notes.ts`), `notesFile`, `reviewPrompt`, `writeReview` (`src/worker/review.ts`), список «Заметки» (`src/ui/notes.ts`).
+- Produces:
+
+```ts
+// src/shared/notes.ts
+export const MAX_REVIEW_SKILLS = 10
+
+// src/shared/protocol.ts — PluginRequests
+'skills.list': { input: { root: string }; output: { skills: string[] } }
+'skills.set': { input: { root: string; skills: string[] }; output: { ok: true; skills: string[] } | { ok: false; reason: string } }
+/** What the skill path field offers in `dir` (full, `~/…`, or from the repository root; '' is the root): subfolders and `.md` files, names only. */
+'skills.browse': { input: { root: string; dir: string }; output: { dirs: string[]; files: string[] } }
+
+// src/worker/skills.ts
+export function skillsKey(root: string): string                                  // 'skills:' + sha256(root) hex
+/** The path as the file system has it: `~` and `~/…` from the home folder, a relative path from `root`. */
+export function skillPathAbs(path: string, root: string): string
+export function browseSkills(dir: string, root: string): { dirs: string[]; files: string[] }
+/** The list as it can be stored: strings trimmed, empty ones and repeats dropped; or why not. */
+export function checkSkills(input: unknown, root: string): { ok: true; skills: string[] } | { ok: false; reason: string }
+export function listSkills(store: NoteStore, root: string): Promise<string[]>
+export function saveSkills(store: NoteStore, root: string, skills: string[]): Promise<void>
+/** The stored skills that exist now, as full paths, in order. */
+export function skillsForReview(store: NoteStore, root: string): Promise<string[]>
+
+// src/worker/review.ts — новые необязательные параметры
+export function notesFile(notes: ReviewNote[], paths: ReviewPaths, skills?: string[]): string
+export function reviewPrompt(paths: ReviewPaths, withSkills?: boolean): string
+export function writeReview(root: string, review: string, notes: ReviewNote[], skills?: string[]): …
+
+// src/ui/skillmodel.ts (чистая логика)
+/** The folder to browse for what is typed: everything up to and including the last «/». */
+export function browseDir(value: string): string
+/** The suggestions for what is typed: the `.md` files, then the folders (with «/»), whose names start with the typed name, any case. */
+export function skillSuggestions(value: string, listing: { dirs: string[]; files: string[] }): string[]
+
+// src/ui/api.ts
+api.skills(root): Promise<{ skills: string[] }>
+api.skillsSet(root, skills: string[]): Promise<{ ok: true; skills: string[] } | { ok: false; reason: string }>
+api.skillsBrowse(root, dir: string): Promise<{ dirs: string[]; files: string[] }>
+```
+
+Правила worker'а:
+- Значение ключа — `{ root, skills }`. Путь хранится как набран (полный, `~/…` или от корня репозитория).
+- `checkSkills`: массив; каждый элемент — строка, после `trim()` до 1024 символов, без управляющих символов (`/[\x00-\x1f\x7f]/`), иначе `t('skillInvalid')`; больше `MAX_REVIEW_SKILLS` разных путей — `t('skillsFull')`; путь, по которому нет ни файла, ни папки (`skillPathAbs`), — `t('skillMissing', { path })`.
+- `browseSkills`: имена подпапок и файлов `*.md` (любой регистр расширения) папки `skillPathAbs(dir, root)`, по алфавиту, без `.git`; ссылки раскрываются (`statSync`); папку нельзя прочитать — пустой ответ.
+- `skills.set` и `skills.browse` проверяют корень через `gitFor(root)`.
+- Отправка: `notes.send` берёт `skillsForReview` и передаёт в `writeReview`; при непустом списке `reviewPrompt(paths, true)`.
+- `notes.md` со скилами: после абзаца о форме ответа — абзац `Review skills to use first, in this order (each is a file, or a folder with a SKILL.md):` и нумерованный список полных путей.
+- Промпт со скилами — одна строка, без обратных кавычек (проверка `promptRefusal` та же):
+
+```
+Review notes from the user are in <notes>. Work through every note: check it against the code, answer it (confirmed, refuted or unclear) with your evidence, and fix the code for each note you confirm. Use the review skills listed at the top of <notes> first, then this project's own review skills and rules (.claude/skills, .agents/skills, AGENTS.md, CLAUDE.md); where they say nothing, follow <guide>. Write one answer file per note into <answers>, in the form the notes file describes.
+```
+
+Интерфейс (список «Заметки», под заметками; образец — поле скила в настройках плагина workflow, `~/Projects/workflow/src/ui/settings.ts`, `app.ts`: `skillField`, `pickSkill`, `onSuggestKey`, `suggestList`; стили — `forms.css`, `.nt-suggest`):
+- Раздел с подписью `skillsTitle` и числом (стиль подписи раздела: 11px, 600, прописные, `--orca-muted-foreground`), под ней строка `skillsHint`.
+- Строка на скил: путь моноширинным (перенос по любому символу) и кнопка «×» с `aria-label` `skillRemove`.
+- Кнопка `skillAdd` (обычная кнопка с рамкой); на `MAX_REVIEW_SKILLS` скилах её нет. Нажатие заменяет её полем (`role="combobox"`, `aria-autocomplete="list"`, placeholder и `aria-label` — `skillPath`) с фокусом и сразу показывает подсказки корня репозитория.
+- Под полем — список подсказок (`role="listbox"`, до 200px высоты, прокрутка) и кнопка `skillDone`. Подсказки: `skillSuggestions(value, await api.skillsBrowse(root, browseDir(value)))`; ответ на устаревший ввод отбрасывается (счётчик запросов).
+- Клавиши в поле: ↑/↓ двигают выделение (по кругу), Enter или Tab берут выделенную подсказку; Enter без подсказок и кнопка `skillDone` берут набранный путь. Взятая папка (кончается на `/`, взята из подсказок) раскрывается: поле получает её путь и новые подсказки. Взятый файл или набранный путь добавляется: `api.skillsSet(root, [...skills, path])`; отказ — в строке уведомления списка (как отказ удаления заметки), поле остаётся; успех — поле закрывается, список скилов перерисован, фокус на кнопке `skillAdd`.
+- «×» — `api.skillsSet` без этого пути.
+- Скилы загружаются вместе с заметками при открытии списка.
+- Все пути и причины — текстовыми узлами (`h()`), без `innerHTML`.
+
+Строки (`en` / `ru`): `skillsTitle` — «Review skills» / «Скилы ревью»; `skillsHint` — «Used first, in this order: before the project's rules and the built-in guide.» / «Берутся первыми, в этом порядке: раньше правил проекта и встроенного руководства.»; `skillAdd` — «Add a skill» / «Добавить скил»; `skillPath` — «Skill path: an .md file or a skill folder» / «Путь до скила: файл .md или папка скила»; `skillDone` — «Done» / «Готово»; `skillRemove` — «Remove {path}» / «Убрать {path}»; `skillMissing` — «No such skill file or folder: {path}» / «Нет такого файла или папки скила: {path}»; `skillInvalid` — «This skill path cannot be used.» / «Этот путь скила использовать нельзя.»; `skillsFull` — «At most 10 review skills.» / «Не больше 10 скилов ревью.»
+
+- [ ] **Step 1: тесты.**
+
+`src/ui/skillmodel.test.ts`:
+
+```ts
+test('what is typed splits into the folder to browse and the name to match', () => {
+  assert.equal(browseDir(''), '')
+  assert.equal(browseDir('docs/rev'), 'docs/')
+  assert.equal(browseDir('~/.claude/skills/'), '~/.claude/skills/')
+  assert.equal(browseDir('/abs'), '/')
+})
+test('suggestions are the matching .md files, then the matching folders', () => {
+  const listing = { dirs: ['Review', 'src'], files: ['README.md', 'rules.md'] }
+  assert.deepEqual(skillSuggestions('', listing), ['README.md', 'rules.md', 'Review/', 'src/'])
+  assert.deepEqual(skillSuggestions('docs/r', listing), ['docs/README.md', 'docs/rules.md', 'docs/Review/'])
+  assert.deepEqual(skillSuggestions('x', listing), [])
+})
+```
+
+`src/worker/skills.test.ts` (временная папка `root` с `a.md`, `B.MD`, `c.txt`, `sub/`, `.git/`):
+
+```ts
+test('a folder offers its subfolders and .md files', () => {
+  assert.deepEqual(browseSkills('', root), { dirs: ['sub'], files: ['B.MD', 'a.md'] })
+  assert.deepEqual(browseSkills('missing/', root), { dirs: [], files: [] })
+})
+test('a path is taken from the home folder, the root, or as it is', () => {
+  assert.equal(skillPathAbs('~/x.md', root), join(homedir(), 'x.md'))
+  assert.equal(skillPathAbs('sub/s.md', root), join(root, 'sub/s.md'))
+  assert.equal(skillPathAbs('/abs/s.md', root), '/abs/s.md')
+})
+test('a list of skills is trimmed, without repeats, at most ten, and every path exists', () => {
+  assert.deepEqual(checkSkills([' a.md ', 'a.md', '', 'sub'], root), { ok: true, skills: ['a.md', 'sub'] })
+  assert.equal(checkSkills(['nope.md'], root).ok, false)
+  assert.equal(checkSkills(['a.md\nx'], root).ok, false)
+  assert.equal(checkSkills('a.md', root).ok, false)
+  /* 11 разных существующих путей → ok false; 10 → ok true */
+})
+test('the worker stores the skills of a repository', async () => {
+  /* fixture(): файл rules.md в корне; skills.set { skills: ['rules.md'] } → ok; skills.list → ['rules.md']; skills.set { skills: ['gone.md'] } → ok false, список прежний; skills.browse { dir: '' } содержит 'rules.md'; worker.refusals пуст */
+})
+```
+
+`src/worker/review.test.ts`:
+
+```ts
+test('the review skills go into the notes file and the prompt points at them', async () => {
+  /* fixture(): rules.md в корне; skills.set ['rules.md', '~/__no_such_skill__.md' нельзя — он не существует, поэтому только 'rules.md'];
+     notes.add, notes.send: notes.md содержит 'Review skills to use first, in this order' и строку `1. ${join(root, 'rules.md')}`;
+     промпт agent.launch содержит 'Use the review skills listed at the top of' и не содержит 'rules.md';
+     после удаления rules.md с диска следующая отправка: notes.md без раздела скилов, промпт прежний ('Use this project's own review skills and rules first') */
+})
+```
+
+- [ ] **Step 2:** `orca plugin test .` — новые тесты падают. **Step 3:** написать worker, `skillmodel.ts`, интерфейс, стили, строки. **Step 4:** зелёные; `orca plugin validate .` и `orca plugin check .` — код 0.
+- [ ] **Step 5: headless Chromium** (стенд `/tmp/gitlog-notes-bench`, прежние прогоны не ломать): заглушки `skills.list` → `{ skills: window.skills }`, `skills.browse` → для `''`: `{ dirs: ['docs'], files: ['README.md'] }`, для `'docs/'`: `{ dirs: [], files: ['review.md'] }`; `skills.set` кладёт вход в `window.skillsSet`, обновляет `window.skills`, отвечает `{ ok: true, skills }`. Сценарий: открыть «Заметки», нажать «Добавить скил», набрать `do`, нажать Enter (поле становится `docs/`), нажать Enter (берётся `docs/review.md`). Ожидается: `window.skillsSet` — `["docs/review.md"]`; в списке строка с этим путём; кнопка «Добавить скил» снова на месте. Второй прогон: `window.skills` из 10 путей — кнопки «Добавить скил» нет, строк 10. Команды и вывод — в отчёт.
+- [ ] **Step 6:** README: «Features» — скилы ревью (где задаются, до 10, порядок — приоритет, раньше правил проекта и встроенного руководства, пути в `notes.md`); `docs/git-safety.md` — строка о чтении имён папки для подсказок и проверке существования пути.
+- [ ] **Step 7:** commit: `Review skills of a repository: up to ten paths set in the Notes list with path suggestions, named first in the notes the agent gets`.
