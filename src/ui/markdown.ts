@@ -31,7 +31,7 @@ function one(t: Token): MdNode[] {
     case 'space': return []
     case 'paragraph': return [{ tag: 'p', children: many(t.tokens) }]
     case 'heading': return [{ tag: 'h4', children: many(t.tokens) }]
-    case 'codespan': return [{ tag: 'code', children: [decode(t.text ?? '')] }]
+    case 'codespan': return [{ tag: 'code', children: [t.text ?? ''] }]
     // A code block's text is not escaped by the lexer: it is shown as it is.
     case 'code': return [{ tag: 'pre', children: [{ tag: 'code', children: [t.text ?? ''] }] }]
     case 'list': return [{ tag: t.ordered ? 'ol' : 'ul', children: many(t.items) }]
@@ -47,7 +47,7 @@ function one(t: Token): MdNode[] {
     }
     case 'image': return [decode(t.text ?? '')]
     case 'text': return t.tokens ? many(t.tokens) : [decode(t.text ?? '')]
-    case 'escape': return [decode(t.text ?? '')]
+    case 'escape': return [t.text ?? '']
     default: return [t.text ?? t.raw ?? '']
   }
 }

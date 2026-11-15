@@ -29,6 +29,15 @@ test('entities read as characters', () => {
   assert.deepEqual(mdTree('a &amp; b &lt;c&gt;'), [el('p', 'a & b <c>')])
 })
 
+test('code keeps entities as written', () => {
+  assert.deepEqual(mdTree('`a &amp; b`'), [el('p', el('code', 'a &amp; b'))])
+  assert.deepEqual(mdTree('```\na &amp; b\n```'), [el('pre', el('code', 'a &amp; b'))])
+})
+
+test('an escaped ampersand is not an entity', () => {
+  assert.deepEqual(mdTree('\\&amp; x'), [el('p', '&amp; x')])
+})
+
 test('a hard break', () => {
   assert.deepEqual(mdTree('one\ntwo  \nthree'), [el('p', 'one\ntwo', el('br'), 'three')])
 })
