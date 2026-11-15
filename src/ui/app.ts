@@ -1572,14 +1572,18 @@ async function push(): Promise<void> {
   if (!choice) return
   const request: PushRequest = { branch: plan.branch, hash: plan.hash, ...choice, setUpstream: plan.publish }
   await networkRun(pushButton, (id) => api.push(root, request, id), (result) =>
-    showNetworkResult(root, result, result.diverged && root === repo?.root ? [{ label: t('pushForce'), run: () => void forcePush(root) }] : [])
+    showNetworkResult(root, result, result.diverged && root === repo?.root ? [{ label: t('pushForce'), run: () => void forcePush(root, request) }] : [])
   )
 }
 
-/** After a diverged push: what the remote would lose, a backup of its tip, and a push that holds only while the remote is where it was seen. */
-async function forcePush(root: string): Promise<void> {
+/**
+ * After a diverged push of `pushed`: what the remote would lose, a backup of its tip, and a push of the same commit that
+ * holds only while the remote is where it was seen. A branch that moved since sends nothing its dialog did not list.
+ */
+async function forcePush(root: string, pushed: PushRequest): Promise<void> {
   const plan = await pushPlan(root)
-  if (!plan || plan.publish) return
+  if (!plan) return
+  if (plan.hash !== pushed.hash || plan.branch !== pushed.branch || plan.remote !== pushed.remote || plan.remoteBranch !== pushed.remoteBranch) return showBanner(t('repoChanged'), 'error')
   const target = `${plan.remote}/${plan.remoteBranch}`
   const backup = await offerBackup(root, target, plan.remoteTip)
   if (!(await confirm(t('forcePushTitle', { target }), forcePushWarning(plan, target), t('btnForcePush'), true, backup))) return

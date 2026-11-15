@@ -16,7 +16,8 @@
 ## Мои решения
 
 - Иконка Lucide `arrow-up` (у Fetch `arrow-down`), клавиша `Shift+K` (как Ctrl+Shift+K в WebStorm).
-- Куда: туда, куда отправил бы обычный `git push` (push.default, remote.pushDefault, branch.<name>.pushRemote); имя ветки на сервере — из `%(push)`, иначе из upstream того же remote. Без цели — публикация в remote.pushDefault, иначе `origin`, иначе первый remote.
+- Куда: туда, куда отправил бы обычный `git push` (push.default, remote.pushDefault, branch.<name>.pushRemote); имя ветки на сервере — из `%(push)`. Где git отправлять не стал бы (нет upstream; `push.default=simple` и upstream с другим именем, например ветка от `origin/main`) — публикация под своим именем, никогда не в `main`. Цель «не remote» (`.`, несуществующий pushRemote) — отказ.
+- Отправляется хеш, а не ветка: коммит, сделанный между проверкой и push, не уйдёт; force push из баннера отказывает, если ветка сдвинулась после того push. Upstream при публикации записывается конфигом (`--set-upstream` с хешем ничего не пишет).
 - Отправляется ровно тот коммит, для которого диалог показал список: если ветка сдвинулась, push отклоняется.
 - Force push: lease на коммит удалённой ветки по последнему fetch; подтверждение со списком коммитов, которые пропадут с сервера, и предложением бэкапа (настройка `offerBackup`) на этот коммит. Устарел lease — отказ без перезаписи.
 - Как Fetch: блокировка репозитория, таймаут 100 с, поздний результат после таймаута Orca. Запрещено при detached HEAD и незаконченном rebase/merge/cherry-pick/revert.

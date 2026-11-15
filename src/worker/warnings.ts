@@ -3,7 +3,7 @@ import { t } from '../shared/i18n.ts'
 import { stdoutOf, subcommand, type Git } from './git.ts'
 
 /** Commands that change the repository: their warnings are the ones the banner shows. */
-const MUTATING = new Set(['checkout', 'switch', 'branch', 'tag', 'reset', 'cherry-pick', 'revert', 'merge', 'rebase', 'fetch', 'stash'])
+const MUTATING = new Set(['checkout', 'switch', 'branch', 'tag', 'reset', 'cherry-pick', 'revert', 'merge', 'rebase', 'fetch', 'push', 'stash'])
 
 /** Most warnings one result carries; the rest are counted. */
 const SHOWN = 5

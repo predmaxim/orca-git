@@ -428,7 +428,7 @@ export async function pushDialog(plan: PushPlan): Promise<{ remote: string; remo
   const ok = await dialog<boolean>({
     title: plan.publish ? t('publishTitle', { branch: plan.branch }) : t('pushTitle', { count: plan.count, target: `${plan.remote}/${plan.remoteBranch}` }),
     body: [
-      plan.publish && plan.remotes.length > 1 ? field(t('pushRemote'), remote) : null,
+      plan.publish ? field(t('pushRemote'), remote) : null,
       plan.publish ? field(t('pushRemoteBranch'), name) : null,
       plan.count ? commitList(plan.commits, plan.count) : t('pushNoCommits')
     ],

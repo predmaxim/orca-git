@@ -29,8 +29,10 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   drag the edge between open sections to resize them (a line shows under the pointer). The layout is
   remembered.
 - **Push** next to Fetch (`Shift+K`): a dialog lists the commits that go and where (the branch's push
-  target, as a plain `git push` would pick it). A branch with no upstream is published: pick the remote
-  and the name on it, and the upstream is set. When the remote has commits the branch lacks, the banner
+  target, as a plain `git push` would pick it); it sends exactly the commit the dialog listed. A branch
+  git would push nowhere (no upstream, or under `push.default=simple` an upstream of another name, like a
+  branch made from `origin/main`) is published: pick the remote and the name on it (its own name by
+  default, never `main` by accident), and the upstream is set. When the remote has commits the branch lacks, the banner
   offers a force push with lease: its confirmation lists the commits the remote would lose, offers a
   backup of the remote's tip, and the push is refused if the remote changed since the last fetch.
 - **Current branch** at the top left, next to Refresh, Fetch and Push: the branch (or the commit of a detached

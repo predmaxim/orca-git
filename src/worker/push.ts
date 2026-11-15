@@ -49,17 +49,19 @@ export async function checkPush(git: Git): Promise<{ ok: true; plan: PushPlan } 
     if (!hash) throw new Error(t('pushNoCommitsYet'))
     // Where a plain `git push` would send the branch: push.default, remote.pushDefault and branch.<name>.pushRemote decide.
     // %(push:remoteref) is empty unless remote.<name>.push says, so the name comes from %(push), the push target's
-    // remote-tracking branch, or else from the upstream on the same remote (push.default=simple with another name).
-    const [target = '', targetRef = '', tracking = '', upstreamRemote = '', upstreamRef = ''] = (
-      await git.out(['for-each-ref', '--format=%(push:remotename)%00%(push:remoteref)%00%(push)%00%(upstream:remotename)%00%(upstream:remoteref)%00', `refs/heads/${branch}`])
+    // remote-tracking branch. Where git would not push (push.default=simple with an upstream of another name, say a
+    // branch made from origin/main), there is no target: the branch is published under its own name, never sent to main.
+    const [target = '', targetRef = '', tracking = ''] = (
+      await git.out(['for-each-ref', '--format=%(push:remotename)%00%(push:remoteref)%00%(push)%00', `refs/heads/${branch}`])
     ).split('\0')
+    // A branch that pushes to a local branch (remote `.`) or to a remote that does not exist is git's to refuse, not the plugin's to redirect.
+    if (target && !remotes.includes(target)) throw new Error(t('pushTargetUnsupported', { target }))
     const heads = 'refs/heads/'
     const fromTracking = tracking.startsWith(`refs/remotes/${target}/`) ? tracking.slice(`refs/remotes/${target}/`.length) : ''
-    const fromUpstream = upstreamRemote === target && upstreamRef.startsWith(heads) ? upstreamRef.slice(heads.length) : ''
-    const known = remotes.includes(target) ? (targetRef.startsWith(heads) ? targetRef.slice(heads.length) : fromTracking || fromUpstream) : ''
+    const known = targetRef.startsWith(heads) ? targetRef.slice(heads.length) : fromTracking
     const publish = !known
     const preferred = (await git.run(['config', 'remote.pushDefault'])).stdout.trim()
-    const remote = publish ? [preferred, 'origin', remotes[0]].find((name) => remotes.includes(name)) ?? remotes[0] : target
+    const remote = target || ([preferred, 'origin'].find((name) => remotes.includes(name)) ?? remotes[0])
     const remoteBranch = publish ? branch : known
     const remoteTip = publish ? null : await tip(git, tracking || `refs/remotes/${remote}/${remoteBranch}`)
     // Against the remote branch as last fetched; with none, against everything fetched from that remote.
@@ -100,12 +102,12 @@ export async function runPush(plain: Git, request: unknown): Promise<PushResult>
   } catch (error) {
     return { ok: false, message: messageOf(error) }
   }
-  const pair = `refs/heads/${branch}:refs/heads/${remoteBranch}`
+  // The commit itself, not the branch: one made after the check above (in a terminal, say) is never sent.
+  const pair = `${hash}:refs/heads/${remoteBranch}`
   const result = await git.run(
     [
       'push',
       '--porcelain',
-      ...(setUpstream ? ['--set-upstream'] : []),
       // An empty expected value: only while the remote branch does not exist.
       ...(force ? [`--force-with-lease=refs/heads/${remoteBranch}:${force.expect ?? ''}`] : []),
       '--end-of-options',
@@ -118,7 +120,14 @@ export async function runPush(plain: Git, request: unknown): Promise<PushResult>
   const kept = made ? { backup: made } : {}
   // --porcelain prints one line per ref: <flag> TAB <from>:<to> TAB <summary> (<reason>); `!` is a rejected ref.
   const line = result.stdout.split('\n').find((row) => row.split('\t')[1] === pair) ?? ''
-  if (result.ok && line[0] !== '!') return withWarnings({ ok: true, message: t(line[0] === '=' ? 'pushUpToDate' : 'pushed', { target }), ...kept })
+  if (result.ok && line[0] !== '!') {
+    // What --set-upstream writes; it sets nothing for a commit pushed by its hash.
+    const upstream = setUpstream
+      ? (await git.run(['config', `branch.${branch}.remote`, remote!])).ok && (await git.run(['config', `branch.${branch}.merge`, `refs/heads/${remoteBranch}`])).ok
+      : true
+    const message = `${t(line[0] === '=' ? 'pushUpToDate' : 'pushed', { target })}${upstream ? '' : ` ${t('pushUpstreamNotSet', { target })}`}`
+    return withWarnings({ ok: true, message, ...(upstream ? {} : { warning: true }), ...kept })
+  }
   const reason = /\(([^)]*)\)\s*$/.exec(line)?.[1] ?? ''
   const tail = lastLines(result.stderr, 4)
   const detail = tail ? `\n${tail}` : ''

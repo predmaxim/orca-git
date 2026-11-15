@@ -75,9 +75,34 @@ test('a branch with no upstream is published under the name chosen, with the ups
   assert.equal(done.ok, true, done.message)
   assert.equal(sh(bare, 'rev-parse', 'feature/topic'), p.hash)
   assert.equal(sh(mine, 'rev-parse', '--abbrev-ref', 'topic@{upstream}'), 'origin/feature/topic')
-  // From now on it goes to its upstream, though the names differ (push.default=simple would refuse a plain git push).
+  // Names that differ give a plain git push no target under push.default=simple: published again, under its own name unless changed.
   const next = await plan(mine)
-  assert.deepEqual([next.publish, next.remoteBranch, next.count, next.remoteTip], [false, 'feature/topic', 0, p.hash])
+  assert.deepEqual([next.publish, next.remote, next.remoteBranch], [true, 'origin', 'topic'])
+  sh(mine, 'config', 'push.default', 'upstream')
+  const tracked = await plan(mine)
+  assert.deepEqual([tracked.publish, tracked.remoteBranch, tracked.count, tracked.remoteTip], [false, 'feature/topic', 0, p.hash])
+})
+
+test('a branch made from origin/main is published under its own name, never pushed to main', async () => {
+  const { bare, clones: [mine] } = origin('mine')
+  sh(mine, 'switch', '-q', '-c', 'fix', '--track', 'origin/main')
+  commit(mine, 'fix.txt', 'fix')
+  const p = await plan(mine)
+  assert.deepEqual([p.publish, p.remote, p.remoteBranch], [true, 'origin', 'fix'])
+  assert.equal((await runPush(createGit(mine), request(p))).ok, true)
+  assert.notEqual(sh(bare, 'rev-parse', 'main'), p.hash)
+  assert.equal(sh(bare, 'rev-parse', 'fix'), p.hash)
+})
+
+test('a branch that pushes to a local branch or to a remote that does not exist is refused, not redirected', async () => {
+  const { clones: [mine] } = origin('mine')
+  sh(mine, 'switch', '-q', '-c', 'local', '--track', 'main')
+  sh(mine, 'config', 'push.default', 'upstream')
+  commit(mine, 'local.txt', 'local')
+  assert.equal((await checkPush(createGit(mine))).ok, false)
+  sh(mine, 'switch', '-q', '-c', 'odd')
+  sh(mine, 'config', 'branch.odd.pushRemote', 'nope')
+  assert.equal((await checkPush(createGit(mine))).ok, false)
 })
 
 test('a diverged remote is reported, a force with lease replaces it after a backup, and a stale lease is refused', async () => {
