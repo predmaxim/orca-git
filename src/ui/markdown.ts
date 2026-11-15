@@ -53,7 +53,12 @@ function one(t: Token): MdNode[] {
 }
 
 export function mdTree(source: string): MdNode[] {
-  return many(lexer(source))
+  try {
+    return many(lexer(source))
+  } catch {
+    // Untrusted input nested too deep for the lexer or the recursion: show it as it is.
+    return [source]
+  }
 }
 
 /** The tree as DOM nodes, built with createElement and text nodes only; a link calls `open` instead of navigating. */
@@ -74,6 +79,11 @@ export function mdDom(source: string, open: (url: string) => void): DocumentFrag
     return el
   }
   const frag = document.createDocumentFragment()
-  for (const n of mdTree(source)) frag.append(build(n))
+  try {
+    for (const n of mdTree(source)) frag.append(build(n))
+  } catch {
+    // A tree deep enough to overflow the stack while it is built.
+    frag.replaceChildren(document.createTextNode(source))
+  }
   return frag
 }

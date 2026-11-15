@@ -38,6 +38,11 @@ test('an escaped ampersand is not an entity', () => {
   assert.deepEqual(mdTree('\\&amp; x'), [el('p', '&amp; x')])
 })
 
+test('input nested too deep to parse comes back as plain text', () => {
+  const source = `${'>'.repeat(30000)} x`
+  assert.deepEqual(mdTree(source), [source])
+})
+
 test('a hard break', () => {
   assert.deepEqual(mdTree('one\ntwo  \nthree'), [el('p', 'one\ntwo', el('br'), 'three')])
 })
