@@ -5,6 +5,7 @@ import { assert, hostError, mountWorker, test } from 'orca/testing'
 import * as main from './main.ts'
 import { parseAnswer, readAnswers, removeReview, reviewPaths, reviewPrompt, writeReview } from './review.ts'
 import { REVIEW_GUIDE } from './reviewGuide.ts'
+import { notesKey } from './notes.ts'
 import { draft, fixture, host } from './testkit.ts'
 
 const note = () => ({ ...draft(), id: 'aaaaaaaaaaaa', createdAt: 1 })
@@ -121,6 +122,21 @@ test('a new worker picks up the answer', async () => {
   await two.emit('agent.status.changed', status)
   assert.equal((((await two.request('notes.list', { root })) as any).notes[0]).reply.fixed, true)
   assert.deepEqual(second.data().storage.pending, [])
+})
+
+test('one root whose answers cannot be read does not stop the others', async () => {
+  const root = fixture()
+  const first = host(root, { 'agent.launch': { terminalId: 't-1' } })
+  const one = await mountWorker(main, { host: first })
+  const { note: added } = (await one.request('notes.add', { root, draft: draft() })) as any
+  const sent = (await one.request('notes.send', { root, ids: [added.id], agent: 'claude' })) as any
+  const bad = '/nowhere/bad'
+  const storage: any = { ...first.data().storage, [notesKey(bad)]: { root: bad, notes: [null] }, pending: [bad, root] }
+  const two = await mountWorker(main, { host: host(root, undefined, storage), events: ['agent.status.changed'] })
+  answerFile(root, sent.review, added.id, 'verdict: confirmed\n\nDone.')
+  await two.emit('agent.status.changed', status)
+  assert.deepEqual(two.posts.slice(-1), [{ event: 'notes.changed', payload: { root } }])
+  assert.equal((((await two.request('notes.list', { root })) as any).notes[0]).reply.verdict, 'confirmed')
 })
 
 test('the list itself picks up an answer', async () => {

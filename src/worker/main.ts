@@ -347,7 +347,13 @@ export default function activate(orca: OrcaWorkerApi): void {
 
   orca.events.on('agent.status.changed', async () => {
     try {
-      for (const root of await pendingRoots(orca.storage)) await ingest(root)
+      for (const root of await pendingRoots(orca.storage)) {
+        try {
+          await ingest(root)
+        } catch (error) {
+          orca.log(`answers not read for ${root}: ${errorText(error)}`)
+        }
+      }
     } catch (error) {
       orca.log(`answers not read: ${errorText(error)}`)
     }
