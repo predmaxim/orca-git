@@ -28,7 +28,12 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   a header to collapse a section to one line with its summary (number of selected commits or files);
   drag the edge between open sections to resize them (a line shows under the pointer). The layout is
   remembered.
-- **Current branch** at the top left, next to Refresh and Fetch: the branch (or the commit of a detached
+- **Push** next to Fetch (`Shift+K`): a dialog lists the commits that go and where (the branch's push
+  target, as a plain `git push` would pick it). A branch with no upstream is published: pick the remote
+  and the name on it, and the upstream is set. When the remote has commits the branch lacks, the banner
+  offers a force push with lease: its confirmation lists the commits the remote would lose, offers a
+  backup of the remote's tip, and the push is refused if the remote changed since the last fetch.
+- **Current branch** at the top left, next to Refresh, Fetch and Push: the branch (or the commit of a detached
   HEAD), ↑ the commits to push and ↓ the commits to pull against its upstream as of the last fetch, and a
   yellow mark while a rebase, merge, cherry-pick or revert is in progress. Its tooltip names the
   repository folder and the upstream.
@@ -89,7 +94,7 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
     section opens first); `0` brings up the Diff tab as it was left (or, if the repository has none
     yet, opens the current file of the selection); `Shift+Z` folds or unfolds the current section;
     `/` searches it (Branches and Commits have a search field); `Shift+R` Refresh (the banner says
-    when it is done); `Shift+F` Fetch.
+    when it is done); `Shift+F` Fetch; `Shift+K` Push.
   - Branches (the row under the cursor): `o` Checkout (a remote branch: as a local one; a tag:
     its revision), `n` New Branch from it, `l` Show Only it / Show All, `y` Copy Name, `r` Rename,
     `d` Delete, `m` Merge into Current, `b` Rebase Current onto it, `g` Restore to a backup.

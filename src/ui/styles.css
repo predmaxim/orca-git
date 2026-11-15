@@ -1485,6 +1485,52 @@ input[type='radio']:focus-visible {
   outline-offset: 1px;
 }
 
+/* Push dialog: a labelled field over its control, and the commits that go, in a box of their own. */
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted-fg);
+}
+
+.form-field > .field {
+  color: var(--popover-fg);
+  font-size: 13px;
+}
+
+.push-list {
+  max-height: 220px;
+  overflow: auto;
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  list-style: none;
+  font-size: 12px;
+}
+
+.push-list li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 20px;
+}
+
+.push-list .hash {
+  margin-right: 8px;
+  font-family: var(--font-code);
+  color: var(--muted-fg);
+}
+
+.push-list .more {
+  color: var(--muted-fg);
+}
+
+.warning .push-list {
+  margin-top: 6px;
+}
+
 /* Backup offer in a confirmation */
 .backup {
   display: flex;

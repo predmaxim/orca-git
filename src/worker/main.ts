@@ -14,6 +14,7 @@ import { resolveRepo, toplevel } from './repo.ts'
 import { readFileDiff } from './diff.ts'
 import { readRangeDiff, readSelectionFiles } from './selection.ts'
 import { createPatch } from './patch.ts'
+import { checkPush, runPush } from './push.ts'
 import { gitTooOld } from './rebase.ts'
 import { watchRepo, type RepoWatcher } from './watch.ts'
 
@@ -302,6 +303,20 @@ export default function activate(orca: OrcaWorkerApi): void {
       if (old) return { ok: false, message: old }
       const result = await fetchAll(git)
       if (result.ok) orca.panels.post('repo.changed', { root })
+      return result
+    })
+  })
+
+  handle('push.check', async ({ root }) => checkPush(await gitFor(root)))
+
+  handle('push.run', async ({ root, push, id }) => {
+    const git = await gitFor(root)
+    return exclusive(root, id, async () => {
+      const old = await gitTooOld(git)
+      if (old) return { ok: false, message: old }
+      const result = await runPush(git, push)
+      // A push moves the remote-tracking branch and may set the upstream; a backup may have been made even when it failed.
+      orca.panels.post('repo.changed', { root })
       return result
     })
   })

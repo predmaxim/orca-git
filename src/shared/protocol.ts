@@ -268,6 +268,50 @@ export interface BranchActionResult extends ActionResult {
   needsForce?: boolean
 }
 
+/** A commit a push dialog lists. */
+export interface PushCommit {
+  hash: string
+  subject: string
+}
+
+/** What pushing the current branch would send, and where: `push.check`. */
+export interface PushPlan {
+  branch: string
+  /** The commit the branch is at: the push sends exactly this and refuses once the branch moved. */
+  hash: string
+  /** Where a plain `git push` would go (push.default, remote.pushDefault, branch.<name>.pushRemote), or a default to publish to. */
+  remote: string
+  remoteBranch: string
+  /** The branch has no push target yet: the dialog lets the user pick the remote and name, and the push sets the upstream. */
+  publish: boolean
+  remotes: string[]
+  /** The remote branch as of the last fetch (`refs/remotes/<remote>/<branch>`), when there is one. */
+  remoteTip: string | null
+  /** Commits the remote lacks, newest first, at most 200; `count` is all of them. */
+  commits: PushCommit[]
+  count: number
+  /** Commits the remote branch has and the local branch lacks: what a force push would drop. */
+  remoteOnly: PushCommit[]
+  remoteOnlyCount: number
+}
+
+export interface PushRequest {
+  branch: string
+  hash: string
+  remote: string
+  remoteBranch: string
+  setUpstream: boolean
+  /** Force with lease: overwrite the remote branch only while it is still at `expect` (null: only while it does not exist). */
+  force?: { expect: string | null }
+  /** Force only: a backup of the remote tip `force.expect`, made before the push. */
+  backup?: BackupRequest
+}
+
+export interface PushResult extends ActionResult {
+  /** The remote has commits the local branch lacks (non-fast-forward): a force push with lease is the way past it. */
+  diverged?: boolean
+}
+
 export type PatchResult =
   | { ok: true; name: string; size: number; text?: string; tooLarge?: boolean; notUtf8?: boolean; path?: string }
   | { ok: false; reason: string; exists?: boolean }
@@ -303,6 +347,8 @@ declare module 'orca' {
     /** `name`: the full ref, as for `rebaseOnto`. */
     'branch.check': { input: { root: string; name: string }; output: { pushed: string[] } }
     'repo.fetch': { input: { root: string; id?: string }; output: ActionResult }
+    'push.check': { input: { root: string }; output: { ok: true; plan: PushPlan } | { ok: false; reason: string } }
+    'push.run': { input: { root: string; push: PushRequest; id?: string }; output: PushResult }
     /** Opens the Diff tab on the file `path` changed by commit `to` in the selection `hashes`; the worker lists the files. */
     'diff.open': { input: { root: string; hashes: string[]; path: string; to: string }; output: { ok: boolean; reason?: string } }
     /** Brings forward the Diff tab `diff.open` showed for `root`, without reloading it; `ok: false` if none was shown. */

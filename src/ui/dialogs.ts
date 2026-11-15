@@ -1,4 +1,4 @@
-import type { CheckoutRisk, PlanItem, RangeCommit, RebaseAction, ResetCheck, ResetMode } from '../shared/protocol.ts'
+import type { CheckoutRisk, PlanItem, PushCommit, PushPlan, RangeCommit, RebaseAction, ResetCheck, ResetMode } from '../shared/protocol.ts'
 import type { BackupBlock } from './backup.ts'
 import { h, icon } from './dom.ts'
 import { closePopups } from './menu.ts'
@@ -407,4 +407,43 @@ export function busy(text: string): () => void {
     el.remove()
     focused?.focus({ preventScroll: true })
   }
+}
+
+/** The commits a push sends, or a force push drops: short hash and subject, the rest counted. */
+function commitList(commits: PushCommit[], count: number): HTMLElement {
+  const more = count - commits.length
+  return h(
+    'ul',
+    { class: 'push-list' },
+    ...commits.map((commit) => h('li', null, h('span', { class: 'hash' }, shortHash(commit.hash)), commit.subject)),
+    more > 0 ? h('li', { class: 'more' }, t('pushMore', { count: more })) : null
+  )
+}
+
+/** The push of the current branch: its commits and where they go; a branch with no push target picks the remote and a name. */
+export async function pushDialog(plan: PushPlan): Promise<{ remote: string; remoteBranch: string } | null> {
+  const remote = h('select', { class: 'field' }, ...plan.remotes.map((name) => h('option', { value: name, selected: name === plan.remote }, name))) as HTMLSelectElement
+  const name = h('input', { class: 'field mono', value: plan.remoteBranch, spellcheck: false }) as HTMLInputElement
+  const field = (label: string, control: HTMLElement) => h('label', { class: 'form-field' }, label, control)
+  const ok = await dialog<boolean>({
+    title: plan.publish ? t('publishTitle', { branch: plan.branch }) : t('pushTitle', { count: plan.count, target: `${plan.remote}/${plan.remoteBranch}` }),
+    body: [
+      plan.publish && plan.remotes.length > 1 ? field(t('pushRemote'), remote) : null,
+      plan.publish ? field(t('pushRemoteBranch'), name) : null,
+      plan.count ? commitList(plan.commits, plan.count) : t('pushNoCommits')
+    ],
+    buttons: [cancel(), { label: t('push'), value: true, kind: 'primary' }],
+    focus: plan.publish ? name : undefined,
+    validate: () => (plan.publish && !name.value.trim() ? t('pushNameEmpty') : null)
+  })
+  if (!ok) return null
+  return plan.publish ? { remote: remote.value, remoteBranch: name.value.trim() } : { remote: plan.remote, remoteBranch: plan.remoteBranch }
+}
+
+/** What a force push drops from `target`, as a red outline, and the lease that guards it. */
+export function forcePushWarning(plan: PushPlan, target: string): (HTMLElement | string)[] {
+  const drops = plan.remoteOnlyCount
+    ? h('div', { class: 'warning danger' }, icon('warning'), h('div', null, t('forcePushDrops', { count: plan.remoteOnlyCount, target }), commitList(plan.remoteOnly, plan.remoteOnlyCount)))
+    : null
+  return [...(drops ? [drops] : []), t('forcePushLease', { target })]
 }

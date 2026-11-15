@@ -14,6 +14,9 @@ import type {
   LogFilter,
   LogPage,
   PatchResult,
+  PushPlan,
+  PushRequest,
+  PushResult,
   RefsResult,
   RepoResult,
   ResetCheck,
@@ -79,6 +82,8 @@ export const api = {
     call('backup.check', { root, kind, name }),
   resetCheck: (root: string, target: string): Promise<ResetCheck> => call('reset.check', { root, target }, LONG),
   fetch: (root: string, id: string): Promise<ActionResult> => call('repo.fetch', { root, id }, LONG),
+  pushCheck: (root: string): Promise<{ ok: true; plan: PushPlan } | { ok: false; reason: string }> => call('push.check', { root }, LONG),
+  push: (root: string, push: PushRequest, id: string): Promise<PushResult> => call('push.run', { root, push, id }, LONG),
   openDiff: (root: string, hashes: string[], file: SelectionFile): Promise<{ ok: boolean; reason?: string }> =>
     call('diff.open', { root, hashes, path: file.path, to: file.to }),
   focusDiff: (root: string): Promise<{ ok: boolean; reason?: string }> => call('diff.focus', { root }),

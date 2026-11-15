@@ -1,4 +1,4 @@
-import type { ActionRequest, ActionResult, BackupDelete, BackupRequest, BranchAction, BranchActionResult, BranchRef, CommitDetails, CommitRow, LogFilter, RefsResult, RepoInfo, RepoResult, ResetCheck, RewriteKind, SelectionFile, WorkspaceChoice } from '../shared/protocol.ts'
+import type { ActionRequest, ActionResult, BackupDelete, BackupRequest, BranchAction, BranchActionResult, BranchRef, CommitDetails, CommitRow, LogFilter, PushPlan, PushRequest, RefsResult, RepoInfo, RepoResult, ResetCheck, RewriteKind, SelectionFile, WorkspaceChoice } from '../shared/protocol.ts'
 import { api, copyText, errorMessage, orca, timedOut } from './api.ts'
 import { backupBlock, suggestBackupName, type BackupBlock } from './backup.ts'
 import { lateResults } from './late.ts'
@@ -6,7 +6,7 @@ import { buildFileTree, orderedFiles, type FileNode } from '../shared/filetree.t
 import { dirPaths, renderFileTree } from './filetree.ts'
 import { renderBranches } from './branches.ts'
 import { renderCommitList, renderPlaceholder } from './details.ts'
-import { askCheckout, askName, askPatch, askRebasePlan, askReset, busy, confirm, dialog, editMessage, overwrittenWarning, pushedWarning } from './dialogs.ts'
+import { askCheckout, askName, askPatch, askRebasePlan, askReset, busy, confirm, dialog, editMessage, forcePushWarning, overwrittenWarning, pushDialog, pushedWarning } from './dialogs.ts'
 import { append, h, icon } from './dom.ts'
 import { createFilterBar } from './filters.ts'
 import { KEYS, withKey, type KeyScope } from './keys.ts'
@@ -80,6 +80,7 @@ const regexToggle = h('button', { class: `toggle${prefs.regex ? ' on' : ''}`, ti
 const caseToggle = h('button', { class: `toggle${prefs.matchCase ? ' on' : ''}`, title: withKey(t('matchCaseTip'), 'matchCase') }, 'Cc')
 const refreshButton = h('button', { class: 'tool', title: withKey(t('refresh'), 'refresh'), 'aria-label': t('refresh') }, icon('refresh'))
 const fetchButton = h('button', { class: 'tool', title: withKey(t('fetch'), 'fetch'), 'aria-label': t('fetch') }, icon('down'))
+const pushButton = h('button', { class: 'tool', title: withKey(t('push'), 'push'), 'aria-label': t('push') }, icon('up'))
 
 const filterBar = createFilterBar({
   get filter() {
@@ -93,7 +94,7 @@ const filterBar = createFilterBar({
 })
 
 const headState = h('div', { class: 'head-state' })
-const toolbar = h('div', { class: 'toolbar' }, headState, refreshButton, fetchButton)
+const toolbar = h('div', { class: 'toolbar' }, headState, refreshButton, fetchButton, pushButton)
 // The search takes the full width of the commits; the filters get their own row under it.
 const searchRow = h('div', { class: 'search-row' }, h('label', { class: 'search' }, icon('search'), searchInput, regexToggle, caseToggle))
 const filterRow = h('div', { class: 'toolbar filters' }, ...filterBar.elements)
@@ -1508,34 +1509,94 @@ refreshButton.addEventListener('click', () => {
       if (--refreshClicks === 0) refreshButton.classList.remove('loading')
     })
 })
-fetchButton.addEventListener('click', async () => {
-  if (!repo) return
-  const root = repo.root
+/** A result from the network, with the backup a force push made and git's own warnings, one per line, as after any other change. */
+const showNetworkResult = (root: string, result: ActionResult, actions: { label: string; run: () => void }[] = []) =>
+  showBanner(
+    about(root, [[result.message, result.backup && t('backupMade', { name: result.backup })].filter(Boolean).join(' '), ...(result.gitWarnings ?? [])].join('\n')),
+    result.ok ? 'success' : 'error',
+    actions,
+    Boolean(result.gitWarnings?.length)
+  )
+
+/** Runs a fetch or push with `button` off until git ends, and shows what `show` makes of the result. */
+async function networkRun<R extends ActionResult>(button: HTMLButtonElement, call: (id: string) => Promise<R>, show: (result: R) => void): Promise<void> {
   const id = late.start()
-  // git's own warnings, one per line, as after any other change.
-  const show = (result: ActionResult) =>
-    showBanner(about(root, [result.message, ...(result.gitWarnings ?? [])].join('\n')), result.ok ? 'success' : 'error', [], Boolean(result.gitWarnings?.length))
-  fetchButton.disabled = true
+  button.disabled = true
   let waiting = false
   try {
-    const result = await api.fetch(root, id)
+    const result = await call(id)
     late.end(id)
     show(result)
   } catch (error) {
-    // git still runs after Orca's timeout: the button stays off until its result comes, as a second fetch would be refused.
+    // git still runs after Orca's timeout: the button stays off until its result comes, as a second run would be refused.
     if (timedOut(error)) {
       waiting = awaitLate(id, (result) => {
-        fetchButton.disabled = false
-        show(result)
+        button.disabled = false
+        show(result as R)
       })
     } else {
       late.end(id)
       showBanner(errorMessage(error), 'error')
     }
   } finally {
-    if (!waiting) fetchButton.disabled = false
+    if (!waiting) button.disabled = false
   }
+}
+
+fetchButton.addEventListener('click', () => {
+  if (!repo) return
+  const root = repo.root
+  void networkRun(fetchButton, (id) => api.fetch(root, id), (result) => showNetworkResult(root, result))
 })
+
+/** What pushing the current branch would send; null (and a banner) when it cannot be pushed. */
+async function pushPlan(root: string): Promise<PushPlan | null> {
+  try {
+    const check = await api.pushCheck(root)
+    if (check.ok) return check.plan
+    showBanner(check.reason, 'error')
+  } catch (error) {
+    showBanner(errorMessage(error), 'error')
+  }
+  return null
+}
+
+/** Push of the current branch: a dialog shows what goes where; a remote that has diverged offers a force push with lease. */
+async function push(): Promise<void> {
+  if (!repo) return
+  const root = repo.root
+  const plan = await pushPlan(root)
+  if (!plan) return
+  if (!plan.publish && !plan.count) return showBanner(t('pushNothing', { target: `${plan.remote}/${plan.remoteBranch}` }), 'info')
+  const choice = await pushDialog(plan)
+  if (!choice) return
+  const request: PushRequest = { branch: plan.branch, hash: plan.hash, ...choice, setUpstream: plan.publish }
+  await networkRun(pushButton, (id) => api.push(root, request, id), (result) =>
+    showNetworkResult(root, result, result.diverged && root === repo?.root ? [{ label: t('pushForce'), run: () => void forcePush(root) }] : [])
+  )
+}
+
+/** After a diverged push: what the remote would lose, a backup of its tip, and a push that holds only while the remote is where it was seen. */
+async function forcePush(root: string): Promise<void> {
+  const plan = await pushPlan(root)
+  if (!plan || plan.publish) return
+  const target = `${plan.remote}/${plan.remoteBranch}`
+  const backup = await offerBackup(root, target, plan.remoteTip)
+  if (!(await confirm(t('forcePushTitle', { target }), forcePushWarning(plan, target), t('btnForcePush'), true, backup))) return
+  const saved = backup?.value()
+  const request: PushRequest = {
+    branch: plan.branch,
+    hash: plan.hash,
+    remote: plan.remote,
+    remoteBranch: plan.remoteBranch,
+    setUpstream: false,
+    force: { expect: plan.remoteTip },
+    ...(saved ? { backup: saved } : {})
+  }
+  await networkRun(pushButton, (id) => api.push(root, request, id), (result) => showNetworkResult(root, result))
+}
+
+pushButton.addEventListener('click', () => void push())
 async function openDiff(root: string, index: number): Promise<void> {
   try {
     const result = await api.openDiff(root, filesHashes, selectionFiles[index])
@@ -1642,6 +1703,7 @@ mountPanelKeys({
   run: {
     refresh: () => refreshButton.click(),
     fetch: () => fetchButton.click(),
+    push: () => pushButton.click(),
     help: showKeys,
     diff: () => void goToDiff(),
     // A filter's key opens it; pressed again once it is set, it clears it.

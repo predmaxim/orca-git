@@ -13,6 +13,7 @@ export type KeyId =
   | 'search'
   | 'refresh'
   | 'fetch'
+  | 'push'
   | 'help'
   | 'filterBranch'
   | 'filterUser'
@@ -74,6 +75,8 @@ export const KEYS: readonly KeyBinding[] = [
   { id: 'fold', code: 'KeyZ', shift: true, scope: 'anywhere', label: 'keyFold', shown: 'Shift+Z' },
   { id: 'refresh', code: 'KeyR', shift: true, scope: 'anywhere', label: 'refresh', shown: 'Shift+R' },
   { id: 'fetch', code: 'KeyF', shift: true, scope: 'anywhere', label: 'fetch', shown: 'Shift+F' },
+  // Shift+K as WebStorm's Ctrl+Shift+K.
+  { id: 'push', code: 'KeyK', shift: true, scope: 'anywhere', label: 'push', shown: 'Shift+K' },
   { id: 'filterBranch', code: 'KeyB', shift: true, scope: 'commits', label: 'keyFilterBranch', shown: 'Shift+B' },
   { id: 'filterUser', code: 'KeyU', shift: true, scope: 'commits', label: 'keyFilterUser', shown: 'Shift+U' },
   { id: 'filterDate', code: 'KeyD', shift: true, scope: 'commits', label: 'keyFilterDate', shown: 'Shift+D' },

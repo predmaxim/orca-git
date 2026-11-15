@@ -7,7 +7,7 @@ import { abortedReason, abortRebase, autostashConflict, noteUnstaged, operationI
 import { noteWarnings } from './warnings.ts'
 
 // Under the 120 s a frame waits, so the fetch's own message arrives.
-const NETWORK_TIMEOUT_MS = 100_000
+export const NETWORK_TIMEOUT_MS = 100_000
 const HASH = /^[0-9a-f]{40}$/
 
 /** Whether the full ref `ref` still names `tip`, the commit a menu or dialog showed; a `tip` that is no hash never does. */
