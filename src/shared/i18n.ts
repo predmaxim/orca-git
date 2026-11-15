@@ -92,6 +92,12 @@ export const en = {
   notesCopyAll: 'Copy all',
   notesClearAll: 'Delete all',
   notesClearConfirm: { one: 'Delete {count} note?', other: 'Delete {count} notes?' },
+  skillsTitle: 'Review skills',
+  skillsHint: "Used first, in this order: before the project's rules and the built-in guide.",
+  skillAdd: 'Add a skill',
+  skillPath: 'Skill path: an .md file or a skill folder',
+  skillDone: 'Done',
+  skillRemove: 'Remove {path}',
   branchRowTip: 'Click to show only this {kind}. Double-click to jump to its commit.',
   kindBranch: 'branch',
   kindTag: 'tag',
@@ -492,7 +498,10 @@ export const en = {
   reviewBadAgent: 'This agent cannot be started: {agent}',
   reviewNoWorkspace: 'No local Orca workspace holds this repository, so there is nowhere to start an agent.',
   notesAnswersFailed: "The agent's answers could not be saved: {error}. Delete notes you no longer need.",
-  notesLoadFailed: 'The notes could not be loaded: {error}'
+  notesLoadFailed: 'The notes could not be loaded: {error}',
+  skillMissing: 'No such skill file or folder: {path}',
+  skillInvalid: 'This skill path cannot be used.',
+  skillsFull: 'At most 10 review skills.'
 } satisfies Record<string, Message>
 
 export const ru: Record<keyof typeof en, Message> = {
@@ -583,6 +592,12 @@ export const ru: Record<keyof typeof en, Message> = {
   notesCopyAll: 'Копировать все',
   notesClearAll: 'Удалить все',
   notesClearConfirm: { one: 'Удалить {count} заметку?', few: 'Удалить {count} заметки?', many: 'Удалить {count} заметок?', other: 'Удалить {count} заметки?' },
+  skillsTitle: 'Скилы ревью',
+  skillsHint: 'Берутся первыми, в этом порядке: раньше правил проекта и встроенного руководства.',
+  skillAdd: 'Добавить скил',
+  skillPath: 'Путь до скила: файл .md или папка скила',
+  skillDone: 'Готово',
+  skillRemove: 'Убрать {path}',
   branchRowTip: 'Клик: показать только этот объект ({kind}). Двойной клик: перейти к его коммиту.',
   kindBranch: 'ветка',
   kindTag: 'тег',
@@ -985,7 +1000,10 @@ export const ru: Record<keyof typeof en, Message> = {
   reviewBadAgent: 'Этого агента нельзя запустить: {agent}',
   reviewNoWorkspace: 'Ни один локальный workspace Orca не содержит этот репозиторий: агента запустить негде.',
   notesAnswersFailed: 'Не удалось сохранить ответы агента: {error}. Удалите ненужные заметки.',
-  notesLoadFailed: 'Не удалось загрузить заметки: {error}'
+  notesLoadFailed: 'Не удалось загрузить заметки: {error}',
+  skillMissing: 'Нет такого файла или папки скила: {path}',
+  skillInvalid: 'Этот путь скила использовать нельзя.',
+  skillsFull: 'Не больше 10 скилов ревью.'
 }
 
 export type MessageKey = keyof typeof en

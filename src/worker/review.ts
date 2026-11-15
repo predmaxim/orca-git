@@ -18,10 +18,11 @@ export function reviewPaths(root: string, review: string): ReviewPaths {
 
 const indent = (text: string): string => text.split(/\r?\n/).map((line) => `    ${line}`).join('\n')
 
-export function notesFile(notes: ReviewNote[], paths: ReviewPaths): string {
+export function notesFile(notes: ReviewNote[], paths: ReviewPaths, skills: string[] = []): string {
   const head = [
     '# Review notes',
-    `Write one answer file per note to \`${join(paths.answers, '<note id>.md')}\`. The first line is \`verdict: confirmed | refuted | unclear\`, the second \`fixed: yes | no\`, then a blank line, then the answer in markdown, very short and with no filler: the facts (a code snippet, a file:line reference, or a screenshot of the design mockup saved next to the answer file, with its full path), then your conclusion or opinion in one or two sentences. Write each answer file once, when you are done with that note — after the fix, if you make one.`
+    `Write one answer file per note to \`${join(paths.answers, '<note id>.md')}\`. The first line is \`verdict: confirmed | refuted | unclear\`, the second \`fixed: yes | no\`, then a blank line, then the answer in markdown, very short and with no filler: the facts (a code snippet, a file:line reference, or a screenshot of the design mockup saved next to the answer file, with its full path), then your conclusion or opinion in one or two sentences. Write each answer file once, when you are done with that note — after the fix, if you make one.`,
+    ...(skills.length ? [['Review skills to use first, in this order (each is a file, or a folder with a SKILL.md):', ...skills.map((path, i) => `${i + 1}. ${path}`)].join('\n')] : [])
   ].join('\n\n')
   const each = notes.map((n) =>
     [
@@ -37,8 +38,12 @@ export function notesFile(notes: ReviewNote[], paths: ReviewPaths): string {
   return `${[head, ...each].join('\n\n')}\n`
 }
 
-export function reviewPrompt(paths: ReviewPaths): string {
-  return `Review notes from the user are in ${paths.notes}. Work through every note: check it against the code, answer it (confirmed, refuted or unclear) with your evidence, and fix the code for each note you confirm. Use this project's own review skills and rules first (.claude/skills, .agents/skills, AGENTS.md, CLAUDE.md); where they say nothing, follow ${paths.guide}. Write one answer file per note into ${paths.answers}, in the form the notes file describes.`
+/** With `withSkills`, the agent takes the review skills `notesFile` lists first; their paths stay out of the prompt. */
+export function reviewPrompt(paths: ReviewPaths, withSkills = false): string {
+  const rules = withSkills
+    ? `Use the review skills listed at the top of ${paths.notes} first, then this project's own review skills and rules (.claude/skills, .agents/skills, AGENTS.md, CLAUDE.md)`
+    : "Use this project's own review skills and rules first (.claude/skills, .agents/skills, AGENTS.md, CLAUDE.md)"
+  return `Review notes from the user are in ${paths.notes}. Work through every note: check it against the code, answer it (confirmed, refuted or unclear) with your evidence, and fix the code for each note you confirm. ${rules}; where they say nothing, follow ${paths.guide}. Write one answer file per note into ${paths.answers}, in the form the notes file describes.`
 }
 
 /** Why `prompt` cannot go to `agent.launch`, or null: Orca takes at most 4096 characters, and the prompt must stay one line with no backtick whatever the repository path holds. */
@@ -58,7 +63,7 @@ function isFolder(path: string): boolean {
 }
 
 /** Makes the folder and its files; on a refusal or a failed write removes what it made. */
-export function writeReview(root: string, review: string, notes: ReviewNote[]): { ok: true; paths: ReviewPaths } | { ok: false; reason: string } {
+export function writeReview(root: string, review: string, notes: ReviewNote[], skills: string[] = []): { ok: true; paths: ReviewPaths } | { ok: false; reason: string } {
   const paths = reviewPaths(root, review)
   const parent = join(root, FOLDER)
   if (!ID.test(review)) return { ok: false, reason: t('reviewDirTaken', { path: paths.dir }) }
@@ -80,7 +85,7 @@ export function writeReview(root: string, review: string, notes: ReviewNote[]): 
       throw error
     }
     mkdirSync(paths.answers)
-    for (const [file, text] of [[paths.notes, notesFile(notes, paths)], [paths.guide, REVIEW_GUIDE]]) {
+    for (const [file, text] of [[paths.notes, notesFile(notes, paths, skills)], [paths.guide, REVIEW_GUIDE]]) {
       // wx: never follows a link and never replaces a file.
       const fd = openSync(file, 'wx')
       try {

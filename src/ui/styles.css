@@ -2220,6 +2220,98 @@ input[type='radio']:focus-visible {
   padding: 8px;
 }
 
+/* Review skills, under the notes: a section label with the count on the right, the paths, Add a skill or its path field. */
+.notes-skills {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 8px 4px 4px;
+  border-top: 1px solid var(--border);
+}
+
+.notes-skills-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.notes-skills-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-fg);
+}
+
+.notes-skills-head .count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted-fg);
+}
+
+.notes-skills-hint {
+  font-size: 12px;
+  color: var(--muted-fg);
+}
+
+.notes-skill {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding-left: 6px;
+  border-radius: var(--radius-sm);
+}
+
+.notes-skill:hover {
+  background: var(--selected);
+}
+
+.notes-skill .mono {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 0;
+  overflow-wrap: anywhere;
+}
+
+.notes-skills > .btn,
+.notes-skill-field > .btn {
+  align-self: flex-start;
+}
+
+.notes-skill-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.notes-suggest {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 4px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.notes-suggest:empty {
+  display: none;
+}
+
+.notes-suggest-item {
+  padding: 4px 10px;
+  font: 12px var(--font-code);
+  overflow-wrap: anywhere;
+  cursor: default;
+}
+
+.notes-suggest-item:hover {
+  background: var(--selected);
+}
+
+.notes-suggest-item.on {
+  background: var(--selected-focus);
+}
+
 /* Code colors by the diffColors setting (data-diff-colors on <html>, set by diff-app.ts); Orca gives frames no editor colors.
    Orca: Monaco's vs-dark and vs, which Orca 1.4.258's file editor uses with a theme that brings no editor colors, on Orca's
    background. WebStorm: WebStorm 2026.2.3's Islands Dark (IslandSchemeDark.xml over Darcula) and Islands Light

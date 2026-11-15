@@ -373,6 +373,10 @@ declare module 'orca' {
     'notes.update': { input: { root: string; id: string; body: string }; output: NoteResult }
     'notes.delete': { input: { root: string; ids: string[] }; output: { ok: boolean; reason?: string } }
     'notes.send': { input: { root: string; ids: string[]; agent: string }; output: { ok: true; review: string } | { ok: false; reason: string } }
+    'skills.list': { input: { root: string }; output: { skills: string[] } }
+    'skills.set': { input: { root: string; skills: string[] }; output: { ok: true; skills: string[] } | { ok: false; reason: string } }
+    /** What the skill path field offers in `dir` (full, `~/…`, or from the repository root; '' is the root): subfolders and `.md` files, names only. */
+    'skills.browse': { input: { root: string; dir: string }; output: { dirs: string[]; files: string[] } }
   }
   interface PluginPanelEvents {
     'repo.changed': { root: string }

@@ -1,7 +1,7 @@
 // Review notes in the Diff tab: the selection and its button, the editor, the cards under their lines and the list of all notes.
 import type { FileDiff, NoteDraft, NotePoint, NoteSide, NoteVerdict, ReviewNote, SelectionFile } from '../shared/protocol.ts'
 import { t, type MessageKey } from '../shared/i18n.ts'
-import { MAX_BODY, MAX_QUOTE } from '../shared/notes.ts'
+import { MAX_BODY, MAX_QUOTE, MAX_REVIEW_SKILLS } from '../shared/notes.ts'
 import { api, copyText, errorMessage, orca } from './api.ts'
 import type { DiffMode } from './diff.ts'
 import { h, icon, ICONS } from './dom.ts'
@@ -9,6 +9,7 @@ import { markRange } from './highlight.ts'
 import { mdDom } from './markdown.ts'
 import { showMenu, showPopover, type MenuEntry } from './menu.ts'
 import { anchor, coveredRange, notesOf, notesText, pickSide, sideLines, unsent } from './notemodel.ts'
+import { browseDir, skillSuggestions } from './skillmodel.ts'
 
 export interface NotesView {
   /** The header buttons: Notes (N), and Send to a new agent (N) while a note is unsent. */
@@ -298,10 +299,164 @@ export function mountNotes(options: {
     return h('div', { class: 'd-row d-notes' }, ...Array.from({ length: mode === 'unified' ? 3 : 4 }, (_, i) => h('div', null, i === at ? child : null)))
   }
 
+  /**
+   * The review skills of the Notes list: each path with Remove, and Add a skill, which opens a path field with suggestions.
+   * Skills that could not be loaded show why, and nothing to change: a save would replace the stored list.
+   */
+  function skillsSection(loaded: { skills: string[] } | { error: string }): HTMLElement {
+    const el = h('div', { class: 'notes-skills' })
+    const head = (count: number | null) =>
+      h('div', { class: 'notes-skills-head' }, h('span', { class: 'notes-skills-title' }, t('skillsTitle')), count === null ? null : h('span', { class: 'count' }, String(count)))
+    if ('error' in loaded) {
+      el.append(head(null), h('div', { class: 'd-note-error' }, loaded.error))
+      return el
+    }
+    let skills = loaded.skills
+    let adding = false
+    /** The suggestions shown, the highlighted one, and the count of lookups: only the answer to the latest one is shown. */
+    let items: string[] = []
+    let index = 0
+    let lookups = 0
+    const addSkill = h('button', { class: 'btn', onclick: openField }, t('skillAdd'))
+    const list = h('div', { class: 'notes-suggest', id: 'notes-skill-suggest', role: 'listbox', 'aria-label': t('skillPath') })
+    const input = h('input', {
+      class: 'field',
+      type: 'text',
+      autocomplete: 'off',
+      role: 'combobox',
+      'aria-autocomplete': 'list',
+      'aria-expanded': 'false',
+      'aria-controls': 'notes-skill-suggest',
+      placeholder: t('skillPath'),
+      'aria-label': t('skillPath'),
+      oninput: () => void suggest(),
+      onkeydown: onKey
+    })
+    const field = h('div', { class: 'notes-skill-field' }, input, list, h('button', { class: 'btn', onclick: () => void add(input.value) }, t('skillDone')))
+
+    function draw(): void {
+      el.replaceChildren(
+        head(skills.length),
+        h('div', { class: 'notes-skills-hint' }, t('skillsHint')),
+        ...skills.map((path) =>
+          h(
+            'div',
+            { class: 'notes-skill' },
+            h('span', { class: 'mono' }, path),
+            h('button', { class: 'tool', title: t('skillRemove', { path }), 'aria-label': t('skillRemove', { path }), onclick: () => void remove(path) }, icon('close'))
+          )
+        ),
+        ...(adding ? [field] : skills.length < MAX_REVIEW_SKILLS ? [addSkill] : [])
+      )
+    }
+
+    function showItems(keepInView = false): void {
+      list.replaceChildren(
+        ...items.map((path, i) =>
+          h(
+            'div',
+            {
+              class: `notes-suggest-item${i === index ? ' on' : ''}`,
+              role: 'option',
+              'aria-selected': String(i === index),
+              // A press keeps the focus in the field.
+              onmousedown: (event: MouseEvent) => event.preventDefault(),
+              onclick: () => pick(path)
+            },
+            path
+          )
+        )
+      )
+      input.setAttribute('aria-expanded', String(items.length > 0))
+      if (keepInView) list.querySelector('.on')?.scrollIntoView({ block: 'nearest' })
+    }
+
+    async function suggest(): Promise<void> {
+      const mine = ++lookups
+      const value = input.value
+      let found: string[] = []
+      try {
+        found = skillSuggestions(value, await api.skillsBrowse(root, browseDir(value)))
+      } catch {
+        found = []
+      }
+      if (mine !== lookups || !adding) return
+      items = found
+      index = 0
+      showItems()
+    }
+
+    function openField(): void {
+      adding = true
+      input.value = ''
+      items = []
+      showItems()
+      draw()
+      input.focus()
+      void suggest()
+    }
+
+    function onKey(event: KeyboardEvent): void {
+      if (event.isComposing) return
+      if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && items.length) {
+        index = (index + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length
+        showItems(true)
+      } else if (event.key === 'Enter' || (event.key === 'Tab' && !event.shiftKey && items.length)) {
+        if (items.length) pick(items[index])
+        else void add(input.value)
+      } else return
+      event.preventDefault()
+    }
+
+    /** A picked folder opens in the field; a picked file is added. */
+    function pick(path: string): void {
+      if (!path.endsWith('/')) return void add(path)
+      input.value = path
+      input.focus()
+      void suggest()
+    }
+
+    /** Stores `next`; the worker answers the list it stored. A refusal shows in the list's notice line. */
+    async function save(next: string[]): Promise<boolean> {
+      try {
+        const result = await api.skillsSet(root, next)
+        if (!result.ok) {
+          notify(result.reason)
+          return false
+        }
+        skills = result.skills
+        return true
+      } catch (caught) {
+        notify(errorMessage(caught))
+        return false
+      }
+    }
+
+    async function add(path: string): Promise<void> {
+      if (!(await save([...skills, path]))) return
+      adding = false
+      lookups++
+      draw()
+      addSkill.focus()
+    }
+
+    async function remove(path: string): Promise<void> {
+      if (!(await save(skills.filter((s) => s !== path)))) return
+      draw()
+      ;(adding ? input : addSkill).focus()
+    }
+
+    draw()
+    return el
+  }
+
   async function openList(): Promise<void> {
-    // The worker reads the agent's answers with the list: opening it shows the fresh ones.
-    await load()
-    const box = h('div', { class: 'notes-list' })
+    // The worker reads the agent's answers with the list: opening it shows the fresh ones. The review skills come with them.
+    const loading = load()
+    const skills = api.skills(root).catch((caught) => ({ error: errorMessage(caught) }))
+    await loading
+    const section = skillsSection(await skills)
+    const box = h('div', { class: 'notes-list' }, section)
     const fill = () => {
       const sorted = [...notes].sort((a, b) => a.path.localeCompare(b.path) || a.start.line - b.start.line)
       const said = notices()
@@ -311,7 +466,9 @@ export function mountNotes(options: {
         confirming = true
         ;(event.currentTarget as HTMLElement).textContent = t('notesClearConfirm', { count: sorted.length })
       }
-      box.replaceChildren(
+      // The skills stay in place: a redraw of the notes keeps the open path field, its text and its focus.
+      while (box.firstChild && box.firstChild !== section) box.firstChild.remove()
+      section.before(
         ...(said.length ? [h('div', { class: 'warning notes-notice' }, icon('warning'), h('div', null, ...said.map((text) => h('div', null, text))))] : []),
         ...(sorted.length
           ? [

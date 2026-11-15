@@ -16,6 +16,7 @@ import { readFileDiff } from './diff.ts'
 import { readRangeDiff, readSelectionFiles } from './selection.ts'
 import { addNote, deleteNotes, listNotes, markSent, markUnsent, pendingRoots, setReplies, updateNote } from './notes.ts'
 import { promptRefusal, readAnswers, removeReview, reviewPrompt, writeReview } from './review.ts'
+import { browseSkills, checkSkills, listSkills, saveSkills, skillsForReview } from './skills.ts'
 import { createPatch } from './patch.ts'
 import { checkPush, runPush } from './push.ts'
 import { gitTooOld } from './rebase.ts'
@@ -423,10 +424,17 @@ export default function activate(orca: OrcaWorkerApi): void {
     const workspace = await workspaceFor(orca, key, await gitPath())
     if (!workspace) return { ok: false, reason: t('reviewNoWorkspace') }
     await exclude(git, key, '.orca-git-log/')
+    let skills: string[] = []
+    try {
+      skills = await skillsForReview(orca.storage, key)
+    } catch (error) {
+      // The notes still go, without the skills.
+      orca.log(`review skills not read for ${key}: ${errorText(error)}`)
+    }
     const review = randomBytes(6).toString('hex')
-    const made = writeReview(key, review, notes)
+    const made = writeReview(key, review, notes, skills)
     if (!made.ok) return { ok: false, reason: made.reason }
-    const prompt = reviewPrompt(made.paths)
+    const prompt = reviewPrompt(made.paths, skills.length > 0)
     const refusal = promptRefusal(prompt)
     if (refusal) {
       removeReview(key, review)
@@ -464,6 +472,17 @@ export default function activate(orca: OrcaWorkerApi): void {
       sending.delete(key)
     }
   })
+
+  handle('skills.list', async ({ root }) => ({ skills: await listSkills(orca.storage, (await gitFor(root)).root) }))
+
+  handle('skills.set', async ({ root, skills }) => {
+    const key = (await gitFor(root)).root
+    const checked = checkSkills(skills, key)
+    if (checked.ok) await saveSkills(orca.storage, key, checked.skills)
+    return checked
+  })
+
+  handle('skills.browse', async ({ root, dir }) => browseSkills(typeof dir === 'string' ? dir : '', (await gitFor(root)).root))
 }
 
 export function deactivate(): void {

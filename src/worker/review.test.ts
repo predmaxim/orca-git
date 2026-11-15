@@ -42,11 +42,14 @@ test('a link or a file in place of the folder is refused and nothing is written 
 
 test('the prompt names three paths, has no backtick and fits', () => {
   const paths = reviewPaths('/r'.repeat(100), 'bbbbbbbbbbbb')
-  const prompt = reviewPrompt(paths)
-  for (const path of [paths.notes, paths.guide, paths.answers]) assert.ok(prompt.includes(path))
-  assert.equal(prompt.includes('`'), false)
-  assert.equal(prompt.includes('\n'), false)
-  assert.ok(prompt.length <= 4096)
+  for (const withSkills of [false, true]) {
+    const prompt = reviewPrompt(paths, withSkills)
+    for (const path of [paths.notes, paths.guide, paths.answers]) assert.ok(prompt.includes(path))
+    assert.equal(prompt.includes('`'), false)
+    assert.equal(prompt.includes('\n'), false)
+    assert.ok(prompt.length <= 4096)
+    assert.equal(promptRefusal(prompt), null)
+  }
 })
 
 test('a repository path with a control character or a backtick is refused, as is a prompt too long', () => {
@@ -329,4 +332,52 @@ test('nothing to send, a bad agent name', async () => {
   assert.equal(bad.ok, false)
   assert.equal(bad.reason, t('reviewBadAgent', { agent: '--help' }))
   assert.equal(h.callsOf('agent.launch').length, 0)
+})
+
+test('the review skills go into the notes file and the prompt points at them', async () => {
+  const root = fixture()
+  writeFileSync(join(root, 'rules.md'), '# rules')
+  const h = host(root, { 'agent.launch': { terminalId: 't-1' } })
+  const worker = await mountWorker(main, { host: h })
+  assert.equal(((await worker.request('skills.set', { root, skills: ['rules.md'] })) as any).ok, true)
+  const send = async () => {
+    const { note: added } = (await worker.request('notes.add', { root, draft: draft() })) as any
+    const sent = (await worker.request('notes.send', { root, ids: [added.id], agent: 'claude' })) as any
+    assert.equal(sent.ok, true)
+    const calls = h.callsOf('agent.launch') as { prompt: string }[]
+    return { text: readFileSync(reviewPaths(root, sent.review).notes, 'utf8'), prompt: calls[calls.length - 1].prompt }
+  }
+  const first = await send()
+  assert.ok(first.text.includes('Review skills to use first, in this order (each is a file, or a folder with a SKILL.md):'))
+  assert.ok(first.text.split('\n').includes(`1. ${join(root, 'rules.md')}`))
+  // At the top: before the first note.
+  assert.ok(first.text.indexOf('Review skills to use first') < first.text.indexOf('## Note '))
+  assert.ok(first.prompt.includes('Use the review skills listed at the top of'))
+  assert.equal(first.prompt.includes('rules.md'), false)
+  rmSync(join(root, 'rules.md'))
+  const second = await send()
+  assert.equal(second.text.includes('Review skills'), false)
+  assert.ok(second.prompt.includes("Use this project's own review skills and rules first"))
+  assert.deepEqual(worker.refusals, [])
+})
+
+test('skills that cannot be read leave the send to go without them', async () => {
+  const root = fixture()
+  const data: Record<string, unknown> = {}
+  const storage = refusingStorage(() => false, data)
+  const read = storage['storage.get'] as (input: { key: string }) => unknown
+  const h = host(root, {
+    'agent.launch': { terminalId: 't-1' },
+    ...storage,
+    'storage.get': (input: { key: string }) => {
+      if (input.key.startsWith('skills:')) throw hostError('action_failed', 'storage is gone')
+      return read(input)
+    }
+  })
+  const worker = await mountWorker(main, { host: h })
+  const { note: added } = (await worker.request('notes.add', { root, draft: draft() })) as any
+  const sent = (await worker.request('notes.send', { root, ids: [added.id], agent: 'claude' })) as any
+  assert.equal(sent.ok, true)
+  assert.equal(readFileSync(reviewPaths(root, sent.review).notes, 'utf8').includes('Review skills'), false)
+  assert.ok(worker.logs.some((line) => line.includes('review skills not read') && line.includes('storage is gone')))
 })

@@ -99,7 +99,10 @@ export const api = {
   noteUpdate: (root: string, id: string, body: string): Promise<NoteResult> => call('notes.update', { root, id, body }),
   notesDelete: (root: string, ids: string[]): Promise<{ ok: boolean; reason?: string }> => call('notes.delete', { root, ids }),
   notesSend: (root: string, ids: string[], agent: string): Promise<{ ok: true; review: string } | { ok: false; reason: string }> =>
-    call('notes.send', { root, ids, agent })
+    call('notes.send', { root, ids, agent }),
+  skills: (root: string): Promise<{ skills: string[] }> => call('skills.list', { root }),
+  skillsSet: (root: string, skills: string[]): Promise<{ ok: true; skills: string[] } | { ok: false; reason: string }> => call('skills.set', { root, skills }),
+  skillsBrowse: (root: string, dir: string): Promise<{ dirs: string[]; files: string[] }> => call('skills.browse', { root, dir })
 }
 
 export function errorMessage(error: unknown): string {

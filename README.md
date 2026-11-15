@@ -97,6 +97,15 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   `.git/info/exclude`, marks the notes sent and starts a new agent in that workspace whose prompt names
   the three paths. If the agent does not start, the folder is removed and the notes go back to unsent;
   the reason shows under the button. One send per repository runs at a time.
+- **Review skills** of a repository: under the notes in the Notes list, set up to 10 skills the agent
+  takes first, in their order, before the project's own rules and skills and the plugin's guide. A skill
+  is an `.md` file or a skill folder, as a full path, `~/…` or from the repository root, and must exist
+  when it is added. **Add a skill** opens a path field that suggests the `.md` files and the folders of
+  the folder typed so far: ↑ / ↓ pick, Enter or Tab take a suggestion (a folder opens in the field, a
+  file is added), Done or Enter with no suggestion take the typed path; × removes a skill. When notes
+  are sent, `notes.md` lists the skills that exist then, as full paths in order, and the prompt tells
+  the agent to use them first; without skills the prompt is as before. The skills are kept in the
+  plugin's storage; a refused path shows at the top of the list.
 - **Answers under the notes**: the agent writes one file per note to `answers/<note id>.md`: `verdict:
   confirmed | refuted | unclear`, optionally `fixed: yes | no`, a blank line and a very short markdown answer:
   the facts (code, `file:line` or a screenshot of the design mockup) and a conclusion. An image path in an
