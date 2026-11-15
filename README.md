@@ -171,7 +171,9 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
 ## Where it shows
 
 - **Right sidebar panel** "Git", the plugin's only view: the Branches, Commits, Files and Details
-  sections in one column; in a narrow column a commit takes two lines (message, then author and date).
+  sections in one column; in a narrow column a commit takes two lines like a row of Orca's own lists
+  (the message, then author and date smaller and muted, with space between commits; the graph's node
+  level with the message).
 - **Diff tab**: opens when you click a file in the panel. Orca has no API for a plugin tab without a
   file, so the tab is a custom editor on a small anchor file, `.orca-git-log.gitdiff`, that the plugin
   writes at the root of the workspace holding the repository and adds to `.git/info/exclude`, so it

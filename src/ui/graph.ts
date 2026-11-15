@@ -84,15 +84,17 @@ export function computeGraph(rows: GraphInput[], linear = false): GraphRow[] {
 
 export const LANE_WIDTH = 14
 export const ROW_HEIGHT = 24
-/** A narrow commits column shows author and date under the message. */
-export const TWO_LINE_ROW_HEIGHT = 40
+/** A narrow commits column shows author and date under the message, with air between commits as Orca's list rows have. */
+export const TWO_LINE_ROW_HEIGHT = 50
+/** There the node sits level with the message: 6px above its line (styles.css `.row.two .stack`), half its 19px line. */
+export const TWO_LINE_NODE_Y = 15.5
 
 const x = (lane: number) => lane * LANE_WIDTH + LANE_WIDTH / 2
 
 /** One row of the graph as SVG markup; `head` draws the node as a ring. */
-export function graphSvg(row: GraphRow, options: { head?: boolean; dim?: boolean; merge?: boolean; height?: number } = {}): string {
+export function graphSvg(row: GraphRow, options: { head?: boolean; dim?: boolean; merge?: boolean; height?: number; nodeY?: number } = {}): string {
   const h = options.height ?? ROW_HEIGHT
-  const mid = h / 2
+  const mid = options.nodeY ?? h / 2
   const width = row.width * LANE_WIDTH
   const parts: string[] = []
   const line = (x1: number, y1: number, x2: number, y2: number, color: number) =>

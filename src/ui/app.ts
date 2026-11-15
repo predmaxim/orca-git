@@ -11,7 +11,7 @@ import { append, h, icon } from './dom.ts'
 import { createFilterBar } from './filters.ts'
 import { KEYS, withKey, type KeyScope } from './keys.ts'
 import { reachableFrom, refLabels, relativeDate, fullDate, shortHash } from './format.ts'
-import { computeGraph, graphSvg, ROW_HEIGHT, TWO_LINE_ROW_HEIGHT, type GraphRow } from './graph.ts'
+import { computeGraph, graphSvg, ROW_HEIGHT, TWO_LINE_NODE_Y, TWO_LINE_ROW_HEIGHT, type GraphRow } from './graph.ts'
 import { showMenu, type MenuEntry } from './menu.ts'
 import { mountPanelKeys } from './panelkeys.ts'
 import { createColumn, normalizeSections, type SectionId, type SectionPrefs } from './sections.ts'
@@ -306,8 +306,8 @@ function rowElement(index: number): HTMLElement {
   const dim = !isFiltered() && reachable.size > 0 && !reachable.has(commit.hash)
   const labels = refLabels(commit.refs, repo?.head.branch ?? null)
   const subject = h('div', { class: 'cell subject' })
-  subject.innerHTML = graphSvg(graph[index], { head: isHead, dim, merge: commit.parents.length > 1, height: rowH })
   const twoLine = rowH === TWO_LINE_ROW_HEIGHT
+  subject.innerHTML = graphSvg(graph[index], { head: isHead, dim, merge: commit.parents.length > 1, height: rowH, nodeY: twoLine ? TWO_LINE_NODE_Y : undefined })
   const line = twoLine ? h('div', { class: 'line' }) : subject
   if (twoLine) subject.append(h('div', { class: 'stack' }, line, h('div', { class: 'meta' }, `${commit.author} \u00b7 ${relativeDate(commit.authorTime)}`)))
   line.append(h('span', { class: 'text' }, commit.subject))
