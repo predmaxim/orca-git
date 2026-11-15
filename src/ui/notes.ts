@@ -11,7 +11,7 @@ import { showMenu, showPopover, type MenuEntry } from './menu.ts'
 import { anchor, coveredRange, notesOf, notesText, pickSide, sideLines, unsent } from './notemodel.ts'
 
 export interface NotesView {
-  /** The header buttons: Notes (N) and, from Task 6, Send to agent (N). */
+  /** The header buttons: Notes (N), and Send to a new agent (N) while a note is unsent. */
   buttons: HTMLElement[]
   /** The rows that follow the row of `line` on `side`: the cards of the notes that end there, and the editor when it is open there. */
   rowsAfter(side: NoteSide, line: number, mode: DiffMode): HTMLElement[]
@@ -19,7 +19,8 @@ export interface NotesView {
   mark(html: string, side: NoteSide, line: number, length: number): string
   /** Each render, before its rows are built: the container of the rows and what it shows. */
   attach(lines: HTMLElement, diff: FileDiff, file: SelectionFile, mode: DiffMode): void
-  setNotes(notes: ReviewNote[]): void
+  /** Loads the notes of the repository, and with them the answers the worker reads; a failure or a warning shows in the Notes list. */
+  load(): Promise<void>
   /** Ctrl+Shift+A: opens the editor on the current selection; false when there is none to note. */
   addFromSelection(): boolean
   dispose(): void
@@ -89,16 +90,22 @@ export function mountNotes(options: {
   let container: HTMLElement | null = null
   let diff: FileDiff | null = null
   let file: SelectionFile | null = null
-  /** The open editor: a new note at `anchor`, or the note `id`. Its element lives on across renders, and the text with it. */
-  let editor: { anchor: Anchor; id?: string; el: HTMLElement; area: HTMLTextAreaElement; error: HTMLElement } | null = null
+  /** The open editor: a new note at `anchor`, or the note `id`, and the text it started with. Its element lives on across renders, and the text with it. */
+  let editor: { anchor: Anchor; id?: string; start: string; el: HTMLElement; area: HTMLTextAreaElement; error: HTMLElement } | null = null
   let saving = false
   /** A press in the rows is held: the selection is still being made. */
   let pressed = false
   let refill: (() => void) | null = null
   let closeList: (() => void) | null = null
+  /** What the Notes list has to say: why the notes could not be loaded or the answers saved (until a load without it), and why a change was refused (until the list that shows it closes). */
+  let warning = ''
+  let refused = ''
+  let loads = 0
+  /** The agent chosen last, first in the menu. */
+  let lastAgent = options.agent
 
   const count = h('span')
-  const button = h('button', { class: 'tool', title: t('notesButtonTip'), onclick: () => openList() }, icon('note'), count)
+  const button = h('button', { class: 'tool', title: t('notesButtonTip'), onclick: () => void openList() }, icon('note'), count)
   // A press would drop the selection the button is for.
   const addButton = h(
     'button',
@@ -107,8 +114,12 @@ export function mountNotes(options: {
   )
   const sendCount = h('span')
   const sendButton = h('button', { class: 'tool', title: t('notesSend', { count: 0 }), 'aria-label': t('notesSend', { count: 0 }), onclick: () => void openSend() }, icon('send'), sendCount)
+  const notices = () => [refused, warning].filter(Boolean)
   const syncCount = () => {
     count.textContent = `${t('notesButton')} (${notes.length})`
+    const said = notices()
+    button.classList.toggle('notes-warn', said.length > 0)
+    button.title = said.length ? said.join('\n') : t('notesButtonTip')
     const open = unsent(notes).length
     sendCount.textContent = String(open)
     sendButton.title = sendButton.ariaLabel = t('notesSend', { count: open })
@@ -130,14 +141,40 @@ export function mountNotes(options: {
     refresh()
   }
 
-  async function remove(ids: string[], error: HTMLElement): Promise<void> {
+  /** Shows why a change was refused: on the Notes button, and in the list. */
+  function notify(text: string): void {
+    refused = text
+    syncCount()
+    refill?.()
+  }
+
+  async function load(): Promise<void> {
+    const mine = ++loads
+    let list: ReviewNote[] | null = null
+    let said = ''
     try {
-      if (!(await api.notesDelete(root, ids)).ok) return
+      const answer = await api.notes(root)
+      list = answer.notes
+      said = answer.warning ?? ''
+    } catch (caught) {
+      said = t('notesLoadFailed', { error: errorMessage(caught) })
+    }
+    // Only the latest answer is shown, and none after dispose.
+    if (mine !== loads) return
+    if (list) notes = list
+    warning = said
+    refresh()
+  }
+
+  async function remove(ids: string[]): Promise<void> {
+    try {
+      const result = await api.notesDelete(root, ids)
+      if (!result.ok) return notify(result.reason ?? '')
       notes = notes.filter((n) => !ids.includes(n.id))
       if (editor?.id && ids.includes(editor.id)) editor = null
       refresh()
     } catch (caught) {
-      error.textContent = errorMessage(caught)
+      notify(errorMessage(caught))
     }
   }
 
@@ -169,6 +206,13 @@ export function mountNotes(options: {
   }
 
   function openEditor(at: Anchor, id?: string, text = ''): void {
+    const open = editor
+    // Typed text is not dropped for another editor: the open one is shown instead. One out of view (another file) cannot be.
+    if (open && open.area.value.trim() !== open.start && open.el.isConnected) {
+      open.el.scrollIntoView({ block: 'nearest' })
+      open.area.focus({ preventScroll: true })
+      return
+    }
     const area = h('textarea', {
       class: 'field d-note-input',
       rows: 3,
@@ -186,7 +230,7 @@ export function mountNotes(options: {
     })
     area.value = text
     const error = h('div', { class: 'd-note-error' })
-    editor = { anchor: at, id, el: h('div', { class: 'd-note-edit' }, area, error), area, error }
+    editor = { anchor: at, id, start: text, el: h('div', { class: 'd-note-edit' }, area, error), area, error }
     options.rerender()
     area.focus()
   }
@@ -199,6 +243,8 @@ export function mountNotes(options: {
   async function save(): Promise<void> {
     const open = editor
     if (!open || saving || !open.area.value.trim()) return
+    // An edit that changes nothing keeps the note as it is, and the agent's answer with it.
+    if (open.id && open.area.value.trim() === open.start) return closeEditor()
     saving = true
     open.error.textContent = ''
     try {
@@ -217,7 +263,6 @@ export function mountNotes(options: {
   }
 
   function card(n: ReviewNote): HTMLElement {
-    const error = h('div', { class: 'd-note-error' })
     const tool = (name: keyof typeof ICONS, key: MessageKey, run: () => void) =>
       h('button', { class: 'tool', title: t(key), 'aria-label': t(key), onclick: run }, icon(name))
     // Sending again is an update with the same text: it clears the sent mark, so the note goes with the next sending.
@@ -225,9 +270,9 @@ export function mountNotes(options: {
       try {
         const result = await api.noteUpdate(root, n.id, n.body)
         if (result.ok) put(result.note)
-        else error.textContent = result.reason
+        else notify(result.reason)
       } catch (caught) {
-        error.textContent = errorMessage(caught)
+        notify(errorMessage(caught))
       }
     }
     return h(
@@ -240,11 +285,10 @@ export function mountNotes(options: {
         h('span', { class: 'spacer' }),
         n.sentAt !== undefined && !n.reply ? tool('refresh', 'noteResend', () => void resend()) : null,
         tool('edit', 'noteEdit', () => openEditor(n, n.id, n.body)),
-        tool('drop', 'noteDelete', () => void remove([n.id], error))
+        tool('drop', 'noteDelete', () => void remove([n.id]))
       ),
       h('div', { class: 'md' }, mdDom(n.body, openLink)),
-      n.reply ? h('div', { class: 'd-note-reply' }, h('div', { class: 'd-note-caption' }, t('noteReply')), h('div', { class: 'md' }, mdDom(n.reply.body, openLink))) : null,
-      error
+      n.reply ? h('div', { class: 'd-note-reply' }, h('div', { class: 'd-note-caption' }, t('noteReply')), h('div', { class: 'md' }, mdDom(n.reply.body, openLink))) : null
     )
   }
 
@@ -254,18 +298,21 @@ export function mountNotes(options: {
     return h('div', { class: 'd-row d-notes' }, ...Array.from({ length: mode === 'unified' ? 3 : 4 }, (_, i) => h('div', null, i === at ? child : null)))
   }
 
-  function openList(): void {
+  async function openList(): Promise<void> {
+    // The worker reads the agent's answers with the list: opening it shows the fresh ones.
+    await load()
     const box = h('div', { class: 'notes-list' })
-    refill = () => {
-      const error = h('div', { class: 'd-note-error' })
+    const fill = () => {
       const sorted = [...notes].sort((a, b) => a.path.localeCompare(b.path) || a.start.line - b.start.line)
+      const said = notices()
       let confirming = false
       const clearAll = (event: MouseEvent) => {
-        if (confirming) return void remove(sorted.map((n) => n.id), error)
+        if (confirming) return void remove(sorted.map((n) => n.id))
         confirming = true
         ;(event.currentTarget as HTMLElement).textContent = t('notesClearConfirm', { count: sorted.length })
       }
       box.replaceChildren(
+        ...(said.length ? [h('div', { class: 'warning notes-notice' }, icon('warning'), h('div', null, ...said.map((text) => h('div', null, text))))] : []),
         ...(sorted.length
           ? [
               h(
@@ -274,17 +321,20 @@ export function mountNotes(options: {
                 h('button', { class: 'tool', onclick: () => void copyText(notesText(sorted)) }, icon('copy'), t('notesCopyAll')),
                 h('button', { class: 'tool', onclick: clearAll }, t('notesClearAll'))
               ),
-              ...sorted.map((n) => item(n, error))
+              ...sorted.map((n) => item(n))
             ]
-          : [h('div', { class: 'notes-empty muted' }, t('notesEmpty'))]),
-        error
+          : [h('div', { class: 'notes-empty muted' }, t('notesEmpty'))])
       )
     }
-    refill()
+    fill()
     closeList = showPopover(button, box, () => {
       refill = null
       closeList = null
+      // A refusal the list has shown is done with.
+      refused = ''
+      syncCount()
     })
+    refill = fill
   }
 
   /** Whether the note `n` is of the file shown. */
@@ -302,13 +352,14 @@ export function mountNotes(options: {
       listed = []
     }
     const all = [...new Set([...listed, 'claude', 'codex'])]
-    return options.agent && all.includes(options.agent) ? [options.agent, ...all.filter((a) => a !== options.agent)] : all
+    return lastAgent && all.includes(lastAgent) ? [lastAgent, ...all.filter((a) => a !== lastAgent)] : all
   }
 
   let sending = false
   async function send(ids: string[], agent: string): Promise<void> {
     if (sending) return
     sending = true
+    lastAgent = agent
     options.onAgent(agent)
     let reason: string | null = null
     try {
@@ -338,7 +389,7 @@ export function mountNotes(options: {
     ], sendButton)
   }
 
-  function item(n: ReviewNote, error: HTMLElement): HTMLElement {
+  function item(n: ReviewNote): HTMLElement {
     const index = files.findIndex((f) => (n.side === 'new' ? f.path : (f.oldPath ?? f.path)) === n.path)
     return h(
       'div',
@@ -351,11 +402,11 @@ export function mountNotes(options: {
         h('span', { class: 'mono muted' }, firstLine(n.quote)),
         h('span', null, firstLine(n.body))
       ),
-      h('button', { class: 'tool', title: t('noteDelete'), 'aria-label': t('noteDelete'), onclick: () => void remove([n.id], error) }, icon('drop'))
+      h('button', { class: 'tool', title: t('noteDelete'), 'aria-label': t('noteDelete'), onclick: () => void remove([n.id]) }, icon('drop'))
     )
   }
 
-  /** Shows the file of a note and scrolls to its card; the whole file when its lines are not in the changed regions. */
+  /** Shows the file of a note and scrolls to its card; the whole file when the note is of the diff shown but its lines are not in the changed regions. */
   function reveal(index: number, id: string): void {
     closeList?.()
     const scroll = () => {
@@ -364,7 +415,9 @@ export function mountNotes(options: {
       return found !== undefined
     }
     options.show(index, false, () => {
-      if (!scroll()) options.show(index, true, scroll)
+      const note = notes.find((n) => n.id === id)
+      // A note of other content (the file has changed since) has no card in this diff, whole file or not.
+      if (!scroll() && note && note.blob === blobOf(note.side)) options.show(index, true, scroll)
     })
   }
 
@@ -399,7 +452,9 @@ export function mountNotes(options: {
       return rows
     },
     mark(html, side, line, length) {
-      for (const n of shown) {
+      // The text a new note's open editor is about stays marked, as a note's is.
+      const draft = editor && !editor.id && editor.anchor.blob === blobOf(side) ? [editor.anchor] : []
+      for (const n of [...shown, ...draft]) {
         const range = coveredRange(n, side, line, length)
         if (range) html = markRange(html, range[0], range[1], 'note-mark')
       }
@@ -421,12 +476,10 @@ export function mountNotes(options: {
         else delete lines.dataset.pick
       })
     },
-    setNotes(list) {
-      notes = list
-      refresh()
-    },
+    load,
     addFromSelection: add,
     dispose() {
+      loads++
       document.removeEventListener('mouseup', onUp)
       document.removeEventListener('selectionchange', onSelection)
       document.removeEventListener('scroll', onScroll, true)

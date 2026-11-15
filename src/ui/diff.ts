@@ -220,6 +220,10 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { notes
 
   function render(): void {
     if (!diff) return
+    const digits = String(Math.max(0, ...diff.hunks.map((x) => Math.max(x.oldStart, x.newStart) + x.lines.length))).length
+    const lines = h('div', { class: `diff-lines ${mode}`, style: `--num-w: ${digits + 2}ch` })
+    // Also for a file without rows: the notes go by the file shown (the This file group of the send menu).
+    notes.attach(lines, diff, files[index], mode)
     const note = (text: string) => h('div', { class: 'diff-note muted' }, text)
     if (diff.binary) {
       body.replaceChildren(note(t('diffBinary')))
@@ -231,9 +235,6 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { notes
       changes = []
       return
     }
-    const digits = String(Math.max(...diff.hunks.map((x) => Math.max(x.oldStart, x.newStart) + x.lines.length))).length
-    const lines = h('div', { class: `diff-lines ${mode}`, style: `--num-w: ${digits + 2}ch` })
-    notes.attach(lines, diff, files[index], mode)
     const rendered = renderLines(diff, mode, notes)
     changes = rendered.changes
     lines.append(...rendered.rows)

@@ -2156,6 +2156,16 @@ input[type='radio']:focus-visible {
   max-width: 100%;
 }
 
+/* The Notes button while the list has a failure to tell. */
+.tool.notes-warn {
+  color: var(--state-wait);
+}
+
+.notes-notice {
+  margin-bottom: 4px;
+  white-space: pre-wrap;
+}
+
 .notes-head {
   display: flex;
   gap: 4px;

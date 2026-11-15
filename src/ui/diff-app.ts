@@ -55,15 +55,6 @@ const app = document.getElementById('app')!
 let root: string | null = null
 let view: ReturnType<typeof mountDiff> | null = null
 let token = 0
-let notesToken = 0
-
-/** Gives the view the notes of its repository; only the latest answer is shown. */
-function loadNotes(): void {
-  const mine = ++notesToken
-  const shown = view
-  if (!root || !shown) return
-  api.notes(root).then(({ notes }) => mine === notesToken && shown.notes.setNotes(notes), () => undefined)
-}
 
 /** Shows what the worker keeps for this tab's repository; the placeholder when it keeps nothing. */
 async function show(): Promise<void> {
@@ -100,7 +91,7 @@ async function show(): Promise<void> {
       // The worker keeps the index (a recreated tab opens on this file) and tells the sidebar.
       onIndex: (index) => void api.diffIndex(state.root, index).catch(() => undefined)
     })
-    loadNotes()
+    void view.notes.load()
   }
 }
 
@@ -119,7 +110,7 @@ orca.plugin.on('diff.show', (payload: { root: string }) => {
 })
 
 orca.plugin.on('notes.changed', (payload: { root: string }) => {
-  if (root && payload.root === root) loadNotes()
+  if (root && payload.root === root) void view?.notes.load()
 })
 
 void start()

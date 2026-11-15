@@ -62,7 +62,7 @@ export function notesOf(notes: ReviewNote[], diff: Pick<FileDiff, 'oldBlob' | 'n
 }
 
 /** The part [from, to) of a line a note covers; null when it covers none of it. */
-export function coveredRange(note: ReviewNote, side: NoteSide, line: number, length: number): [number, number] | null {
+export function coveredRange(note: Pick<ReviewNote, 'side' | 'start' | 'end'>, side: NoteSide, line: number, length: number): [number, number] | null {
   if (note.side !== side || line < note.start.line || line > note.end.line) return null
   const from = line === note.start.line ? note.start.col : 0
   const to = Math.min(line === note.end.line ? note.end.col : length, length)

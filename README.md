@@ -82,9 +82,12 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   the agent's verdict), Edit, Delete and, for a sent note without an answer, Send again; links open
   in the browser. **Notes (N)** in the tab's header lists every note of the repository with its file,
   lines, side, the start of the quote and of the text and its state; Copy all copies them as markdown,
-  Delete all asks once more. A click on a note opens its file, with Whole file when its lines are
-  outside the changed regions, and scrolls to it. Notes are kept in the plugin's storage, up to 200
-  per repository.
+  Delete all asks once more. A click on a note opens its file and scrolls to it, with Whole file when
+  the note is of the diff shown but its lines are outside the changed regions. Opening the list loads
+  the notes again, so the agent's answers are read then too. Notes are kept in the plugin's storage, up
+  to 200 per repository (see Limitations). When the notes cannot be loaded, the answers cannot be saved,
+  or a delete or Send again is refused, the Notes button turns yellow, its tooltip says why, and so does
+  a line at the top of the list.
 - **Send notes to an agent**: **Send to a new agent (N)** in the Diff tab's header (shown while a note
   is unsent) opens a menu of agent kinds (the ones Orca lists, plus claude and codex; the last one used
   first): all unsent notes, or only those of the file shown. The plugin writes a folder
@@ -250,8 +253,9 @@ Variables such as `GIT_DIR` that would point git at another repository are remov
 environment, and its `PATH` keeps only absolute folders, so nothing git starts by name (`cp`, `ssh`,
 `gpg`) comes from the repository.
 
-Sending review notes needs two more permissions, to start agents (`agent:launch`) and to read their
-status (`agent:read`): after an update that adds them Orca asks for approval again.
+Review notes need three more permissions: the plugin's own storage for the notes (`storage:own`),
+starting agents (`agent:launch`) and reading their status (`agent:read`): after an update that adds them
+Orca asks for approval again.
 
 ### Develop
 
@@ -378,6 +382,9 @@ keeps them all.
   repository whose path holds a control character or a backtick cannot send notes.
 - An answer appears when the agent has written its file in that form (a known `verdict:`, at most 64 KiB,
   a regular file); anything else is ignored. `fixed` is the agent's word: the plugin does not check it.
+- Review notes: up to 200 per repository, and fewer when notes and answers are long, because Orca limits
+  the stored value to 256 KiB and all notes of a repository, with their answers, are one value. A note or
+  an answer that does not fit is refused with a message; deleting notes frees space.
 
 ## Third-party code
 
