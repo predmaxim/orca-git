@@ -53,11 +53,22 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   letters (added, modified, deleted, renamed), expand/collapse all. For each file the diff runs from its
   state before the earliest selected commit that touched it to its state after the latest one, so a
   selection across a merge works too. A click (or Enter) opens the file's diff in the Diff tab.
+  Under each file stand its **review notes**, as Azure DevOps lists threads in the file tree of a pull
+  request: the notes the file's diff shows (none under a file renamed without changes or changing type),
+  one row each: a dot of the state (hollow: not sent; yellow: sent, no answer yet; blue: answered; green:
+  confirmed or fixed), the first line, the start of the first message. Resolved notes come last, with a
+  check and pale; the file row counts the others. Hover a note for its path, lines, side, state and
+  whole first message; a click (or Enter) opens the file in the Diff tab at the note's card. The rows
+  follow every change of the notes, here or in the Diff tab. When the notes cannot be loaded, the banner
+  says so and the files show no notes.
   Tree keys (here and in the branch tree): ↑ / ↓ move between rows, → opens a folder or steps into it,
-  ← closes it or steps up to the parent folder, Space opens or closes a folder; each tree is one Tab stop.
+  ← closes it or steps up to the parent folder (from a note, to its file), Space opens or closes a
+  folder; each tree is one Tab stop, and a redraw keeps its scroll position.
 - **Details section**: one row per selected commit (short hash, title, author); click a row to expand
   the full message, author, committer, date and branches. A single selected commit is expanded at once.
-- **Diff tab**: one editor tab per repository; the next file you open replaces its content. Side by
+- **Diff tab**: one editor tab per repository; the next file you open replaces its content. The tab's
+  selection and the file it shows are kept in the plugin's storage: Orca stops an idle plugin worker and
+  starts a new one on the next request, and the new one shows them again instead of the placeholder. Side by
   side or unified, with changed words highlighted and syntax highlighting for 24 languages, in the colors
   the **Diff colors** setting picks. **Orca** (the default): the colors and font of Orca's file editor
   with a theme that brings no editor colors of its own (Monaco's dark and light themes), because Orca
@@ -67,21 +78,29 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   Light, the editor background included. The highlighter knows tokens, not meaning: it cannot tell a
   local function from a global one the way WebStorm does, so a few names are colored by their place
   instead (parameters plain, object keys and properties as fields). A change of the setting applies at
-  once. Toggle **Whole file** for full context, jump between changes with F7 / Shift+F7 and
-  between the files of the selection it was opened from with ← / → (keys or header buttons) or Alt+↑ /
+  once. Toggle **Whole file** for full context: a 5 px map of the whole file then runs along the right
+  edge, past the scroll bar, with a mark for each block of changes (green added, blue modified, gray
+  deleted: the colors of the file statuses) and, over them, a yellow mark for each review note (faded
+  when resolved). The marks are measured from the rows shown, so they follow wrapped lines and opened
+  cards; a hover names the lines (and the note's first line), a click scrolls there. Jump between
+  changes with F7 / Shift+F7 and between the files of the selection it was opened from with ← / → (keys or header buttons) or Alt+↑ /
   Alt+↓ (counter "3/5 files"); the panel's Files section highlights the file the tab shows. Merge
-  commits are compared with their first parent.
-- **Review notes** in the Diff tab: select text in the code, then press the button that appears at the
-  end of the selection or `Ctrl+Shift+A`, and write a note for an agent in markdown (Enter saves,
+  commits are compared with their first parent. The review has its own group at the end of the header,
+  after a divider: **Notes**, outlined, and **Send to an agent**, filled with Orca's primary color as the
+  tab's main action, each with its count in a circle.
+- **Review notes** in the Diff tab: select text in the code, then press **Note**, the button filled with Orca's
+  primary color that appears at the end of the selection, or `Ctrl+Shift+A`, and write a note for an agent in markdown (Enter saves,
   Shift+Enter adds a line, Esc cancels). A note belongs to one side: the column the selection starts in
   (split), or in unified the line it starts on (a deleted line is the old side, any other the new one);
   while you select, the other side stays out of the selection. The note is tied to the content of the
   file on its side (its blob), so it shows in every diff where that side is the same, also after a
-  rebase or an amend that left the file alone. A note is a **thread**, as in Azure DevOps pull requests:
-  its card stands under the last selected line, in the half of its side in split, with the selected text
+  rebase or an amend that left the file alone. A file that changes type (a file turned into a symlink or
+  back) takes no notes and shows none, as it has none in the panel's Files section. A note is a
+  **thread**, as in Azure DevOps pull requests: its card stands under the last selected line, in the half of its side in split, with the selected text
   highlighted. On top, the thread's state (Resolved; Sent, no answer yet; Not sent; or the verdict of the
-  agent's last answer and Fixed), Send again while a send has no answer, **Resolved** and Delete the
-  thread. Below, the messages oldest first, each with its author (You, or Agent and its kind), its time
+  agent's last answer and Fixed), Send again while a send has no answer and **Resolved** (small outlined
+  buttons with an icon and a label; **Open again** in their place on a resolved thread), and Delete the
+  thread (an icon, as Edit and Delete of a message are). Below, the messages oldest first, each with its author (You, or Agent and its kind), its time
   and a Delete button; the agent's messages stand on a tint and carry their own verdict and Fixed; your
   messages not sent yet say Not sent and have Edit (sent text stays as the agent saw it). Deleting the
   last message deletes the thread; an agent's answer you delete does not come back. Every Delete of a
@@ -101,17 +120,25 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   text says so under the field. An edit keeps the message's images as they are.
   A message shows its images as thumbnails 96 px high under its text; a click or Enter opens one over the
   tab with its name and size, and Esc, a click outside it or × closes it. Links open
-  in the browser. **Notes (N)** in the tab's header counts the threads not resolved and lists every
+  in the browser. **Notes** in the tab's header counts the threads not resolved and lists every
   thread of the repository with its file, lines, side, state, count of messages and the start of the
   quote and of the first message, resolved ones last and dimmed; Copy all copies them as markdown with
-  every message under its author, Delete all asks once more and deletes every thread of the repository. A click on a note opens its file and scrolls to it, with Whole file when
-  the note is of the diff shown but its lines are outside the changed regions. Opening the list loads
+  every message under its author, Delete all asks once more and deletes every thread of the repository.
+  A click on a note opens it where it shows: in a file of the tab, scrolled to, with Whole file when its
+  lines are outside the changed regions; else the tab opens the commit whose own diff writes the note's
+  content, scrolls to it there, and the panel showing that repository selects the commit in Commits (on
+  HEAD's history first, else among every branch; of two notes clicked in a row the later one wins, even
+  while the earlier one's commit is still being loaded) and highlights the note's file in Files, without
+  taking the keyboard. While a note or a reply you are writing holds text or images, the tab does not drop it
+  for another file or commit asked for from the panel or the Notes list: it shows the editor, says under it
+  that the other file opens once you save or cancel the note, and opens it then. Opening the list loads
   the notes again, so the agent's answers are read then too. Notes are kept in the plugin's storage, up
   to 200 per repository (see Limitations). When the notes cannot be loaded, the answers cannot be saved,
-  or a delete, Send again, Resolved or Open again is refused, the Notes button turns yellow, its tooltip says why, and so does
+  or a delete, Send again, Resolved, Open again or the opening of a note's commit is refused, the Notes
+  button's text and border turn yellow, its tooltip says why, and so does
   a line at the top of the list.
-- **Send notes to an agent**: **Send to an agent (N)** in the Diff tab's header (shown while a note
-  is unsent) opens a menu of agent kinds (the ones Orca lists, plus claude and codex; the last one used
+- **Send notes to an agent**: **Send to an agent** in the Diff tab's header, with the count of unsent
+  notes (shown while a note is unsent), opens a menu of agent kinds (the ones Orca lists, plus claude and codex; the last one used
   first): all unsent notes, or only those of the file shown. The plugin writes a folder
   `.orca-git-log/review-<id>/` in the workspace with `notes.md` (every note: file, lines, the commit it
   was written on, the selected text, the whole thread of messages oldest first with the new ones marked NEW and each answer of the agent naming the messages it answers, and how to answer; the agent writes one answer file per thread, stored as the agent's message of that send), `SKILL.md` (a short guide for an
@@ -256,7 +283,7 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
 - **Right sidebar panel** "Git", the plugin's only view: the Branches, Commits, Files and Details
   sections in one column; in a narrow column a commit takes two lines like a row of Orca's own lists
   (the message, then author and date smaller and muted, with space between commits; the graph's node
-  level with the message).
+  level with the message and its lanes closer together, 10 px apart instead of 14).
 - **A commit shown from another program**: the Workflow plugin's «Показать коммит в Git» opens this panel on the
   repository of a task's commit and selects the commit in Commits. The request waits in a private file the panel
   takes when it starts; the contract is in [docs/reveal.md](docs/reveal.md).
@@ -412,12 +439,19 @@ keeps them all.
 
 - Local workspaces only: SSH, WSL and paired-host workspaces are not supported yet.
 - The diff viewer is read-only, and very large diffs are cut after 20,000 lines.
-- The Diff tab steps through at most 2,000 files: for a larger selection it gets the 2,000 around the
-  file you clicked. The panel sends only the selected commits and the clicked file, and the worker lists
-  the files again: Orca refuses a frame message over 65 KiB ("message too large", Orca as of 2026-11-13),
-  which a list of a thousand files exceeds.
-- The Diff tab's content lives in the plugin's worker: after Orca restarts, a restored Diff tab shows
-  its placeholder until you open a file again.
+- The Diff tab steps through the files around the one you clicked that fit in 900,000 bytes of JSON
+  (about 3,200 files with 50-character paths, 1,400 renamed ones with 200-character paths): Orca refuses
+  a worker's answer over 1 MiB. The panel sends only the selected commits and the clicked file, and the
+  worker lists the files again: Orca refuses a frame message over 65 KiB ("message too large", Orca as of
+  2026-11-13), which a list of a thousand files exceeds.
+- The Files section lists a selection while its files fit in Orca's 1 MiB answer: about 3,800 files with
+  50-character paths, 1,600 renamed ones with 200-character paths (each file carries the ids of both its sides, for the review notes). A larger
+  selection shows Orca's refusal instead of the files, and its Diff tab cannot be opened from them.
+- The Diff tab keeps its selection, not its files: a new worker lists them again from git, and when the
+  selected commits are gone (rebased away and collected), the tab shows its placeholder until you open a
+  file again; when the plugin's storage cannot be read or git is stopped at its time limit, the tab shows
+  that error instead, and the next read tries again. When the files do not fit in the 900,000 bytes, the new worker centers them on the file the
+  tab was on, and a step in a tab that stayed open may then record another file than the one it shows.
 - Conflicts during a rewrite, cherry-pick or revert are not resolved in the panel; the operation is
   aborted (or, when Git is left mid-operation by a terminal command, a banner says so).
 - With git before 2.47 (seen on 2.34.8 to 2.45.4; fixed in 2.47.0), a `pre-rebase` hook that refuses

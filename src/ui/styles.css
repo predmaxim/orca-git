@@ -1786,6 +1786,51 @@ input[type='radio']:focus-visible {
   font-size: 12px;
 }
 
+/* A file's count of open review notes, and the rows of its notes under it. */
+.ft-notes {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.ft-notes .icon {
+  width: 12px;
+  height: 12px;
+}
+
+.ft-note {
+  font-size: 12px;
+}
+
+.ft-note.resolved {
+  opacity: 0.5;
+}
+
+/* The state of a note: 14 px wide like the check of a resolved one, so the line numbers line up. */
+.note-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin: 0 3px;
+  border-radius: 50%;
+}
+
+.note-dot.tone-unsent {
+  border: 1.5px solid var(--muted-fg);
+}
+
+.note-dot.tone-waiting {
+  background: var(--state-wait);
+}
+
+.note-dot.tone-answered {
+  background: var(--state-info);
+}
+
+.note-dot.tone-done {
+  background: var(--state-done);
+}
+
 /* ---------- Diff tab ---------- */
 
 /* An editor tab: Orca paints its editors with the background, not the card. */
@@ -1873,13 +1918,63 @@ input[type='radio']:focus-visible {
   text-align: left;
 }
 
+/* The body and the map of the file at its right edge. */
+.diff-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
 .diff-body {
   flex: 1;
+  min-width: 0;
   overflow: auto;
   outline: 0;
   user-select: text;
   background: var(--code-bg);
   color: var(--code-fg);
+}
+
+/* Whole file: the map, as tall as the body, its marks where their rows are in the file. */
+.diff-overview {
+  width: 5px;
+  flex: none;
+  position: relative;
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+
+.diff-overview > div {
+  position: absolute;
+  left: 0;
+  right: 0;
+  cursor: pointer;
+}
+
+.diff-overview .ov-added {
+  background: var(--st-added);
+}
+
+.diff-overview .ov-deleted {
+  background: var(--st-deleted);
+}
+
+.diff-overview .ov-modified {
+  background: var(--st-modified);
+}
+
+/* The notes, over the changes: the color their text is marked with. */
+.diff-overview .ov-note,
+.diff-overview .ov-note-resolved {
+  background: var(--state-wait);
+}
+
+:root.light .diff-overview .ov-note,
+:root.light .diff-overview .ov-note-resolved {
+  background: color-mix(in srgb, var(--state-wait) 75%, black);
+}
+
+.diff-overview .ov-note-resolved {
+  opacity: 0.4;
 }
 
 .diff-note {
@@ -2221,6 +2316,16 @@ input[type='radio']:focus-visible {
   display: none;
 }
 
+/* An opening of the tab waits for the editor to close. */
+.d-note-wait {
+  margin-top: 4px;
+  color: var(--state-wait);
+}
+
+:root.light .d-note-wait {
+  color: color-mix(in srgb, var(--state-wait) 50%, black);
+}
+
 /* The images of a message, under its text; in the editor, under the field, each with Remove, then Attach a file. */
 .d-note-images {
   display: flex;
@@ -2333,20 +2438,20 @@ input[type='radio']:focus-visible {
   right: 12px;
 }
 
-/* The button at the end of a selection floats over the code. */
+/* The button at the end of a selection floats over the code, filled as the main action it is there. */
 .tool.note-add {
   position: fixed;
   z-index: 40;
-  width: 26px;
-  padding: 0;
-  border: 1px solid var(--border);
-  background: var(--popover);
-  color: var(--popover-fg);
+  padding: 0 8px;
+  background: var(--primary);
+  color: var(--primary-fg);
+  font-size: 12px;
+  font-weight: 500;
   box-shadow: 0 2px 8px rgb(0 0 0 / 25%);
 }
 
 .tool.note-add:hover {
-  background: var(--selected-focus);
+  background: color-mix(in srgb, var(--primary) 85%, var(--fg));
 }
 
 .notes-list {
@@ -2354,9 +2459,64 @@ input[type='radio']:focus-visible {
   max-width: 100%;
 }
 
-/* The Notes button while the list has a failure to tell. */
-.tool.notes-warn {
+/* The review's buttons in the Diff tab's header: Notes outlined, Send to an agent filled as the tab's main action. */
+.tool.review-btn {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--input);
+  background: color-mix(in srgb, var(--input) 30%, transparent);
+  color: var(--fg);
+}
+
+.tool.review-btn:hover {
+  background: color-mix(in srgb, var(--input) 50%, transparent);
+}
+
+.tool.review-btn.primary {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-fg);
+}
+
+.tool.review-btn.primary:hover {
+  background: color-mix(in srgb, var(--primary) 85%, var(--fg));
+}
+
+/* A count in a circle, a tint of the button's text. */
+.review-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* The Notes button while the list has a failure to tell: the border goes with the text. */
+.tool.review-btn.notes-warn {
+  border-color: currentColor;
   color: var(--state-wait);
+}
+
+:root.light .tool.review-btn.notes-warn {
+  color: color-mix(in srgb, var(--state-wait) 50%, black);
+}
+
+/* A thread's actions with a label: smaller than the header's, outlined as Notes is. */
+.tool.d-note-action {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--input);
+  background: color-mix(in srgb, var(--input) 30%, transparent);
+  color: var(--fg);
+  font-size: 12px;
+}
+
+.tool.d-note-action:hover {
+  background: color-mix(in srgb, var(--input) 50%, transparent);
 }
 
 .notes-notice {

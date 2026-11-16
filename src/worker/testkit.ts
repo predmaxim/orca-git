@@ -24,10 +24,11 @@ export function fixture(prefix = 'git-log-worker-'): string {
   return root
 }
 
-/** A host whose local workspace `wt-1` is at `root`; `results` go over the defaults, `storage` seeds the plugin's storage. */
-export function host(root: string, results: Record<string, unknown> = {}, storage?: Record<string, JsonValue>): MockHost {
+/** A host whose local workspace `wt-1` is at `root`; `results` go over the defaults, `storage` and `settings` seed the plugin's. */
+export function host(root: string, results: Record<string, unknown> = {}, storage?: Record<string, JsonValue>, settings?: Record<string, JsonValue>): MockHost {
   return mockHost({
     storage,
+    settings,
     results: {
       'workspace.readContext': { branch: 'main', displayName: 'demo', terminals: [] },
       'workspace.list': {

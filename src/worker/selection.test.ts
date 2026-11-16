@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
 import { createGit, type Git } from './git.ts'
+import { parseRaw } from './log.ts'
 import { readRangeDiff, readSelectionFiles } from './selection.ts'
 
 const dirs: string[] = []
@@ -34,14 +35,15 @@ function repoWith(steps: Array<(root: string) => void>): { root: string; hashes:
 }
 
 const write = (name: string, text: string) => (root: string) => writeFileSync(join(root, name), text)
+const blob = (root: string, rev: string, path: string) => sh(root, 'rev-parse', `${rev}:${path}`)
 
 test('a contiguous selection lists each added file from its own parent', async () => {
   const { root, hashes: h } = repoWith([1, 2, 3, 4].map((i) => write(`f${i}.txt`, `${i}\n`)))
   const files = await readSelectionFiles(createGit(root), [h[3], h[1], h[2]])
   assert.deepEqual(files, [
-    { path: 'f2.txt', status: 'A', from: h[0], to: h[1] },
-    { path: 'f3.txt', status: 'A', from: h[1], to: h[2] },
-    { path: 'f4.txt', status: 'A', from: h[2], to: h[3] }
+    { path: 'f2.txt', status: 'A', from: h[0], to: h[1], newBlob: blob(root, h[1], 'f2.txt') },
+    { path: 'f3.txt', status: 'A', from: h[1], to: h[2], newBlob: blob(root, h[2], 'f3.txt') },
+    { path: 'f4.txt', status: 'A', from: h[2], to: h[3], newBlob: blob(root, h[3], 'f4.txt') }
   ])
 })
 
@@ -49,7 +51,7 @@ test('a gap in the selection folds the unselected change in, like WebStorm', asy
   const { root, hashes: h } = repoWith([1, 2, 3, 4].map((i) => write('a.txt', `${i}\n`)))
   const git = createGit(root)
   const files = await readSelectionFiles(git, [h[1], h[3]])
-  assert.deepEqual(files, [{ path: 'a.txt', status: 'M', from: h[0], to: h[3] }])
+  assert.deepEqual(files, [{ path: 'a.txt', status: 'M', from: h[0], to: h[3], oldBlob: blob(root, h[0], 'a.txt'), newBlob: blob(root, h[3], 'a.txt') }])
   const diff = await readRangeDiff(git, h[0], h[3], 'a.txt')
   const lines = diff.hunks.flatMap((hunk) => hunk.lines.map((l) => `${l.kind}${l.text}`))
   assert.ok(lines.includes('-1'))
@@ -73,7 +75,7 @@ test('a rename followed by an edit is one renamed file', async () => {
     write('b.txt', 'one\ntwo\nthree\nfour\nfive\n')
   ])
   const files = await readSelectionFiles(createGit(root), [h[1], h[2]])
-  assert.deepEqual(files, [{ path: 'b.txt', status: 'R', oldPath: 'a.txt', from: h[0], to: h[2] }])
+  assert.deepEqual(files, [{ path: 'b.txt', status: 'R', oldPath: 'a.txt', from: h[0], to: h[2], oldBlob: blob(root, h[0], 'a.txt'), newBlob: blob(root, h[2], 'b.txt') }])
 })
 
 test('a rename followed by a delete reports the original file as deleted', async () => {
@@ -84,7 +86,7 @@ test('a rename followed by a delete reports the original file as deleted', async
     write('other.txt', 'x\n')
   ])
   const files = await readSelectionFiles(createGit(root), [h[1], h[2]])
-  assert.deepEqual(files, [{ path: 'a.txt', status: 'D', from: h[0], to: h[2] }])
+  assert.deepEqual(files, [{ path: 'a.txt', status: 'D', from: h[0], to: h[2], oldBlob: blob(root, h[0], 'a.txt') }])
 })
 
 /** `git` whose diff number `slow` (from 0) answers 50 ms late, so the parallel diffs finish in another order. */
@@ -110,8 +112,8 @@ test('a path listed twice comes out in selection order, whichever diff finishes 
   const git = createGit(root)
   for (const slow of [0, 1]) {
     assert.deepEqual(await readSelectionFiles(slowDiff(git, slow), h.slice(1)), [
-      { path: 'a.txt', status: 'D', from: h[0], to: h[2] },
-      { path: 'a.txt', status: 'A', from: h[2], to: h[4] }
+      { path: 'a.txt', status: 'D', from: h[0], to: h[2], oldBlob: blob(root, h[0], 'a.txt') },
+      { path: 'a.txt', status: 'A', from: h[2], to: h[4], newBlob: blob(root, h[4], 'a.txt') }
     ])
   }
 })
@@ -146,8 +148,8 @@ test('a long contiguous selection lists each file over the commits that touch it
   const { root, hashes: h } = repoWith(steps)
   const files = await readSelectionFiles(createGit(root), h.slice(1).reverse())
   assert.deepEqual(files, [
-    ...h.slice(1).map((to, i) => ({ path: `f${i + 1}.txt`, status: 'A', from: h[i], to })),
-    { path: 'shared.txt', status: 'M', from: h[9], to: h[20] }
+    ...h.slice(1).map((to, i) => ({ path: `f${i + 1}.txt`, status: 'A', from: h[i], to, newBlob: blob(root, to, `f${i + 1}.txt`) })),
+    { path: 'shared.txt', status: 'M', from: h[9], to: h[20], oldBlob: blob(root, h[9], 'shared.txt'), newBlob: blob(root, h[20], 'shared.txt') }
   ].sort((a, b) => a.path.localeCompare(b.path)))
 })
 
@@ -160,7 +162,8 @@ test('odd file names come through both from the log and from a range diff', asyn
   ])
   const files = await readSelectionFiles(createGit(root), [h[0], h[1]])
   // The first three changed twice (range diff), the last two once (taken from the log).
-  assert.deepEqual(files, names.map((path) => ({ path, status: 'A', from: null, to: names.indexOf(path) < 3 ? h[1] : h[0] })).sort((a, b) => a.path.localeCompare(b.path)))
+  const expected = names.map((path) => ({ path, status: 'A', from: null, to: names.indexOf(path) < 3 ? h[1] : h[0] }))
+  assert.deepEqual(files, expected.map((f) => ({ ...f, newBlob: blob(root, f.to, f.path) })).sort((a, b) => a.path.localeCompare(b.path)))
 })
 
 test('a path renamed away and added again is listed once', async () => {
@@ -172,14 +175,14 @@ test('a path renamed away and added again is listed once', async () => {
   ])
   const files = await readSelectionFiles(createGit(root), [h[1], h[2], h[3]])
   assert.deepEqual(files.map((f) => f.path), ['a.txt', 'b.txt'])
-  assert.deepEqual(files[0], { path: 'a.txt', status: 'A', from: h[1], to: h[2] })
+  assert.deepEqual(files[0], { path: 'a.txt', status: 'A', from: h[1], to: h[2], newBlob: blob(root, h[2], 'a.txt') })
 })
 
 test('the root commit diffs against the empty tree, even with log.showRoot off', async () => {
   const { root, hashes: h } = repoWith([write('f1.txt', '1\n')])
   sh(root, 'config', 'log.showRoot', 'false')
   const git = createGit(root)
-  assert.deepEqual(await readSelectionFiles(git, [h[0]]), [{ path: 'f1.txt', status: 'A', from: null, to: h[0] }])
+  assert.deepEqual(await readSelectionFiles(git, [h[0]]), [{ path: 'f1.txt', status: 'A', from: null, to: h[0], newBlob: blob(root, h[0], 'f1.txt') }])
   const diff = await readRangeDiff(git, null, h[0], 'f1.txt')
   assert.deepEqual(diff.hunks[0].lines[0], { kind: '+', text: '1', new: 1 })
 })
@@ -198,10 +201,10 @@ test("selection spanning a merge lists the merge's first-parent changes and the 
   sh(root, 'commit', '-q', '-m', 'm2')
   sh(root, 'merge', '-q', '--no-ff', '-m', 'merge', 'side')
   const merge = sh(root, 'rev-parse', 'HEAD')
-  assert.deepEqual(await readSelectionFiles(git, [merge]), [{ path: 's.txt', status: 'A', from: sh(root, 'rev-parse', `${merge}^1`), to: merge }])
+  assert.deepEqual(await readSelectionFiles(git, [merge]), [{ path: 's.txt', status: 'A', from: sh(root, 'rev-parse', `${merge}^1`), to: merge, newBlob: blob(root, merge, 's.txt') }])
   const both = await readSelectionFiles(git, [merge, s1])
   assert.equal(both.filter((f) => f.path === 's.txt').length, 1)
-  assert.deepEqual(both.find((f) => f.path === 's.txt'), { path: 's.txt', status: 'A', from: hashes[0], to: merge })
+  assert.deepEqual(both.find((f) => f.path === 's.txt'), { path: 's.txt', status: 'A', from: hashes[0], to: merge, newBlob: blob(root, merge, 's.txt') })
 })
 
 test('invalid hashes are refused', async () => {
@@ -225,4 +228,54 @@ test('a range diff names the blob of each side', async () => {
   const added = await readRangeDiff(git, null, h[0], 'a.txt')
   assert.equal(added.oldBlob, undefined)
   assert.equal(added.newBlob, diff.oldBlob)
+})
+
+test('each file carries the blobs of its two sides, as the range diff has them', async () => {
+  const { root, hashes: h } = repoWith([
+    (r) => {
+      ;['m', 'd'].forEach((name) => writeFileSync(join(r, `${name}.txt`), '1\n'))
+      writeFileSync(join(r, 'r.txt'), 'one\ntwo\nthree\nfour\n')
+    },
+    (r) => ['m', 'd'].forEach((name) => writeFileSync(join(r, `${name}.txt`), '2\n')),
+    (r) => {
+      ;['m', 'n'].forEach((name) => writeFileSync(join(r, `${name}.txt`), '3\n'))
+      unlinkSync(join(r, 'd.txt'))
+      sh(r, 'mv', 'r.txt', 's.txt')
+      writeFileSync(join(r, 's.txt'), 'one\ntwo\nthree\nfour\nfive\n')
+    },
+    (r) => {
+      writeFileSync(join(r, 'n.txt'), '4\n')
+      writeFileSync(join(r, 's.txt'), 'one\ntwo\nthree\nfour\nfive\nsix\n')
+    }
+  ])
+  const git = createGit(root)
+  // Three commits: every file is touched twice, so its range is diffed. One commit: each change comes from the log.
+  for (const selection of [[h[1], h[2], h[3]], [h[2]]]) {
+    const files = await readSelectionFiles(git, selection)
+    assert.deepEqual(files.map((f) => `${f.status} ${f.path}`), ['D d.txt', 'M m.txt', 'A n.txt', 'R s.txt'])
+    for (const f of files) {
+      const diff = await readRangeDiff(git, f.from, f.to, f.path, f.oldPath)
+      assert.equal(f.oldBlob, diff.oldBlob, f.path)
+      assert.equal(f.newBlob, diff.newBlob, f.path)
+      assert.equal('oldBlob' in f, f.status !== 'A', f.path)
+      assert.equal('newBlob' in f, f.status !== 'D', f.path)
+    }
+  }
+})
+
+test('a pure rename has two equal blobs', async () => {
+  const { root, hashes: h } = repoWith([write('a.txt', 'one\n'), (r) => sh(r, 'mv', 'a.txt', 'b.txt')])
+  const same = blob(root, h[0], 'a.txt')
+  assert.deepEqual(await readSelectionFiles(createGit(root), [h[1]]), [{ path: 'b.txt', status: 'R', oldPath: 'a.txt', from: h[0], to: h[1], oldBlob: same, newBlob: same }])
+})
+
+test('parseRaw reads two paths after a rename and leaves out the side a file does not have', () => {
+  const [a, b, none] = ['a', 'b', '0'].map((c) => c.repeat(40))
+  // As git log prints them: a newline before a commit's first record; a path can hold a newline and a colon.
+  const raw = [`\n:100644 100644 ${a} ${b} R079`, 'old.txt', 'new.txt', `:000000 100644 ${none} ${b} A`, 'n\n:x', `:100644 000000 ${a} ${none} D`, ':gone', ''].join('\0')
+  assert.deepEqual(parseRaw(raw), [
+    { status: 'R', oldPath: 'old.txt', path: 'new.txt', oldBlob: a, newBlob: b },
+    { status: 'A', path: 'n\n:x', newBlob: b },
+    { status: 'D', path: ':gone', oldBlob: a }
+  ])
 })

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { computeGraph, graphSvg } from './graph.ts'
 import { dayInput, groupByPrefix, reachableFrom, refLabels, relativeDate } from './format.ts'
-import { changedRange, changeStarts, splitRows } from './diffmodel.ts'
+import { changeBlocks, changedRange, splitRows } from './diffmodel.ts'
 
 const row = (hash: string, ...parents: string[]) => ({ hash, parents })
 
@@ -67,7 +67,7 @@ test('side-by-side rows pair deletions with additions and highlight the changed 
   assert.deepEqual(rows, [{ left: lines[0], right: lines[0] }, { left: lines[1], right: lines[3] }, { left: lines[2], right: undefined }])
   assert.deepEqual(changedRange('let x = 1', 'let x = 42'), [8, 9, 10])
   assert.equal(changedRange('abc', 'xyz'), null)
-  assert.deepEqual(changeStarts([false, true, true, false, true], Boolean), [1, 4])
+  assert.deepEqual(changeBlocks([false, true, true, false, true].map((add) => ({ add, del: false }))).map((b) => b.start), [1, 4])
 })
 
 

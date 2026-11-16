@@ -3,21 +3,22 @@ import { appendFileSync, closeSync, constants, existsSync, fstatSync, mkdirSync,
 import { dirname, join, resolve } from 'node:path'
 import type { OrcaWorkerApi, PanelRequestContext } from 'orca/worker'
 import { pickLocale, setLocale, t } from '../shared/i18n.ts'
-import type { ActionResult, DiffTabState, NoteImage, NoteResult, RepoResult, RevealResult, ReviewNote } from '../shared/protocol.ts'
-import { stateOf, unsentOf, waitingFor } from '../shared/notes.ts'
+import type { ActionResult, DiffTabState, NoteImage, NoteResult, RepoResult, RevealResult, ReviewNote, SelectionFile } from '../shared/protocol.ts'
+import { noteFileIndex, stateOf, unsentOf, waitingFor } from '../shared/notes.ts'
 import { answerImages, attachImage, checkImages, dropImages, putImage, readImage, sweepImages } from './images.ts'
 import { checkRewrite, runAction } from './actions.ts'
 import { checkBackup, checkReset, deleteBackup, runGuarded } from './backup.ts'
 import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
-import { DIFF_ANCHOR, workspaceFor } from './diffTab.ts'
+import { DIFF_ANCHOR, fitWindow, workspaceFor } from './diffTab.ts'
 import { buildFileTree, orderedFiles } from '../shared/filetree.ts'
-import { createGit, type Git } from './git.ts'
+import { createGit, GitError, type Git } from './git.ts'
 import { readDetails, readLogPage, readRefs } from './log.ts'
 import { resolveRepo, toplevel } from './repo.ts'
 import { takeReveal } from './reveal.ts'
 import { readFileDiff } from './diff.ts'
 import { readRangeDiff, readSelectionFiles } from './selection.ts'
-import { addNote, agentKey, deleteNotes, editMessage, fitList, listNotes, markSent, markUnsent, pendingRoots, removeMessage, replyNote, resendNote, resolveNote, setAnswers, setNotesLog } from './notes.ts'
+import { findNoteCommit } from './noteCommit.ts'
+import { addNote, agentKey, deleteNotes, diffKey, editMessage, fitList, listNotes, markSent, markUnsent, pendingRoots, removeMessage, replyNote, resendNote, resolveNote, setAnswers, setNotesLog } from './notes.ts'
 import { promptRefusal, readAnswers, removeReview, reviewPaths, reviewPrompt, writeReview } from './review.ts'
 import { browseSkills, checkSkills, listSkills, saveSkills, skillPathAbs, skillsForReview } from './skills.ts'
 import { createPatch } from './patch.ts'
@@ -30,8 +31,10 @@ const repos = new Map<string, Git>()
 const watchers = new Map<string, Promise<RepoWatcher | null>>()
 /** The root each panel (by its id) watches: one that shows another repository lets the old watcher go. */
 const watchedBy = new Map<string, string>()
+/** What the Diff tab shows, and the selection its files were built from (kept in the storage, not sent). */
+type DiffKept = DiffTabState & { hashes: string[] }
 /** What each repository's Diff tab shows; the tab reads it when it starts and on `diff.show`. */
-const diffStates = new Map<string, DiffTabState>()
+const diffStates = new Map<string, DiffKept>()
 /** Roots with a request running that changes the repository. */
 const changing = new Set<string>()
 /** Roots with a `notes.send` running: a second one at once would start a second agent. */
@@ -168,17 +171,26 @@ async function diffTab(root: string): Promise<{ workspaceId: string; path: strin
  * a frame message is capped at 65 KiB, too little for a large selection's list.
  */
 async function openDiff(input: any): Promise<{ ok: boolean; reason?: string }> {
-  const { root, hashes, path, to } = input ?? {}
+  const { root, hashes, path, to, note } = input ?? {}
   if (typeof path !== 'string' || typeof to !== 'string') return { ok: false, reason: t('diffInvalid') }
   const files = orderedFiles(buildFileTree(await readSelectionFiles(await gitFor(root), hashes)))
   const index = files.findIndex((file) => file.path === path && file.to === to)
   if (index < 0) return { ok: false, reason: t('diffInvalid') }
+  return showDiff(root, hashes, files, index, typeof note === 'string' && /^[0-9a-f]{12}$/.test(note) ? note : undefined)
+}
+
+/**
+ * Shows `files`, built from the commits `hashes`, in the Diff tab of `root` on the one at `index`; `reveal` is the note the
+ * tab scrolls to once.
+ */
+async function showDiff(root: string, hashes: string[], files: SelectionFile[], index: number, reveal?: string): Promise<{ ok: boolean; reason?: string }> {
   const tab = await diffTab(root)
   if ('reason' in tab) return { ok: false, reason: tab.reason }
-  // shortcut: a response to a frame is capped too, so the tab gets at most 2000 files around the clicked one; send them all once it can page.
-  const first = Math.min(Math.max(0, index - 1000), Math.max(0, files.length - 2000))
+  // A response to a frame is capped at 1 MiB: the tab gets the files around this one that fit in 900 000 bytes of JSON.
+  const { first, count } = fitWindow(files, index)
   const previous = diffStates.get(root)
-  diffStates.set(root, { root, files: files.slice(first, first + 2000), index: index - first })
+  const open = randomBytes(6).toString('hex')
+  diffStates.set(root, { root, files: files.slice(first, first + count), index: index - first, open, ...(reveal ? { reveal } : {}), hashes })
   try {
     await orcaApi.host.call('editor.open', tab)
   } catch (error) {
@@ -189,12 +201,66 @@ async function openDiff(input: any): Promise<{ ok: boolean; reason?: string }> {
   }
   // An open tab reads the new state on this event; a new one reads it when it starts.
   orcaApi.panels.post('diff.show', { root })
+  await keepDiff(root)
   return { ok: true }
+}
+
+/**
+ * Writes what the Diff tab of `root` shows to the plugin's storage: Orca stops an idle worker, and the next one builds the
+ * state again from it (`restoreDiff`). A failed write is logged; the tab shows its files all the same.
+ */
+async function keepDiff(root: string): Promise<void> {
+  const state = diffStates.get(root)
+  if (!state) return
+  const { path, to } = state.files[state.index]
+  try {
+    await orcaApi.storage.set(diffKey(root), { root, hashes: state.hashes, path, to, open: state.open, ...(state.reveal ? { reveal: state.reveal } : {}) })
+  } catch (error) {
+    orcaApi.log(`Diff tab not kept for ${root}: ${errorText(error)}`)
+  }
+}
+
+/**
+ * The Diff tab of `root` as the plugin's storage keeps it, built again as `openDiff` builds it, for a worker that starts with
+ * nothing in memory; null when nothing is kept, and null with a line in the log when the value fails the check or git refuses
+ * its commits (gone). Throws when the storage cannot be read, the repository cannot be opened or git was stopped (the time
+ * limit of a read on a long history): the tab and the panel show that error, not the placeholder.
+ */
+async function restoreDiff(root: unknown): Promise<DiffKept | null> {
+  if (typeof root !== 'string') return null
+  const kept = (await orcaApi.storage.get(diffKey(root))) as any
+  if (kept === null) return null
+  const hashes: unknown = kept?.hashes
+  // The hashes as readSelectionFiles takes them (1 to 500 full ones), checked here: its refusal of others is no git refusal.
+  if (kept?.root !== root || typeof kept.path !== 'string' || typeof kept.to !== 'string' || typeof kept.open !== 'string' || !Array.isArray(hashes) || hashes.length < 1 || hashes.length > 500 || !hashes.every((hash) => typeof hash === 'string' && /^[0-9a-f]{40}$/.test(hash))) {
+    orcaApi.log(`Diff tab not restored for ${root}: invalid value`)
+    return null
+  }
+  let files: SelectionFile[]
+  try {
+    files = orderedFiles(buildFileTree(await readSelectionFiles(await gitFor(root), hashes)))
+  } catch (error) {
+    // Refused, not stopped: git answers a commit that is gone with an exit code; a stopped git has none.
+    if (!(error instanceof GitError) || error.result.code === null) throw error
+    orcaApi.log(`Diff tab not restored for ${root}: ${errorText(error)}`)
+    return diffStates.get(root) ?? null
+  }
+  if (!files.length) return null
+  // A `diff.open` or another read while git ran has set the state already: that one stays.
+  const now = diffStates.get(root)
+  if (now) return now
+  const index = Math.max(0, files.findIndex((file) => file.path === kept.path && file.to === kept.to))
+  const { first, count } = fitWindow(files, index)
+  const reveal = typeof kept.reveal === 'string' && /^[0-9a-f]{12}$/.test(kept.reveal) ? kept.reveal : undefined
+  const state: DiffKept = { root, files: files.slice(first, first + count), index: index - first, open: kept.open, ...(reveal ? { reveal } : {}), hashes }
+  diffStates.set(root, state)
+  return state
 }
 
 /** Brings the Diff tab of `root` forward as it is: no new state, no `diff.show`, so it keeps its scroll. */
 async function focusDiff({ root }: { root: string }): Promise<{ ok: boolean; reason?: string }> {
-  if (!diffStates.has(root)) return { ok: false }
+  // A worker Orca has restarted keeps the tab in the storage only.
+  if (!diffStates.has(root) && !(await restoreDiff(root))) return { ok: false }
   const tab = await diffTab(root)
   if ('reason' in tab) return { ok: false, reason: tab.reason }
   await orcaApi.host.call('editor.open', tab)
@@ -202,6 +268,8 @@ async function focusDiff({ root }: { root: string }): Promise<{ ok: boolean; rea
 }
 
 export default function activate(orca: OrcaWorkerApi): void {
+  // A worker Orca restarts begins with nothing in memory; the tests mount it again in the same process.
+  diffStates.clear()
   setNotesLog((line) => orca.log(line))
   orcaApi = orca
   // A panel drops what it waited for from a worker before this one: that is never posted.
@@ -263,6 +331,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     readFileDiff(await gitFor(root), hash, path, oldPath, Boolean(wholeFile))
   )
 
+  // shortcut: the answer has no window, and the blobs add 106 bytes a file: a selection of more than ~3 800 files (50-character paths) passes Orca's 1 MiB; split Files into pages when that is needed.
   handle('selection.files', async ({ root, hashes }) => readSelectionFiles(await gitFor(root), hashes))
 
   handle('range.diff', async ({ root, from, to, path, oldPath, wholeFile }) =>
@@ -347,13 +416,23 @@ export default function activate(orca: OrcaWorkerApi): void {
 
   handle('diff.focus', focusDiff)
 
-  handle('diff.state', ({ root }) => diffStates.get(root) ?? null)
+  // Every read has the note to reveal, with the same `open`: the tab reveals it once per `open` (it may read twice, when it starts and on `diff.show`).
+  handle('diff.state', async ({ root }) => {
+    const kept = diffStates.get(root) ?? (await restoreDiff(root))
+    if (!kept) return null
+    const { hashes, ...state } = kept
+    return state
+  })
 
-  handle('diff.index', ({ root, index }) => {
-    const state = diffStates.get(root)
+  // Another file of the tab: the note to reveal goes, the opening stays.
+  handle('diff.index', async ({ root, index }) => {
+    // A worker Orca has restarted keeps the tab in the storage only.
+    // shortcut: over 900 000 bytes of files, the restored window may start elsewhere than the tab's, so `index` may name another file; keep the window's start in the storage if that matters.
+    const state = diffStates.get(root) ?? (await restoreDiff(root))
     if (!state || !Number.isInteger(index) || index < 0 || index >= state.files.length) return { ok: false }
-    diffStates.set(root, { ...state, index })
+    diffStates.set(root, { root, files: state.files, index, open: state.open, hashes: state.hashes })
     orca.panels.post('diff.current', { root, path: state.files[index].path })
+    await keepDiff(root)
     return { ok: true }
   })
 
@@ -417,6 +496,22 @@ export default function activate(orca: OrcaWorkerApi): void {
     const { notes, cut } = fitList(await listNotes(orca.storage, key))
     if (cut) warning = [warning, t('notesCut', { count: cut })].filter(Boolean).join(' ')
     return warning ? { notes, warning } : { notes }
+  })
+
+  // A note written in a commit the tab does not show: the tab opens the commit whose own diff shows it, and the panel selects that commit.
+  handle('notes.open', async ({ root, id }) => {
+    const git = await gitFor(root)
+    const key = git.root
+    const note = (await listNotes(orca.storage, key)).find((n) => n.id === id)
+    if (!note) return { ok: false, reason: t('noteGone') }
+    const hash = await findNoteCommit(git, note)
+    if (!hash) return { ok: false, reason: t('noteCommitMissing') }
+    const files = orderedFiles(buildFileTree(await readSelectionFiles(git, [hash])))
+    const index = noteFileIndex(files, note, -1)
+    if (index < 0) return { ok: false, reason: t('noteFileMissing') }
+    const shown = await showDiff(key, [hash], files, index, note.id)
+    if (shown.ok) orca.panels.post('commit.reveal', { root: key, hash, path: files[index].path })
+    return shown
   })
 
   /** Tells the panels when a change of the notes of `root` went through. */

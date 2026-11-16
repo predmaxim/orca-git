@@ -1,8 +1,9 @@
-import type { ActionRequest, ActionResult, BackupDelete, BackupRequest, BranchAction, BranchActionResult, BranchRef, CommitDetails, CommitRow, LogFilter, PushPlan, PushRequest, RefsResult, RepoInfo, RepoResult, ResetCheck, RewriteKind, SelectionFile, WorkspaceChoice } from '../shared/protocol.ts'
+import type { ActionRequest, ActionResult, BackupDelete, BackupRequest, BranchAction, BranchActionResult, BranchRef, CommitDetails, CommitRow, LogFilter, PushPlan, PushRequest, RefsResult, RepoInfo, RepoResult, ResetCheck, ReviewNote, RewriteKind, SelectionFile, WorkspaceChoice } from '../shared/protocol.ts'
 import { api, copyText, errorMessage, orca, timedOut } from './api.ts'
 import { backupBlock, suggestBackupName, type BackupBlock } from './backup.ts'
 import { lateResults } from './late.ts'
 import { buildFileTree, orderedFiles, type FileNode } from '../shared/filetree.ts'
+import { notesOfFile } from '../shared/notes.ts'
 import { dirPaths, renderFileTree } from './filetree.ts'
 import { renderBranches } from './branches.ts'
 import { renderCommitList, renderPlaceholder } from './details.ts'
@@ -11,7 +12,7 @@ import { append, h, icon } from './dom.ts'
 import { createFilterBar } from './filters.ts'
 import { KEYS, withKey, type KeyScope } from './keys.ts'
 import { reachableFrom, refLabels, relativeDate, fullDate, shortHash } from './format.ts'
-import { computeGraph, graphSvg, ROW_HEIGHT, TWO_LINE_NODE_Y, TWO_LINE_ROW_HEIGHT, type GraphRow } from './graph.ts'
+import { computeGraph, graphSvg, NARROW_LANE_WIDTH, ROW_HEIGHT, TWO_LINE_NODE_Y, TWO_LINE_ROW_HEIGHT, type GraphRow } from './graph.ts'
 import { showMenu, type MenuEntry } from './menu.ts'
 import { mountPanelKeys } from './panelkeys.ts'
 import { createColumn, normalizeSections, type SectionId, type SectionPrefs } from './sections.ts'
@@ -308,7 +309,13 @@ function rowElement(index: number): HTMLElement {
   const labels = refLabels(commit.refs, repo?.head.branch ?? null)
   const subject = h('div', { class: 'cell subject' })
   const twoLine = rowH === TWO_LINE_ROW_HEIGHT
-  subject.innerHTML = graphSvg(graph[index], { head: isHead, dim, merge: commit.parents.length > 1, height: rowH, nodeY: twoLine ? TWO_LINE_NODE_Y : undefined })
+  subject.innerHTML = graphSvg(graph[index], {
+    head: isHead,
+    dim,
+    merge: commit.parents.length > 1,
+    height: rowH,
+    ...(twoLine ? { nodeY: TWO_LINE_NODE_Y, laneWidth: NARROW_LANE_WIDTH } : {})
+  })
   const line = twoLine ? h('div', { class: 'line' }) : subject
   if (twoLine) subject.append(h('div', { class: 'stack' }, line, h('div', { class: 'meta' }, `${commit.author} \u00b7 ${relativeDate(commit.authorTime)}`)))
   line.append(h('span', { class: 'text' }, commit.subject))
@@ -528,6 +535,8 @@ function setRepo(next: RepoInfo): void {
     detailsCache.clear()
     anchor = cursor = -1
     updateFiles()
+    repoNotes = []
+    loadNotes(next.root)
     // A repository opens on HEAD in the branch tree, as a click on it does.
     filter = { ...filter, branches: ['HEAD'] }
     viewport.scrollTop = 0
@@ -806,15 +815,32 @@ function selectRange(to: number, additive: boolean): void {
   selectionChanged()
 }
 
-/** Selects a commit asked for from outside: on HEAD's history first, else among every branch. */
-async function revealCommit(hash: string): Promise<void> {
+/** Counts revealCommit calls: one that waited for pages while a newer one came stops, as the newer is the user's last choice. */
+let revealGen = 0
+
+/**
+ * Selects a commit asked for from outside: on HEAD's history first, else among every branch. `focus: false`
+ * leaves the keyboard where it is; `file` becomes the current file once the selection's files load, if it is among them.
+ * It stops after any wait in which a newer reveal came or the panel switched to another repository.
+ */
+async function revealCommit(hash: string, { focus = true, file }: { focus?: boolean; file?: string } = {}): Promise<void> {
+  const mine = ++revealGen
+  const root = repo?.root
+  const current = () => mine === revealGen && repo?.root === root
   await loadUntil(() => indexByHash.has(hash))
+  if (!current()) return
   if (!indexByHash.has(hash) && filter.branches?.length) applyFilter({ branches: [] })
-  await jumpTo(hash)
+  await jumpTo(hash, focus, current)
+  if (!current() || !file || !selected.has(hash)) return
+  const token = filesToken
+  await filesLoad
+  if (token === filesToken) markCurrentFile(file)
 }
 
-async function jumpTo(hash: string): Promise<void> {
+/** Selects `hash` once the pages that hold it are loaded; nothing when `current` says the wait was overtaken. */
+async function jumpTo(hash: string, focus = true, current = () => true): Promise<void> {
   await loadUntil(() => indexByHash.has(hash))
+  if (!current()) return
   const index = indexByHash.get(hash)
   if (index === undefined) {
     showBanner(isFiltered() || filter.branches?.length ? t('commitHidden') : t('commitNotInLog'), 'info')
@@ -822,7 +848,7 @@ async function jumpTo(hash: string): Promise<void> {
   }
   selectOnly(index)
   viewport.scrollTop = Math.max(0, index * rowH - viewport.clientHeight / 3)
-  viewport.focus({ preventScroll: true })
+  if (focus) viewport.focus({ preventScroll: true })
 }
 
 viewport.addEventListener('mousedown', (event) => {
@@ -929,9 +955,33 @@ function drawFiles(): void {
     expanded: openFolders,
     current: currentFile,
     open: (file) => openFile(selectionFiles.indexOf(file)),
-    onToggle: drawFiles
+    onToggle: drawFiles,
+    notes: (file) => notesOfFile(repoNotes, file),
+    openNote: (file, note) => openFile(selectionFiles.indexOf(file), note.id)
   })
 }
+
+/** The review notes of the repository: each shows under the files of the selection whose diff shows it. */
+let repoNotes: ReviewNote[] = []
+let notesToken = 0
+
+/** Loads the notes of `root`; a failure shows none and says so in the banner. */
+function loadNotes(root: string): void {
+  const token = ++notesToken
+  void api.notes(root).then((answer) => answer.notes, (error) => {
+    if (token === notesToken) showBanner(t('notesLoadFailed', { error: errorMessage(error) }), 'error')
+    return []
+  }).then((notes) => {
+    if (token !== notesToken) return
+    repoNotes = notes
+    if (fileTree.length) drawFiles()
+  })
+}
+
+// A note was added, answered, resolved or deleted, here or in a Diff tab: its rows under the files follow.
+orca.plugin.on('notes.changed', ({ root }: { root: string }) => {
+  if (root === repo?.root) loadNotes(root)
+})
 
 function setAllFolders(open: boolean): void {
   openFolders.clear()
@@ -939,12 +989,12 @@ function setAllFolders(open: boolean): void {
   if (fileTree.length) drawFiles()
 }
 
-/** Makes `selectionFiles[index]` the current file and shows its diff in the Diff tab. */
-function openFile(index: number): void {
+/** Makes `selectionFiles[index]` the current file and shows its diff in the Diff tab, scrolled to the card of `note` when given. */
+function openFile(index: number, note?: string): void {
   if (!repo || index < 0 || index >= selectionFiles.length) return
   currentFile = selectionFiles[index].path
   drawFiles()
-  void openDiff(repo.root, index)
+  void openDiff(repo.root, index, note)
 }
 
 function updateFiles(): void {
@@ -971,6 +1021,8 @@ function updateFiles(): void {
       // The open file stays open when the new selection still changes it.
       if (!selectionFiles.some((file) => file.path === currentFile)) currentFile = null
       filesSection.setSummary(t('filesCount', { count: files.length }))
+      // A new selection's files start at the top: the redraw keeps the place the old tree was scrolled to.
+      filesPane.firstElementChild?.scrollTo(0, 0)
       if (files.length) drawFiles()
       else renderFilesNote('')
     })
@@ -1618,22 +1670,32 @@ async function forcePush(root: string, pushed: PushRequest): Promise<void> {
 }
 
 pushButton.addEventListener('click', () => void push())
-async function openDiff(root: string, index: number): Promise<void> {
+async function openDiff(root: string, index: number, note?: string): Promise<void> {
   try {
-    const result = await api.openDiff(root, filesHashes, selectionFiles[index])
+    const result = await api.openDiff(root, filesHashes, selectionFiles[index], note)
     if (!result.ok) showBanner(result.reason ?? t('openDiffFailed'), 'error')
   } catch (error) {
     showBanner(errorMessage(error), 'error')
   }
 }
 
-// The Diff tab stepped to another file: highlight it here too, if it is still in this selection. No diff.open: it is already shown.
-orca.plugin.on('diff.current', ({ root, path }: { root: string; path: string }) => {
-  if (root !== repo?.root || !selectionFiles.some((file) => file.path === path)) return
+/** Makes `path` the current file of the Files section, its folders open and scrolled to, if this selection changes it. */
+function markCurrentFile(path: string): void {
+  if (!selectionFiles.some((file) => file.path === path)) return
   currentFile = path
   for (const dir of dirPaths(fileTree)) if (path.startsWith(`${dir}/`)) openFolders.add(dir)
   drawFiles()
   filesPane.querySelector('.ft-row.current')?.scrollIntoView({ block: 'nearest' })
+}
+
+// The Diff tab stepped to another file: highlight it here too, if it is still in this selection. No diff.open: it is already shown.
+orca.plugin.on('diff.current', ({ root, path }: { root: string; path: string }) => {
+  if (root === repo?.root) markCurrentFile(path)
+})
+
+// The Diff tab opened a review note in its own commit: select that commit and its file here, leaving the keyboard where it is.
+orca.plugin.on('commit.reveal', ({ root, hash, path }: { root: string; hash: string; path: string }) => {
+  if (root === repo?.root) void revealCommit(hash, { focus: false, file: path })
 })
 
 // ---------- Keyboard ----------

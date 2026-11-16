@@ -1,7 +1,7 @@
 // Review notes in the Diff tab: the selection and its button, the editor, the threads under their lines and the list of all notes.
 import type { FileDiff, NoteDraft, NoteImage, NoteMessage, NotePoint, NoteResult, NoteSide, NoteVerdict, ReviewNote, SelectionFile } from '../shared/protocol.ts'
 import { t, type MessageKey } from '../shared/i18n.ts'
-import { lastAnswer, MAX_BODY, MAX_IMAGES, MAX_QUOTE, MAX_REVIEW_SKILLS, stateOf, unsentOf } from '../shared/notes.ts'
+import { lastAnswer, MAX_BODY, MAX_IMAGES, MAX_QUOTE, MAX_REVIEW_SKILLS, noteBlob, noteFileIndex, notesOfFile, stateOf, unsentOf } from '../shared/notes.ts'
 import { api, copyText, errorMessage, orca } from './api.ts'
 import type { DiffMode } from './diff.ts'
 import { h, icon, ICONS } from './dom.ts'
@@ -10,7 +10,7 @@ import { markRange } from './highlight.ts'
 import { disposeImages, thumbnail, uploadImage } from './images.ts'
 import { mdDom } from './markdown.ts'
 import { showMenu, showPopover, type MenuEntry } from './menu.ts'
-import { active, anchor, authorOf, coveredRange, notesOf, notesText, pickSide, sideLines, unsent } from './notemodel.ts'
+import { active, anchor, authorOf, coveredRange, notesText, pickSide, sideLines, unsent } from './notemodel.ts'
 import { browseDir, skillSuggestions } from './skillmodel.ts'
 
 export interface NotesView {
@@ -24,8 +24,14 @@ export interface NotesView {
   attach(lines: HTMLElement, diff: FileDiff, file: SelectionFile, mode: DiffMode): void
   /** Loads the notes of the repository, and with them the answers the worker reads; a failure or a warning shows in the Notes list. */
   load(): Promise<void>
+  /** Shows the file of this tab the note `id` shows in and scrolls to its card, as a click on it in the list does; call it once the file is shown. Before a list of notes is applied it waits for one. */
+  reveal(id: string): void
   /** Ctrl+Shift+A: opens the editor on the current selection; false when there is none to note. */
   addFromSelection(): boolean
+  /** When the open editor holds what the user typed or attached: shows it (its file first) with `reason` under it, and true. */
+  hold(reason: string): boolean
+  /** The notes of the diff shown, oldest first. */
+  visible(): ReviewNote[]
   dispose(): void
 }
 
@@ -51,6 +57,8 @@ function openLink(url: string): void {
 
 const label = (key: MessageKey, tone = '') => h('span', { class: `d-label ${tone}` }, t(key))
 const tool = (name: keyof typeof ICONS, key: MessageKey, run: () => void) => h('button', { class: 'tool', title: t(key), 'aria-label': t(key), onclick: run }, icon(name))
+/** A thread's action that says what it does: an outlined button with its icon and its label. */
+const action = (name: keyof typeof ICONS, key: MessageKey, run: () => void) => h('button', { class: 'tool d-note-action', onclick: run }, icon(name), h('span', null, t(key)))
 
 /**
  * Delete, asked once more in place as Delete all is: the first press arms the button (the destructive look; its label and,
@@ -246,6 +254,8 @@ export function mountNotes(options: {
   /** The agent the notes were last sent to, and the call that remembers a new choice. */
   agent?: string
   onAgent(agent: string): void
+  /** Called when the open editor closes: saved, cancelled, or its thread gone. */
+  closed(): void
 }): NotesView {
   const { root, files } = options
   let notes: ReviewNote[] = []
@@ -271,22 +281,35 @@ export function mountNotes(options: {
   let warning = ''
   let refused = ''
   let loads = 0
+  /** A list has been applied; until then a reveal waits in `pending`, as a load overtaken by a newer one applies none. */
+  let applied = false
+  let pending: string | null = null
   /** The agent chosen last, first in the menu. */
   let lastAgent = options.agent
 
-  const count = h('span')
-  const button = h('button', { class: 'tool', title: t('notesButtonTip'), onclick: () => void openList() }, icon('note'), count)
+  const count = h('span', { class: 'review-count' })
+  const button = h('button', { class: 'tool review-btn', title: t('notesButtonTip'), onclick: () => void openList() }, icon('note'), h('span', null, t('notesButton')), count)
   // A press would drop the selection the button is for.
   const addButton = h(
     'button',
     { class: 'tool note-add', title: t('noteAdd'), 'aria-label': t('noteAdd'), onmousedown: (event: MouseEvent) => event.preventDefault(), onclick: () => add() },
-    icon('note')
+    icon('note'),
+    h('span', null, t('noteAddShort'))
   )
-  const sendCount = h('span')
-  const sendButton = h('button', { class: 'tool', title: t('notesSend', { count: 0 }), 'aria-label': t('notesSend', { count: 0 }), onclick: () => void openSend() }, icon('send'), sendCount)
+  const sendCount = h('span', { class: 'review-count' })
+  const sendButton = h(
+    'button',
+    { class: 'tool review-btn primary', title: t('notesSend', { count: 0 }), 'aria-label': t('notesSend', { count: 0 }), onclick: () => void openSend() },
+    icon('send'),
+    h('span', null, t('notesSendButton')),
+    sendCount
+  )
   const notices = () => [refused, warning].filter(Boolean)
   const syncCount = () => {
-    count.textContent = `${t('notesButton')} (${active(notes).length})`
+    const unresolved = active(notes).length
+    count.textContent = String(unresolved)
+    // The label and the count read as one name, as the button's text said before it had a count of its own.
+    button.ariaLabel = `${t('notesButton')} (${unresolved})`
     const said = notices()
     button.classList.toggle('notes-warn', said.length > 0)
     button.title = said.length ? said.join('\n') : t('notesButtonTip')
@@ -296,7 +319,8 @@ export function mountNotes(options: {
     sendButton.style.display = open ? '' : 'none'
   }
   syncCount()
-  const blobOf = (side: NoteSide) => (side === 'old' ? diff?.oldBlob : diff?.newBlob)
+  // The rule of the panel's Files section: the file's blobs (those of the diff for M, A, D and R), none on a type change.
+  const blobOf = (side: NoteSide) => (file ? noteBlob(file, side) : undefined)
 
   function refresh(): void {
     syncCount()
@@ -333,15 +357,34 @@ export function mountNotes(options: {
     }
     // Only the latest answer is shown, and none after dispose.
     if (mine !== loads) return
-    if (list) notes = list
+    if (list) {
+      notes = list
+      applied = true
+    }
     warning = said
     refresh()
+    if (applied && pending) {
+      const id = pending
+      pending = null
+      revealNote(id)
+    }
+  }
+
+  /** Shows the file of this tab the note `id` shows in and scrolls to its card; before the first list, once it is applied. */
+  function revealNote(id: string): void {
+    if (!applied) {
+      pending = id
+      return
+    }
+    const note = notes.find((n) => n.id === id)
+    const index = note ? fileOf(note) : -1
+    if (index >= 0) reveal(index, id)
   }
 
   /** Drops the threads `ids` the worker no longer has, and the editor open in one of them. */
   function forget(ids: string[]): void {
     notes = notes.filter((n) => !ids.includes(n.id))
-    if (editor?.id && ids.includes(editor.id)) editor = null
+    if (editor?.id && ids.includes(editor.id)) drop()
     refresh()
   }
 
@@ -513,9 +556,28 @@ export function mountNotes(options: {
     area.focus()
   }
 
-  function closeEditor(): void {
+  /** Forgets the open editor: an opening of the tab may wait for it. */
+  function drop(): void {
     editor = null
+    options.closed()
+  }
+
+  function closeEditor(): void {
+    drop()
     options.rerender()
+  }
+
+  /** Brings the open editor into view and focus; one in another file of the tab, that file first (with Whole file when its lines need it). */
+  function showEditor(open: Editor): void {
+    const focus = () => {
+      if (!open.el.isConnected) return false
+      open.el.scrollIntoView({ block: 'nearest' })
+      open.area.focus({ preventScroll: true })
+      return true
+    }
+    if (focus()) return
+    const index = fileOf(open.anchor)
+    if (index >= 0) options.show(index, false, () => void (focus() || options.show(index, true, focus)))
   }
 
   async function save(): Promise<void> {
@@ -541,7 +603,7 @@ export function mountNotes(options: {
           : await api.noteReply(root, open.id, body, images)
       if (!result.ok) open.error.textContent = result.reason
       else if (result.note) {
-        if (editor === open) editor = null
+        if (editor === open) drop()
         put(result.note)
       }
     } catch (caught) {
@@ -597,7 +659,7 @@ export function mountNotes(options: {
       unfolded.delete(n.id)
       void change(n.id, api.noteResolve(root, n.id, yes)).then(() => refocus(n.id, '.d-note-toggle'))
     }
-    const toggle = resolved ? tool('undo', 'noteReopen', () => resolve(false)) : tool('check', 'noteResolve', () => resolve(true))
+    const toggle = resolved ? action('undo', 'noteReopen', () => resolve(false)) : action('check', 'noteResolve', () => resolve(true))
     toggle.classList.add('d-note-toggle')
     return h(
       'div',
@@ -617,7 +679,7 @@ export function mountNotes(options: {
             ]
           : [...labels(n), h('span', { class: 'spacer' })]),
         // Sending again takes the sent mark off the messages nobody answered, so they go with the next sending.
-        stateOf(n) === 'waiting' ? tool('refresh', 'noteResend', () => void change(n.id, api.noteResend(root, n.id))) : null,
+        stateOf(n) === 'waiting' ? action('refresh', 'noteResend', () => void change(n.id, api.noteResend(root, n.id))) : null,
         toggle,
         dropTool('noteDeleteThread', () => void remove([n.id]))
       ),
@@ -837,15 +899,17 @@ export function mountNotes(options: {
     ], sendButton)
   }
 
+  /** The file of this tab the note (or an editor's anchor) shows in, the one shown first; -1: none. */
+  const fileOf = (n: Pick<ReviewNote, 'side' | 'blob' | 'path'>) => noteFileIndex(files, n, file ? files.indexOf(file) : -1)
+
   function item(n: ReviewNote): HTMLElement {
-    const index = files.findIndex((f) => (n.side === 'new' ? f.path : (f.oldPath ?? f.path)) === n.path)
+    const index = fileOf(n)
     return h(
       'div',
       { class: `notes-item${n.resolvedAt !== undefined ? ' resolved' : ''}` },
-      // A note of a file this tab does not have stays in the list without a way to it.
       h(
         'button',
-        { class: 'notes-open', disabled: index < 0, onclick: () => reveal(index, n.id) },
+        { class: 'notes-open', onclick: () => (index >= 0 ? reveal(index, n.id) : void openCommit(n.id)) },
         h(
           'span',
           { class: 'notes-where' },
@@ -860,6 +924,17 @@ export function mountNotes(options: {
       // The list is narrow: its rows say it by the look and the label only.
       dropTool('noteDeleteThread', () => void remove([n.id]), false)
     )
+  }
+
+  /** A note this tab does not show: the worker opens the commit whose own diff shows it, in this tab; a refusal shows at the top of the list. */
+  async function openCommit(id: string): Promise<void> {
+    closeList?.()
+    try {
+      const result = await api.notesOpen(root, id)
+      if (!result.ok) notify(result.reason ?? '')
+    } catch (caught) {
+      notify(errorMessage(caught))
+    }
   }
 
   /** Shows the file of a note and scrolls to its card; the whole file when the note is of the diff shown but its lines are not in the changed regions. */
@@ -884,9 +959,10 @@ export function mountNotes(options: {
     if (!range) return
     const rects = range.getClientRects()
     const end = rects[rects.length - 1] ?? range.getBoundingClientRect()
-    addButton.style.left = `${Math.max(4, Math.min(end.right + 4, innerWidth - 30))}px`
-    addButton.style.top = `${Math.max(4, Math.min(end.top + end.height / 2 - 13, innerHeight - 30))}px`
+    // In first, so its width is known: the label makes it wider than its height.
     document.body.append(addButton)
+    addButton.style.left = `${Math.max(4, Math.min(end.right + 4, innerWidth - addButton.offsetWidth - 4))}px`
+    addButton.style.top = `${Math.max(4, Math.min(end.top + end.height / 2 - 13, innerHeight - 30))}px`
   }
   // While the press is held the selection collapses first and then grows: only a collapse after it ends the pick.
   const onSelection = () => {
@@ -920,7 +996,7 @@ export function mountNotes(options: {
       container = lines
       diff = next
       file = nextFile
-      shown = notesOf(notes, next).sort((a, b) => a.createdAt - b.createdAt)
+      shown = notesOfFile(notes, nextFile).sort((a, b) => a.createdAt - b.createdAt)
       // The side a selection starts on: CSS keeps the other side and the cards out of it.
       lines.addEventListener('mousedown', (event) => {
         if (event.button !== 0) return
@@ -933,7 +1009,18 @@ export function mountNotes(options: {
       })
     },
     load,
+    reveal: revealNote,
     addFromSelection: add,
+    hold(reason) {
+      const open = editor
+      if (!open || !typed(open)) return false
+      // A warning, not a failure: yellow, under the editor's own errors.
+      open.el.querySelector('.d-note-wait')?.remove()
+      open.el.append(h('div', { class: 'd-note-wait', role: 'status' }, reason))
+      showEditor(open)
+      return true
+    },
+    visible: () => shown,
     dispose() {
       loads++
       document.removeEventListener('mouseup', onUp)

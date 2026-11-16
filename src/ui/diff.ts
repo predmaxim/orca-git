@@ -1,13 +1,14 @@
 import type { DiffHunk, DiffLine, FileDiff, NoteSide, SelectionFile } from '../shared/protocol.ts'
 import { api, errorMessage } from './api.ts'
 import { h, icon } from './dom.ts'
-import { changedRange, changeStarts, splitRows } from './diffmodel.ts'
+import { changeBlocks, changedRange, splitRows, type ChangeKind } from './diffmodel.ts'
 import { fileIcon } from './fileicons.ts'
 import { shortHash, statusName } from './format.ts'
 import { t } from '../shared/i18n.ts'
 import { highlightLines, languageFor, markRange } from './highlight.ts'
 import { findKey, withKey } from './keys.ts'
 import { mountNotes, type NotesView } from './notes.ts'
+import { mountOverview, type OverviewMark } from './overview.ts'
 
 export type DiffMode = 'split' | 'unified'
 
@@ -24,6 +25,10 @@ export interface DiffOptions {
   onNoteAgent(agent: string): void
   /** Called when the user moves to another file with the arrows. */
   onIndex(index: number): void
+  /** Called when the note editor closes: saved, cancelled, or its thread gone. */
+  onEditorClosed(): void
+  /** The id of a note to scroll to once, when the notes and the file are loaded. */
+  reveal?: string
 }
 
 /** Highlight ranges for lines paired with a counterpart: only the changed middle is emphasised. */
@@ -76,24 +81,29 @@ const num = (value: number | undefined, kind?: string) =>
 const hunkRow = (hunk: DiffHunk) =>
   h('div', { class: 'd-hunk' }, `@@ -${hunk.oldStart} +${hunk.newStart} @@`, hunk.section ? h('span', { class: 'section' }, hunk.section) : null)
 
+const lineSpan = (first: number, last: number) => (first === last ? `${first}` : `${first}–${last}`)
+const blockTitle = { added: 'overviewAdded', deleted: 'overviewDeleted', modified: 'overviewModified' } as const
+
 /** The single place that turns hunks into rows; the rows of notes follow the lines they end on. */
-function renderLines(diff: FileDiff, mode: DiffMode, notes: NotesView): { rows: HTMLElement[]; changes: HTMLElement[] } {
+function renderLines(diff: FileDiff, mode: DiffMode, notes: NotesView): { rows: HTMLElement[]; blocks: { first: HTMLElement; last: HTMLElement; kind: ChangeKind; title: string }[] } {
   const ranges = wordRanges(diff.hunks)
   const html = highlightHunks(diff.hunks, languageFor(diff.path))
   const rows: HTMLElement[] = []
-  const changed: boolean[] = []
+  // What each row changes, and its line numbers for the title of its block.
+  const changed: { add: boolean; del: boolean; old?: number; new?: number }[] = []
   // A note row belongs to the block of the line above it, so F7 does not stop at it.
   const after = (side: NoteSide, line: number | undefined) => {
     if (line === undefined) return
     for (const row of notes.rowsAfter(side, line, mode)) {
       rows.push(row)
-      changed.push(changed[changed.length - 1])
+      const { add, del } = changed[changed.length - 1]
+      changed.push({ add, del })
     }
   }
   for (const hunk of diff.hunks) {
     if (diff.hunks.length > 1 || hunk.oldStart > 1 || hunk.newStart > 1) {
       rows.push(hunkRow(hunk))
-      changed.push(false)
+      changed.push({ add: false, del: false })
     }
     if (mode === 'split') {
       for (const { left, right } of splitRows(hunk)) {
@@ -108,20 +118,26 @@ function renderLines(diff: FileDiff, mode: DiffMode, notes: NotesView): { rows: 
             code(right, { new: right?.new }, ranges, html, notes)
           )
         )
-        changed.push(isChange)
+        changed.push({ add: right?.kind === '+', del: left?.kind === '-', old: left?.old, new: right?.new })
         after('old', left?.old)
         after('new', right?.new)
       }
     } else {
       for (const line of hunk.lines) {
         rows.push(h('div', { class: `d-row${line.kind === ' ' ? '' : ' change'}` }, num(line.old, line.kind), num(line.new, line.kind), code(line, { old: line.old, new: line.new }, ranges, html, notes)))
-        changed.push(line.kind !== ' ')
+        changed.push({ add: line.kind === '+', del: line.kind === '-', old: line.old, new: line.new })
         after('old', line.old)
         after('new', line.new)
       }
     }
   }
-  return { rows, changes: changeStarts(changed, Boolean).map((i) => rows[i]) }
+  const blocks = changeBlocks(changed).map(({ start, end, kind }) => {
+    // A deletion has old numbers only; the rest go by the new side.
+    const side = kind === 'deleted' ? 'old' : 'new'
+    const numbers = changed.slice(start, end + 1).flatMap((row) => row[side] ?? [])
+    return { first: rows[start], last: rows[end], kind, title: t(blockTitle[kind], { lines: lineSpan(numbers[0], numbers[numbers.length - 1]) }) }
+  })
+  return { rows, blocks }
 }
 
 /** Fills the container with the hint shown while no file is open. */
@@ -129,7 +145,7 @@ export function showDiffPlaceholder(container: HTMLElement): void {
   container.replaceChildren(h('div', { class: 'diff-view' }, h('div', { class: 'diff-note muted' }, t('diffSelectFile'))))
 }
 
-/** Shows `files[index]` in the container; Alt+↑/↓ moves between files, F7 between changes, Ctrl+Shift+A notes the selection. */
+/** Shows `files[index]` in the container and loads the notes; Alt+↑/↓ moves between files, F7 between changes, Ctrl+Shift+A notes the selection. */
 export function mountDiff(container: HTMLElement, options: DiffOptions): { notes: NotesView; dispose(): void } {
   const { root, files, onPrefs, onIndex, onNoteAgent } = options
   let index = Math.max(0, Math.min(options.index, files.length - 1))
@@ -143,11 +159,14 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { notes
   const counter = h('span', { class: 'muted' })
   const info = h('div', { class: 'diff-info mono muted' })
   const body = h('div', { class: 'diff-body', tabindex: '-1' })
+  // Next to the body, not in it: render() replaces what the body holds.
+  const overview = mountOverview(body)
   const notes = mountNotes({
     root,
     files,
     agent: options.noteAgent,
     onAgent: onNoteAgent,
+    closed: () => options.onEditorClosed(),
     rerender: () => {
       const top = body.scrollTop
       render()
@@ -192,12 +211,14 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { notes
       h('span', { class: 'sep' }),
       title,
       h('div', { class: 'spacer' }),
-      ...notes.buttons,
       h('div', { class: 'seg' }, splitButton, unifiedButton),
-      wholeButton
+      wholeButton,
+      // The review's own group, last: what the view shows first, then what to do with the notes.
+      h('span', { class: 'sep' }),
+      ...notes.buttons
     ),
     info,
-    body
+    h('div', { class: 'diff-main' }, body, overview.el)
   )
 
   function syncHeader(): void {
@@ -228,17 +249,31 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { notes
     if (diff.binary) {
       body.replaceChildren(note(t('diffBinary')))
       changes = []
+      overview.set([])
       return
     }
     if (!diff.hunks.length) {
       body.replaceChildren(note(files[index].oldPath ? t('diffRenamedOnly') : t('diffNoChanges')))
       changes = []
+      overview.set([])
       return
     }
     const rendered = renderLines(diff, mode, notes)
-    changes = rendered.changes
+    changes = rendered.blocks.map((block) => block.first)
     lines.append(...rendered.rows)
     body.replaceChildren(...(diff.truncated ? [note(t('diffTruncated'))] : []), lines)
+    overview.set(wholeFile ? [...rendered.blocks.map(({ first, last, kind, title }) => ({ from: first, to: last, kind, title })), ...noteMarks(lines)] : [])
+  }
+
+  /** The marks of the notes shown, from the row of their first line to the row of their last; a note without its rows here has none. */
+  function noteMarks(lines: HTMLElement): OverviewMark[] {
+    const row = (side: NoteSide, line: number) => lines.querySelector(`.d-code[data-${side}="${line}"]`)?.closest<HTMLElement>('.d-row')
+    return notes.visible().flatMap((n): OverviewMark[] => {
+      const from = row(n.side, n.start.line)
+      const to = row(n.side, n.end.line)
+      const text = (n.messages[0]?.body ?? '').split('\n', 1)[0]
+      return from && to ? [{ from, to, kind: n.resolvedAt === undefined ? 'note' : 'note-resolved', title: t('overviewNote', { lines: lineSpan(n.start.line, n.end.line), text }) }] : []
+    })
   }
 
   /** Loads and shows the current file; true when it is shown, not overtaken by another load or failed. */
@@ -247,6 +282,7 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { notes
     syncHeader()
     diff = null
     body.replaceChildren(h('div', { class: 'diff-note muted' }, t('diffLoading')))
+    overview.set([])
     try {
       const result = await api.rangeDiff(root, files[index], wholeFile)
       if (mine !== token) return false
@@ -315,13 +351,21 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { notes
 
   document.addEventListener('keydown', onKey)
   container.replaceChildren(view)
-  void load()
+  const shown = load()
+  void notes.load()
+  // Once the file is shown, reveal finds it loaded and does not load it again; the notes view waits for its list itself.
+  const id = options.reveal
+  if (id)
+    void shown.then((ok) => {
+      if (ok) notes.reveal(id)
+    })
   return {
     notes,
     dispose() {
       token++
       document.removeEventListener('keydown', onKey)
       notes.dispose()
+      overview.dispose()
     }
   }
 }

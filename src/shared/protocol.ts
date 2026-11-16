@@ -87,6 +87,9 @@ export interface FileChange {
 export interface SelectionFile extends FileChange {
   from: string | null
   to: string
+  /** Full blob ids of the two sides; absent for a side that does not exist. A pure rename or a mode change has two equal ids. */
+  oldBlob?: string
+  newBlob?: string
 }
 
 export interface CommitDetails {
@@ -351,6 +354,10 @@ export interface DiffTabState {
   root: string
   files: SelectionFile[]
   index: number
+  /** This opening of the tab: 12 hex, new on each `diff.open` and `notes.open`. The tab scrolls to `reveal` once per `open`. */
+  open: string
+  /** The id of the note the tab scrolls to once it shows the file; every `diff.state` gives it until `diff.index` or another opening. */
+  reveal?: string
 }
 
 declare module 'orca' {
@@ -380,14 +387,16 @@ declare module 'orca' {
     'repo.fetch': { input: { root: string; id?: string }; output: ActionResult }
     'push.check': { input: { root: string }; output: { ok: true; plan: PushPlan } | { ok: false; reason: string } }
     'push.run': { input: { root: string; push: PushRequest; id?: string }; output: PushResult }
-    /** Opens the Diff tab on the file `path` changed by commit `to` in the selection `hashes`; the worker lists the files. */
-    'diff.open': { input: { root: string; hashes: string[]; path: string; to: string }; output: { ok: boolean; reason?: string } }
+    /** Opens the Diff tab on the file `path` changed by commit `to` in the selection `hashes`; the worker lists the files. `note`: the id of a note the tab scrolls to once; anything but 12 hex is ignored. */
+    'diff.open': { input: { root: string; hashes: string[]; path: string; to: string; note?: string }; output: { ok: boolean; reason?: string } }
     /** Brings forward the Diff tab `diff.open` showed for `root`, without reloading it; `ok: false` if none was shown. */
     'diff.focus': { input: { root: string }; output: { ok: boolean; reason?: string } }
     'diff.state': { input: { root: string }; output: DiffTabState | null }
     /** The Diff tab stepped to another file of its state. */
     'diff.index': { input: { root: string; index: number }; output: { ok: boolean } }
     'notes.list': { input: { root: string }; output: { notes: ReviewNote[]; warning?: string } }
+    /** Opens the Diff tab on the commit whose own diff shows the note `id`, to scroll to it once, and posts `commit.reveal`; `reason` when the note, its commit or its file there is gone. */
+    'notes.open': { input: { root: string; id: string }; output: { ok: boolean; reason?: string } }
     'notes.add': { input: { root: string; draft: NoteDraft }; output: NoteResult }
     /** A new message of the user at the end of the thread; it opens a resolved one again. */
     'notes.reply': { input: { root: string; id: string; body: string; images?: NoteImage[] }; output: NoteResult }
@@ -429,5 +438,7 @@ declare module 'orca' {
     'diff.current': { root: string; path: string }
     /** The notes of `root` changed. */
     'notes.changed': { root: string }
+    /** The Diff tab of `root` now shows commit `hash`, the commit of a note: the panel of `root` selects it and the file `path`. */
+    'commit.reveal': { root: string; hash: string; path: string }
   }
 }

@@ -35,11 +35,22 @@ export function changedRange(before: string, after: string): [number, number, nu
   return [start, before.length - end, after.length - end]
 }
 
-/** Indexes (in rows) where a block of changes starts, for next/previous change navigation. */
-export function changeStarts<T>(rows: T[], changed: (row: T) => boolean): number[] {
-  const starts: number[] = []
+export type ChangeKind = 'added' | 'deleted' | 'modified'
+/** A run of changed rows, `start` to `end` inclusive: what F7 goes to and the map of the file shows. */
+export interface ChangeBlock { start: number; end: number; kind: ChangeKind }
+
+/** The blocks of changed rows: only additions are added, only deletions deleted, both in a block modified. */
+export function changeBlocks(rows: { add: boolean; del: boolean }[]): ChangeBlock[] {
+  const blocks: ChangeBlock[] = []
   rows.forEach((row, i) => {
-    if (changed(row) && (i === 0 || !changed(rows[i - 1]))) starts.push(i)
+    if (!row.add && !row.del) return
+    const kind: ChangeKind = row.add && row.del ? 'modified' : row.add ? 'added' : 'deleted'
+    const last = blocks[blocks.length - 1]
+    if (last?.end !== i - 1) blocks.push({ start: i, end: i, kind })
+    else {
+      last.end = i
+      if (last.kind !== kind) last.kind = 'modified'
+    }
   })
-  return starts
+  return blocks
 }

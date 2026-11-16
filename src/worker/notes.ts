@@ -13,6 +13,8 @@ const hash = (root: string): string => createHash('sha256').update(root).digest(
 export const notesKey = (root: string): string => 'notes:' + hash(root)
 /** The agent the last send of a root went to: `{ root, terminalId, agent }`. */
 export const agentKey = (root: string): string => 'agent:' + hash(root)
+/** What the Diff tab of a root shows, for a worker Orca restarted after it stopped while idle: `{ root, hashes, path, to, open, reveal? }`. */
+export const diffKey = (root: string): string => 'diff:' + hash(root)
 /** One note of a root, with all its messages. */
 export const noteKey = (root: string, id: string): string => 'note:' + hash(root) + ':' + id
 const newId = (): string => randomBytes(6).toString('hex')

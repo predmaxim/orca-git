@@ -1,9 +1,9 @@
-import type { FileChange, FileDiff, SelectionFile } from '../shared/protocol.ts'
+import type { FileDiff, SelectionFile } from '../shared/protocol.ts'
 import { oldestFirst } from './actions.ts'
 import { parseUnifiedDiff } from './diff.ts'
 import type { Git } from './git.ts'
 import { t } from '../shared/i18n.ts'
-import { parseNameStatus } from './log.ts'
+import { parseRaw, RAW_ENTRY, type RawChange } from './log.ts'
 
 const HASH = /^[0-9a-f]{40}$/
 const EMPTY_TREE = { sha1: '4b825dc642cb6eb9a060e54bf8d69288fbee4904', sha256: '6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321' }
@@ -19,7 +19,7 @@ interface Entry {
   from: string | null
   to: string
   /** The change itself while a single selected commit is all that touches the file. */
-  only?: FileChange
+  only?: RawChange
 }
 
 /** The files a set of commits changes together: each file from where the selection first touches it to where it last does. */
@@ -30,9 +30,9 @@ export async function readSelectionFiles(git: Git, hashes: string[]): Promise<Se
   }
   const order = await oldestFirst(git, hashes)
   // --encoding=UTF-8: under i18n.logOutputEncoding=UTF-16 git would print even the hashes in UTF-16.
-  const log = await git.out(['log', '--no-walk=unsorted', '--encoding=UTF-8', '--format=%H%x00%P', '-z', '--name-status', '-M', '--root', '--diff-merges=first-parent', ...order, '--'])
+  const log = await git.out(['log', '--no-walk=unsorted', '--encoding=UTF-8', '--format=%H%x00%P', '-z', '--raw', '--no-abbrev', '-M', '--root', '--diff-merges=first-parent', ...order, '--'])
   const entries = new Map<string, Entry>()
-  // Per commit, in `order`: `<hash>\0<parents>\0`, then a newline and `<status>\0<path>\0` (two paths for a rename or copy) per file.
+  // Per commit, in `order`: `<hash>\0<parents>\0`, then a newline and `:<modes> <blobs> <status>\0<path>\0` (two paths for a rename or copy) per file.
   // Only NUL separates: a path can hold any other byte.
   const fields = log.split('\0')
   let i = 0
@@ -40,8 +40,8 @@ export async function readSelectionFiles(git: Git, hashes: string[]): Promise<Se
     if (fields[i] !== hash) throw new Error(t('gitOutputUnreadable', { command: 'log' }))
     const parent = fields[i + 1].split(' ')[0] || null
     const start = (i += 2)
-    while (/^\n?[A-Z]\d*$/.test(fields[i] ?? '')) i += /^\n?[RC]/.test(fields[i]) ? 3 : 2
-    for (const f of parseNameStatus(fields.slice(start, i).join('\0'))) {
+    while (RAW_ENTRY.test(fields[i] ?? '')) i += / [RC]\d*$/.test(fields[i]) ? 3 : 2
+    for (const f of parseRaw(fields.slice(start, i).join('\0'))) {
       const key = f.status === 'R' && f.oldPath ? f.oldPath : f.path
       const e = entries.get(key)
       entries.delete(key)
@@ -66,8 +66,8 @@ export async function readSelectionFiles(git: Git, hashes: string[]): Promise<Se
     for (let items = queue.shift(); items; items = queue.shift()) {
       const { from, to } = items[0][1]
       const paths = [...new Set(items.flatMap(([path, e]) => [path, e.orig]))].map(literal)
-      const diff = await git.out(['diff', '--name-status', '-z', '-M', from ?? tree, to, '--', ...paths])
-      for (const change of parseNameStatus(diff)) {
+      const diff = await git.out(['diff', '--raw', '--no-abbrev', '-z', '-M', from ?? tree, to, '--', ...paths])
+      for (const change of parseRaw(diff)) {
         // A change shows under the current path, or under the original one when the file was renamed and then deleted.
         if (items.some(([path, e]) => path === change.path || (change.status === 'D' && e.orig === change.path) || e.orig === change.oldPath)) found.get(items)!.push({ ...change, from, to })
       }
