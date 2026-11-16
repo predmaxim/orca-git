@@ -11,7 +11,7 @@ import { checkBackup, checkReset, deleteBackup, runGuarded } from './backup.ts'
 import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
 import { DIFF_ANCHOR, fitWindow, workspaceFor } from './diffTab.ts'
 import { buildFileTree, orderedFiles } from '../shared/filetree.ts'
-import { createGit, type Git } from './git.ts'
+import { createGit, GitError, type Git } from './git.ts'
 import { readDetails, readLogPage, readRefs } from './log.ts'
 import { resolveRepo, toplevel } from './repo.ts'
 import { takeReveal } from './reveal.ts'
@@ -222,30 +222,39 @@ async function keepDiff(root: string): Promise<void> {
 
 /**
  * The Diff tab of `root` as the plugin's storage keeps it, built again as `openDiff` builds it, for a worker that starts with
- * nothing in memory; null when nothing is kept or it no longer fits the repository.
+ * nothing in memory; null when nothing is kept, and null with a line in the log when the value fails the check or git refuses
+ * its commits (gone). Throws when the storage cannot be read, the repository cannot be opened or git was stopped (the time
+ * limit of a read on a long history): the tab and the panel show that error, not the placeholder.
  */
 async function restoreDiff(root: unknown): Promise<DiffKept | null> {
   if (typeof root !== 'string') return null
-  try {
-    const kept = (await orcaApi.storage.get(diffKey(root))) as any
-    if (kept === null) return null
-    if (kept?.root !== root || typeof kept.path !== 'string' || typeof kept.to !== 'string' || typeof kept.open !== 'string') throw new Error('invalid value')
-    // It refuses anything but 1 to 500 full hashes, and git refuses a commit that is gone.
-    const files = orderedFiles(buildFileTree(await readSelectionFiles(await gitFor(root), kept.hashes)))
-    if (!files.length) return null
-    // A `diff.open` or another read while git ran has set the state already: that one stays.
-    const now = diffStates.get(root)
-    if (now) return now
-    const index = Math.max(0, files.findIndex((file) => file.path === kept.path && file.to === kept.to))
-    const { first, count } = fitWindow(files, index)
-    const reveal = typeof kept.reveal === 'string' && /^[0-9a-f]{12}$/.test(kept.reveal) ? kept.reveal : undefined
-    const state: DiffKept = { root, files: files.slice(first, first + count), index: index - first, open: kept.open, ...(reveal ? { reveal } : {}), hashes: kept.hashes }
-    diffStates.set(root, state)
-    return state
-  } catch (error) {
-    orcaApi.log(`Diff tab not restored for ${root}: ${errorText(error)}`)
+  const kept = (await orcaApi.storage.get(diffKey(root))) as any
+  if (kept === null) return null
+  const hashes: unknown = kept?.hashes
+  // The hashes as readSelectionFiles takes them (1 to 500 full ones), checked here: its refusal of others is no git refusal.
+  if (kept?.root !== root || typeof kept.path !== 'string' || typeof kept.to !== 'string' || typeof kept.open !== 'string' || !Array.isArray(hashes) || hashes.length < 1 || hashes.length > 500 || !hashes.every((hash) => typeof hash === 'string' && /^[0-9a-f]{40}$/.test(hash))) {
+    orcaApi.log(`Diff tab not restored for ${root}: invalid value`)
     return null
   }
+  let files: SelectionFile[]
+  try {
+    files = orderedFiles(buildFileTree(await readSelectionFiles(await gitFor(root), hashes)))
+  } catch (error) {
+    // Refused, not stopped: git answers a commit that is gone with an exit code; a stopped git has none.
+    if (!(error instanceof GitError) || error.result.code === null) throw error
+    orcaApi.log(`Diff tab not restored for ${root}: ${errorText(error)}`)
+    return diffStates.get(root) ?? null
+  }
+  if (!files.length) return null
+  // A `diff.open` or another read while git ran has set the state already: that one stays.
+  const now = diffStates.get(root)
+  if (now) return now
+  const index = Math.max(0, files.findIndex((file) => file.path === kept.path && file.to === kept.to))
+  const { first, count } = fitWindow(files, index)
+  const reveal = typeof kept.reveal === 'string' && /^[0-9a-f]{12}$/.test(kept.reveal) ? kept.reveal : undefined
+  const state: DiffKept = { root, files: files.slice(first, first + count), index: index - first, open: kept.open, ...(reveal ? { reveal } : {}), hashes }
+  diffStates.set(root, state)
+  return state
 }
 
 /** Brings the Diff tab of `root` forward as it is: no new state, no `diff.show`, so it keeps its scroll. */

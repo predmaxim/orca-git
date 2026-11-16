@@ -448,7 +448,8 @@ keeps them all.
   selection shows Orca's refusal instead of the files, and its Diff tab cannot be opened from them.
 - The Diff tab keeps its selection, not its files: a new worker lists them again from git, and when the
   selected commits are gone (rebased away and collected), the tab shows its placeholder until you open a
-  file again. When the files do not fit in the 900,000 bytes, the new worker centers them on the file the
+  file again; when the plugin's storage cannot be read or git is stopped at its time limit, the tab shows
+  that error instead, and the next read tries again. When the files do not fit in the 900,000 bytes, the new worker centers them on the file the
   tab was on, and a step in a tab that stayed open may then record another file than the one it shows.
 - Conflicts during a rewrite, cherry-pick or revert are not resolved in the panel; the operation is
   aborted (or, when Git is left mid-operation by a terminal command, a banner says so).

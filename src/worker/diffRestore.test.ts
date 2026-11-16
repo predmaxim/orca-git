@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { rmSync } from 'node:fs'
-import { assert, mountWorker, test } from 'orca/testing'
+import { chmodSync, rmSync, writeFileSync } from 'node:fs'
+import { assert, hostError, mountWorker, test } from 'orca/testing'
 import type { JsonValue } from 'orca'
 import type { DiffTabState } from '../shared/protocol.ts'
 import * as main from './main.ts'
@@ -128,6 +128,34 @@ test('a stored selection whose commits are gone shows the placeholder', async ()
     const worker = await mountWorker(main, { host: host(root) })
     assert.equal(await worker.request('diff.state', { root }), null)
     assert.deepEqual(worker.logs, [])
+    await worker.deactivate()
+  } finally {
+    remove(root)
+  }
+})
+
+test('a stored Diff tab that cannot be read now is an error, not the placeholder', async () => {
+  const root = fixture()
+  try {
+    const [three] = commits(root)
+    const kept = { [diffKey(root)]: { root, hashes: [three], path: 'three.txt', to: three, open: 'abcdef012345' } }
+    // A git stopped before it answers (killed, as the 60 s limit of a read kills it): the commits may be there. The module
+    // keeps the git of a root across mounts, so this root never meets the real one here.
+    const gitPath = `${root}/stopped-git`
+    writeFileSync(gitPath, '#!/bin/sh\nfor a; do [ "$a" = rev-list ] && kill -9 $$; done\nexec git "$@"\n')
+    chmodSync(gitPath, 0o755)
+    let worker = await mountWorker(main, { host: host(root, {}, kept, { gitPath }) })
+    await assert.rejects(worker.request('diff.state', { root }))
+    // diff.focus too: the panel's 0 shows the error instead of opening its own selection over the kept one.
+    await assert.rejects(worker.request('diff.focus', { root }))
+    assert.deepEqual(worker.logs, [])
+    await worker.deactivate()
+    // A storage read Orca refuses.
+    const refused = () => {
+      throw hostError('unavailable', 'storage is not there')
+    }
+    worker = await mountWorker(main, { host: host(root, { 'storage.get': refused }) })
+    await assert.rejects(worker.request('diff.state', { root }), /storage is not there/)
     await worker.deactivate()
   } finally {
     remove(root)
