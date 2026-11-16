@@ -139,6 +139,20 @@ test('user diff settings do not change the hunks', async () => {
   assert.deepEqual(await placeNotes(git, [note('n1', 'new', blob(a), a, 3, 3)], await files([c]), new Map()), [[at('n1', 4, 4)]])
 })
 
+test('a file that became binary shows its notes neither carried nor outdated', async () => {
+  const { git, commit, files, blob, run } = repo()
+  const a = commit('a', { 'a.txt': text(...SIX) })
+  const b = commit('b', { 'a.txt': text('a', 'b', 'c', 'd\0', 'e', 'f') })
+  // git itself calls b's version binary; --text, which the hunks need, would compare it as text.
+  assert.match(run('diff', a, b, '--', 'a.txt'), /^Binary files /m)
+  // n1's lines are untouched and n2's changed: compared as text, n1 would be carried and n2 outdated.
+  const notes = [note('n1', 'new', blob(a), a, 1, 2), note('n2', 'new', blob(a), a, 4, 4)]
+  const cache = new Map()
+  assert.deepEqual(await placeNotes(git, notes, await files([b]), cache), [[]])
+  // A blob never changes, so the pair is kept and git runs once for it.
+  assert.equal(cache.get(`${blob(a)}:${blob(b)}`), null)
+})
+
 test('notes.place carries a stored note to the files a frame sends, at most 100 at a time', async () => {
   const { root, commit, files, blob } = repo()
   const a = commit('a', { 'a.txt': text(...SIX) })

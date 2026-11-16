@@ -37,23 +37,27 @@ export function carryLines(hunks: Hunk[], start: number, end: number): { start: 
 }
 
 /**
- * The hunks between two blobs: from `cache` (a blob never changes) or one `git diff`. Null when git gives none (a blob it does
- * not have, binary content), logged and not kept: the blob may come with a fetch, or be in another repository.
+ * The hunks between two blobs: from `cache` (a blob never changes) or one `git diff`. Null for binary content, kept, and when
+ * git gives none (a blob it does not have), not kept: the blob may come with a fetch, or be in another repository. Both logged.
  * `--inter-hunk-context=0`: diff.interHunkContext would join hunks over the unchanged lines between them. `--text`: a -diff or
- * binary attribute, which git matches against the blob ids too, would make it "Binary files differ".
+ * binary attribute, which git matches against the blob ids too, would make it "Binary files differ"; so git compares binary
+ * blobs as text too, and binary content is told by a NUL byte in the lines that changed.
  */
 export async function blobHunks(git: Git, from: string, to: string, cache: Map<string, Hunk[] | null>): Promise<Hunk[] | null> {
   const key = `${from}:${to}`
-  const kept = cache.get(key)
-  if (kept) return kept
+  if (cache.has(key)) return cache.get(key) ?? null
   if (!hex(from) || !hex(to)) return null
   const diff = await git.run(['diff', '-U0', '--inter-hunk-context=0', '--text', '--no-color', '--no-ext-diff', '--no-textconv', from, to])
-  if (!diff.ok || /^Binary files /m.test(diff.stdout)) {
-    log(`notes not carried from ${from} to ${to}: ${lastLines(diff.stderr) || 'binary content'}`)
+  if (!diff.ok) {
+    log(`notes not carried from ${from} to ${to}: ${lastLines(diff.stderr)}`)
     return null
   }
+  // shortcut: git calls a blob binary for a NUL in its first 8000 bytes, this for one anywhere in a changed line (a note's own
+  // blob, written on lines the Diff tab showed, has none); read the blobs' first bytes if a text file with a late NUL loses notes.
+  const binary = diff.stdout.includes('\0')
+  if (binary) log(`notes not carried from ${from} to ${to}: binary content`)
   if (cache.size >= MAX_PAIRS) cache.clear()
-  const hunks = parseHunks(diff.stdout)
+  const hunks = binary ? null : parseHunks(diff.stdout)
   cache.set(key, hunks)
   return hunks
 }
