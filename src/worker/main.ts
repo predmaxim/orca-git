@@ -469,8 +469,8 @@ export default function activate(orca: OrcaWorkerApi): void {
   const isFree = async (record: { terminalId: string; agent: string }): Promise<boolean> => {
     try {
       const { agents } = (await orca.host.call('agents.list')) as { agents?: { terminalId: string | null; agent: string | null; state: string }[] }
-      const found = Array.isArray(agents) && agents.find((a) => a?.terminalId === record.terminalId)
-      return Boolean(found) && found!.agent === record.agent && found!.state === 'done'
+      const found = Array.isArray(agents) ? agents.find((a) => a?.terminalId === record.terminalId) : undefined
+      return found?.agent === record.agent && found.state === 'done'
     } catch {
       return false
     }
