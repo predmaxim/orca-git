@@ -2042,6 +2042,19 @@ input[type='radio']:focus-visible {
   flex: 1;
 }
 
+/* A delete armed by its first press: the destructive red until the second press, a blur or Esc. */
+.tool.armed,
+.tool.armed:hover {
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+  color: var(--danger);
+}
+
+/* The icon keeps its size next to the text, where the first press found it. */
+.tool.armed > .icon {
+  width: 16px;
+  height: 16px;
+}
+
 /* A resolved thread's line: its state, the start of its first message and the count; a press opens or closes it. */
 .d-note-fold {
   flex: 1;

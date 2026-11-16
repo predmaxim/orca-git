@@ -52,6 +52,35 @@ function openLink(url: string): void {
 const label = (key: MessageKey, tone = '') => h('span', { class: `d-label ${tone}` }, t(key))
 const tool = (name: keyof typeof ICONS, key: MessageKey, run: () => void) => h('button', { class: 'tool', title: t(key), 'aria-label': t(key), onclick: run }, icon(name))
 
+/**
+ * Delete, asked once more in place as Delete all is: the first press arms the button (the destructive look; its label and,
+ * with `text`, its text say Press again to delete), the second runs `run`. Leaving the button, Esc or a redraw disarms it.
+ */
+function dropTool(key: MessageKey, run: () => void, text = true): HTMLElement {
+  const words = h('span', null, t('noteDeleteConfirm'))
+  const armed = () => button.classList.contains('armed')
+  const arm = (on: boolean) => {
+    button.classList.toggle('armed', on)
+    button.title = button.ariaLabel = t(on ? 'noteDeleteConfirm' : key)
+    // Before the icon: the icon stays where the first press found it.
+    if (text && on) button.prepend(words)
+    else words.remove()
+  }
+  const button = tool('drop', key, () => {
+    if (!armed()) return arm(true)
+    arm(false)
+    run()
+  })
+  button.onblur = () => arm(false)
+  button.onkeydown = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape' || !armed()) return
+    event.preventDefault()
+    event.stopPropagation()
+    arm(false)
+  }
+  return button
+}
+
 /** The verdict of an agent's message and Fixed. */
 const verdict = (m: NoteMessage): HTMLElement[] => (m.verdict ? [label(VERDICT[m.verdict], m.verdict), ...(m.fixed ? [label('noteFixed', 'fixed')] : [])] : [])
 
@@ -469,13 +498,13 @@ export function mountNotes(options: {
       draw()
       return result.ok
     }
-    /** Pasted image files are sent one after another, until one is refused; anything else is pasted as text. */
+    /** Pasted image files are sent one after another, until one is refused; plain text pasted with them or alone goes in as text. */
     const paste = async (event: ClipboardEvent) => {
       const files = Array.from(event.clipboardData?.files ?? [])
       const items = Array.from(event.clipboardData?.items ?? []).filter((item) => item.kind === 'file').map((item) => item.getAsFile())
       const pasted = (files.length ? files : items).filter((file): file is File => file?.type.startsWith('image/') === true)
       if (!pasted.length) return
-      event.preventDefault()
+      if (!event.clipboardData?.getData('text/plain')) event.preventDefault()
       for (const file of pasted) if (!(await attach(file.name, () => uploadImage(root, file, file.name)))) break
     }
     draw()
@@ -492,7 +521,12 @@ export function mountNotes(options: {
   async function save(): Promise<void> {
     const open = editor
     // An image still being sent would be left out: the save waits for the user to press again.
-    if (!open || saving || open.sending.length || !open.area.value.trim()) return
+    if (!open || saving || open.sending.length) return
+    if (!open.area.value.trim()) {
+      // Images alone make no message: say what is missing.
+      if (open.images.length) open.error.textContent = t('noteNeedsText')
+      return
+    }
     // An edit that changes nothing sends nothing.
     if (open.message && open.area.value.trim() === open.start) return closeEditor()
     saving = true
@@ -532,7 +566,7 @@ export function mountNotes(options: {
         draft ? h('span', { class: 'muted d-note-unsent' }, t('noteUnsent')) : null,
         h('span', { class: 'spacer' }),
         draft ? tool('edit', 'noteEdit', () => openEditor(n, { id: n.id, message: m.id }, m.body, m.images)) : null,
-        tool('drop', 'noteDeleteMessage', () => void change(n.id, api.noteRemove(root, n.id, m.id)))
+        dropTool('noteDeleteMessage', () => void change(n.id, api.noteRemove(root, n.id, m.id)))
       ),
       h('div', { class: 'md' }, mdDom(m.body, openLink)),
       m.images?.length ? h('div', { class: 'd-note-images' }, ...m.images.map((image) => thumbnail(root, image))) : null
@@ -585,7 +619,7 @@ export function mountNotes(options: {
         // Sending again takes the sent mark off the messages nobody answered, so they go with the next sending.
         stateOf(n) === 'waiting' ? tool('refresh', 'noteResend', () => void change(n.id, api.noteResend(root, n.id))) : null,
         toggle,
-        tool('drop', 'noteDeleteThread', () => void remove([n.id]))
+        dropTool('noteDeleteThread', () => void remove([n.id]))
       ),
       ...(open ? n.messages.map((m) => (mine?.message === m.id ? mine.el : message(n, m))) : []),
       // A reply being written stays in its thread, resolved meanwhile or not; a new one starts only in a thread not resolved.
@@ -823,7 +857,8 @@ export function mountNotes(options: {
         h('span', { class: 'mono muted' }, firstLine(n.quote)),
         h('span', null, firstLine(n.messages[0]?.body ?? ''))
       ),
-      tool('drop', 'noteDeleteThread', () => void remove([n.id]))
+      // The list is narrow: its rows say it by the look and the label only.
+      dropTool('noteDeleteThread', () => void remove([n.id]), false)
     )
   }
 

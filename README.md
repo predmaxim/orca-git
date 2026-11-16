@@ -84,16 +84,21 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   thread. Below, the messages oldest first, each with its author (You, or Agent and its kind), its time
   and a Delete button; the agent's messages stand on a tint and carry their own verdict and Fixed; your
   messages not sent yet say Not sent and have Edit (sent text stays as the agent saw it). Deleting the
-  last message deletes the thread; an agent's answer you delete does not come back. **Reply…** under the
+  last message deletes the thread; an agent's answer you delete does not come back. Every Delete of a
+  thread or a message, here and in the Notes list, asks once more in place: the first press turns the
+  button red with "Press again to delete" (in the list, its tooltip says it), the second deletes; moving
+  the focus away, Esc or a redraw of the thread leaves it as it was. **Reply…** under the
   messages opens the same editor as a new note; the reply stays unsent while the thread waits for an
   answer. A resolved thread folds to one line (Resolved, the start of its first message and the count of
   messages) that opens and closes on a click; it takes no reply and is not sent until **Open again**.
   One editor is open at a time: typed text or attached images are not dropped for another one.
-  **Images** go with a new note or a reply: paste one into the editor (Ctrl+V), or press **Attach a file**
+  **Images** go with a new note or a reply: paste one into the editor (Ctrl+V; text pasted with it goes in
+  as text), or press **Attach a file**
   (the image icon) for a path field that suggests the images and folders of the folder typed so far, with
   the keys of the skills' field below (a full path, `~/…` or from the repository root). A message takes up
   to 5 PNG, JPEG, GIF or WebP images of up to 5 MiB each; they stand under the field, each with × to take
-  it off, and a refused image says why under the field. An edit keeps the message's images as they are.
+  it off, and a refused image says why under the field. A message needs text: Enter with images and no
+  text says so under the field. An edit keeps the message's images as they are.
   A message shows its images as thumbnails 96 px high under its text; a click or Enter opens one over the
   tab with its name and size, and Esc, a click outside it or × closes it. Links open
   in the browser. **Notes (N)** in the tab's header counts the threads not resolved and lists every
@@ -427,8 +432,8 @@ keeps them all.
 - An answer appears when the agent has written its file in that form (a known `verdict:`, at most 64 KiB,
   a regular file); anything else is ignored. `fixed` is the agent's word: the plugin does not check it.
 - Review notes: up to 200 per repository, each with up to 100 messages. Orca limits a stored value to
-  256 KiB, and a note with its answers is one value: a note or an answer that does not fit is refused with
-  a message; deleting notes frees space. The Notes list carries at most 900,000 bytes of notes (Orca
+  256 KiB, and a thread with all its messages is one value: a message or an answer that does not fit is
+  refused with a message; deleting messages or threads you no longer need frees space. The Notes list carries at most 900,000 bytes of notes (Orca
   limits a worker's answer to 1 MiB): unresolved notes first, then resolved, newest first; a warning
   counts the ones left out, and Delete all removes those too.
 - Pasting an image into a note needs Orca to hand the pasted file to the Diff tab; whether it does has not
