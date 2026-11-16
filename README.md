@@ -279,7 +279,7 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
 - **Right sidebar panel** "Git", the plugin's only view: the Branches, Commits, Files and Details
   sections in one column; in a narrow column a commit takes two lines like a row of Orca's own lists
   (the message, then author and date smaller and muted, with space between commits; the graph's node
-  level with the message).
+  level with the message and its lanes closer together, 10 px apart instead of 14).
 - **A commit shown from another program**: the Workflow plugin's «Показать коммит в Git» opens this panel on the
   repository of a task's commit and selects the commit in Commits. The request waits in a private file the panel
   takes when it starts; the contract is in [docs/reveal.md](docs/reveal.md).
