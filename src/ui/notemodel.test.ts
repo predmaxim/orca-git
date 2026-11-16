@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { DiffHunk, NoteMessage, ReviewNote } from '../shared/protocol.ts'
-import { anchor, coveredRange, notesOf, notesText, pickSide, sideLines, unsent } from './notemodel.ts'
+import { active, anchor, coveredRange, notesOf, notesText, pickSide, sideLines, unsent } from './notemodel.ts'
 
 const hunks: DiffHunk[] = [
   {
@@ -65,9 +65,17 @@ test('unsent notes are those with a message of the user not sent yet, not waitin
   const resolved = { id: 'd', messages: [said('user', 'x')], resolvedAt: 2 } as ReviewNote
   assert.deepEqual(unsent([a, sent, waiting, resolved]), [a])
 })
-test('all notes as markdown', () => {
-  const one = { path: 'a.ts', side: 'new', start: { line: 4, col: 0 }, end: { line: 4, col: 3 }, quote: 'foo', messages: [said('user', 'why?')] } as ReviewNote
-  const two = { path: 'b.ts', side: 'old', start: { line: 2, col: 0 }, end: { line: 3, col: 1 }, quote: 'x\ny', messages: [said('user', 'no', 'r'), said('agent', 'yes', 'r'), said('user', 'still no')] } as ReviewNote
-  // The user's messages as one text; the agent's answers stay out, as before.
-  assert.equal(notesText([one, two]), 'a.ts:4 (new)\n> foo\n\nwhy?\n\n---\n\nb.ts:2-3 (old)\n> x\n> y\n\nno\n\nstill no')
+test('the Notes button counts the threads not resolved', () => {
+  const open = { id: 'a', messages: [said('user', 'x', 'r'), said('agent', 'y', 'r')] } as ReviewNote
+  const draft = { id: 'b', messages: [said('user', 'x')] } as ReviewNote
+  const resolved = { id: 'c', messages: [said('user', 'x', 'r'), said('agent', 'y', 'r')], resolvedAt: 2 } as ReviewNote
+  assert.deepEqual(active([open, draft, resolved]), [open, draft])
+  assert.deepEqual(unsent([open, draft, resolved]), [draft])
+})
+test('all threads as markdown: every message under its author, in order', () => {
+  const one = { path: 'a.ts', side: 'new', start: { line: 4, col: 0 }, end: { line: 4, col: 3 }, quote: 'foo', messages: [said('user', 'why?', 'r'), said('agent', 'because', 'r')] } as ReviewNote
+  const two = { path: 'b.ts', side: 'old', start: { line: 2, col: 0 }, end: { line: 3, col: 1 }, quote: 'x\ny',
+    messages: [said('user', 'no', 'r'), { ...said('agent', 'yes', 'r'), agent: 'claude' }, said('user', 'still no')] } as ReviewNote
+  assert.equal(notesText([one, two]),
+    'a.ts:4 (new)\n> foo\n\n**You:**\nwhy?\n\n**Agent:**\nbecause\n\n---\n\nb.ts:2-3 (old)\n> x\n> y\n\n**You:**\nno\n\n**Agent · claude:**\nyes\n\n**You:**\nstill no')
 })

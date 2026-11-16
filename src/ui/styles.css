@@ -2032,8 +2032,92 @@ input[type='radio']:focus-visible {
   margin: -4px -6px 4px 0;
 }
 
-.d-note-head .spacer {
+/* A resolved thread's one line: the buttons reach into the padding below as well. */
+.d-note-head:last-child {
+  margin-bottom: -4px;
+}
+
+.d-note-head .spacer,
+.d-note-msg-head .spacer {
   flex: 1;
+}
+
+/* A resolved thread's line: its state, the start of its first message and the count; a press opens or closes it. */
+.d-note-fold {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.d-note-first {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.d-note-fold .muted {
+  white-space: nowrap;
+}
+
+/* Messages follow one another without lines between them; the agent's stand on a tint. */
+.d-note-msg {
+  margin: 0 -6px;
+  padding: 2px 6px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.d-note-msg.agent {
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+
+.d-note-msg-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: -4px;
+  font-size: 12px;
+}
+
+.d-note-author {
+  font-weight: 600;
+}
+
+.d-note-unsent {
+  font-size: 11px;
+}
+
+/* Reply… looks like the field it opens. */
+.d-note-reply {
+  display: block;
+  width: 100%;
+  height: 28px;
+  margin-top: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--input);
+  color: var(--muted-fg);
+  font: inherit;
+  text-align: left;
+  cursor: text;
+}
+
+.d-note-reply:hover {
+  border-color: var(--ring);
+}
+
+.diff-lines .d-note .d-note-edit {
+  margin: 6px 0 0;
 }
 
 /* A state: a tint of its colour, the border a stronger one, as the notices are. */
@@ -2050,7 +2134,8 @@ input[type='radio']:focus-visible {
 }
 
 .d-label.confirmed,
-.d-label.fixed {
+.d-label.fixed,
+.d-label.resolved {
   --tone: var(--state-done);
 }
 
@@ -2061,19 +2146,6 @@ input[type='radio']:focus-visible {
 
 .d-label.unclear {
   --tone: var(--state-wait);
-}
-
-.d-note-reply {
-  margin-top: 8px;
-  padding-top: 6px;
-  border-top: 1px solid var(--border);
-}
-
-.d-note-caption {
-  margin-bottom: 2px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--muted-fg);
 }
 
 .d-note .md > * {
@@ -2183,6 +2255,10 @@ input[type='radio']:focus-visible {
 
 .notes-item:hover {
   background: var(--selected);
+}
+
+.notes-item.resolved .notes-open {
+  opacity: 0.6;
 }
 
 .notes-open {

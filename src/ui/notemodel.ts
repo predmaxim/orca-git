@@ -1,5 +1,6 @@
+import { t } from '../shared/i18n.ts'
 import { stateOf } from '../shared/notes.ts'
-import type { DiffHunk, DiffLine, FileDiff, NotePoint, NoteSide, ReviewNote } from '../shared/protocol.ts'
+import type { DiffHunk, DiffLine, FileDiff, NoteMessage, NotePoint, NoteSide, ReviewNote } from '../shared/protocol.ts'
 import type { DiffMode } from './diff.ts'
 
 /** Split: the column the selection starts in. Unified: a deleted line starts an old-side selection, any other a new-side one. */
@@ -70,18 +71,28 @@ export function coveredRange(note: Pick<ReviewNote, 'side' | 'start' | 'end'>, s
   return from < to ? [from, to] : null
 }
 
+/** The threads the Notes button counts: those not resolved. */
+export function active(notes: ReviewNote[]): ReviewNote[] {
+  return notes.filter((n) => n.resolvedAt === undefined)
+}
+
 /** The notes the send button counts and sends: those whose state is unsent. */
 export function unsent(notes: ReviewNote[]): ReviewNote[] {
   return notes.filter((n) => stateOf(n) === 'unsent')
 }
 
-/** All notes as markdown, for Copy all. */
+/** Who wrote a message: You, or Agent with its kind when it is known. */
+export function authorOf(m: NoteMessage): string {
+  return m.author === 'user' ? t('noteYou') : m.agent ? t('noteAgent', { agent: m.agent }) : t('noteAgentPlain')
+}
+
+/** All threads as markdown, for Copy all: every message under its author, oldest first. */
 export function notesText(notes: ReviewNote[]): string {
   return notes
     .map((n) => {
       const lines = n.start.line === n.end.line ? `${n.start.line}` : `${n.start.line}-${n.end.line}`
       const quote = n.quote.split('\n').map((l) => `> ${l}`).join('\n')
-      const text = n.messages.filter((m) => m.author === 'user').map((m) => m.body).join('\n\n')
+      const text = n.messages.map((m) => `**${authorOf(m)}:**\n${m.body}`).join('\n\n')
       return `${n.path}:${lines} (${n.side})\n${quote}\n\n${text}`
     })
     .join('\n\n---\n\n')

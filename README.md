@@ -77,19 +77,28 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   (split), or in unified the line it starts on (a deleted line is the old side, any other the new one);
   while you select, the other side stays out of the selection. The note is tied to the content of the
   file on its side (its blob), so it shows in every diff where that side is the same, also after a
-  rebase or an amend that left the file alone. Its card stands under the last selected line, in the
-  half of its side in split, with the selected text highlighted, the note's state (not sent, sent, or
-  the agent's verdict), Edit while its text is not sent (sent text stays as the agent saw it), Delete and,
-  for a sent note without an answer, Send again; links open
-  in the browser. **Notes (N)** in the tab's header lists every note of the repository with its file,
-  lines, side, the start of the quote and of the text and its state; Copy all copies them as markdown,
-  Delete all asks once more. A click on a note opens its file and scrolls to it, with Whole file when
+  rebase or an amend that left the file alone. A note is a **thread**, as in Azure DevOps pull requests:
+  its card stands under the last selected line, in the half of its side in split, with the selected text
+  highlighted. On top, the thread's state (Resolved; Sent, no answer yet; Not sent; or the verdict of the
+  agent's last answer and Fixed), Send again while a send has no answer, **Resolved** and Delete the
+  thread. Below, the messages oldest first, each with its author (You, or Agent and its kind), its time
+  and a Delete button; the agent's messages stand on a tint and carry their own verdict and Fixed; your
+  messages not sent yet say Not sent and have Edit (sent text stays as the agent saw it). Deleting the
+  last message deletes the thread; an agent's answer you delete does not come back. **Reply…** under the
+  messages opens the same editor as a new note; the reply stays unsent while the thread waits for an
+  answer. A resolved thread folds to one line (Resolved, the start of its first message and the count of
+  messages) that opens and closes on a click; it takes no reply and is not sent until **Open again**.
+  One editor is open at a time: typed text is not dropped for another one. Links open
+  in the browser. **Notes (N)** in the tab's header counts the threads not resolved and lists every
+  thread of the repository with its file, lines, side, state, count of messages and the start of the
+  quote and of the first message, resolved ones last and dimmed; Copy all copies them as markdown with
+  every message under its author, Delete all asks once more and deletes every thread of the repository. A click on a note opens its file and scrolls to it, with Whole file when
   the note is of the diff shown but its lines are outside the changed regions. Opening the list loads
   the notes again, so the agent's answers are read then too. Notes are kept in the plugin's storage, up
   to 200 per repository (see Limitations). When the notes cannot be loaded, the answers cannot be saved,
   or a delete or Send again is refused, the Notes button turns yellow, its tooltip says why, and so does
   a line at the top of the list.
-- **Send notes to an agent**: **Send to a new agent (N)** in the Diff tab's header (shown while a note
+- **Send notes to an agent**: **Send to an agent (N)** in the Diff tab's header (shown while a note
   is unsent) opens a menu of agent kinds (the ones Orca lists, plus claude and codex; the last one used
   first): all unsent notes, or only those of the file shown. The plugin writes a folder
   `.orca-git-log/review-<id>/` in the workspace with `notes.md` (every note: file, lines, the commit it
@@ -119,8 +128,8 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   code" is not an answer. The review skills of the repository and the project's own rules come before the guide:
   a rule of the guide that contradicts them does not apply, the rest of it applies with them. An image path in an
   answer is shown as text (caption and address), the image itself is not shown. The plugin reads
-  them when the agent's status changes and when the notes are listed, and shows under the note the verdict
-  label, "Fixed" and the markdown. An answer file the agent rewrites replaces the answer shown the next
+  them when the agent's status changes and when the notes are listed, and shows each answer in its thread
+  as the agent's message, with its verdict label, "Fixed" and the markdown. An answer file the agent rewrites replaces the answer shown the next
   time the answers are read. Deleting the last note of a send, or Send again on it, removes its folder.
 - **Looks like Orca**: the sidebar is drawn as Orca draws its own: section headers in its small
   uppercase labels with the count on the right, no lines between sections, [Lucide](https://lucide.dev)

@@ -1,18 +1,19 @@
-// Review notes in the Diff tab: the selection and its button, the editor, the cards under their lines and the list of all notes.
-import type { FileDiff, NoteDraft, NotePoint, NoteSide, NoteVerdict, ReviewNote, SelectionFile } from '../shared/protocol.ts'
+// Review notes in the Diff tab: the selection and its button, the editor, the threads under their lines and the list of all notes.
+import type { FileDiff, NoteDraft, NoteMessage, NotePoint, NoteResult, NoteSide, NoteVerdict, ReviewNote, SelectionFile } from '../shared/protocol.ts'
 import { t, type MessageKey } from '../shared/i18n.ts'
-import { lastAnswer, MAX_BODY, MAX_QUOTE, MAX_REVIEW_SKILLS, stateOf, unsentOf } from '../shared/notes.ts'
+import { lastAnswer, MAX_BODY, MAX_QUOTE, MAX_REVIEW_SKILLS, stateOf } from '../shared/notes.ts'
 import { api, copyText, errorMessage, orca } from './api.ts'
 import type { DiffMode } from './diff.ts'
 import { h, icon, ICONS } from './dom.ts'
+import { fullDate, relativeDate } from './format.ts'
 import { markRange } from './highlight.ts'
 import { mdDom } from './markdown.ts'
 import { showMenu, showPopover, type MenuEntry } from './menu.ts'
-import { anchor, coveredRange, notesOf, notesText, pickSide, sideLines, unsent } from './notemodel.ts'
+import { active, anchor, authorOf, coveredRange, notesOf, notesText, pickSide, sideLines, unsent } from './notemodel.ts'
 import { browseDir, skillSuggestions } from './skillmodel.ts'
 
 export interface NotesView {
-  /** The header buttons: Notes (N), and Send to a new agent (N) while a note is unsent. */
+  /** The header buttons: Notes (N) with the threads not resolved, and Send to an agent (N) while a thread is unsent. */
   buttons: HTMLElement[]
   /** The rows that follow the row of `line` on `side`: the cards of the notes that end there, and the editor when it is open there. */
   rowsAfter(side: NoteSide, line: number, mode: DiffMode): HTMLElement[]
@@ -44,13 +45,17 @@ function openLink(url: string): void {
 }
 
 const label = (key: MessageKey, tone = '') => h('span', { class: `d-label ${tone}` }, t(key))
+const tool = (name: keyof typeof ICONS, key: MessageKey, run: () => void) => h('button', { class: 'tool', title: t(key), 'aria-label': t(key), onclick: run }, icon(name))
 
-/** Not sent, sent, or the verdict of the agent's last answer. */
+/** The verdict of an agent's message and Fixed. */
+const verdict = (m: NoteMessage): HTMLElement[] => (m.verdict ? [label(VERDICT[m.verdict], m.verdict), ...(m.fixed ? [label('noteFixed', 'fixed')] : [])] : [])
+
+/** The state of a thread: resolved, sent and not answered, not sent, or the verdict of the agent's last answer. */
 function labels(n: ReviewNote): HTMLElement[] {
   const state = stateOf(n)
   const answer = lastAnswer(n)
-  if (state === 'answered' && answer?.verdict) return [label(VERDICT[answer.verdict], answer.verdict), ...(answer.fixed ? [label('noteFixed', 'fixed')] : [])]
-  return state === 'unsent' ? [label('noteUnsent')] : state === 'waiting' ? [label('noteSent')] : []
+  if (state === 'answered' && answer) return verdict(answer)
+  return state === 'resolved' ? [label('noteResolve', 'resolved')] : state === 'unsent' ? [label('noteUnsent')] : state === 'waiting' ? [label('noteSent')] : []
 }
 
 const firstLine = (text: string) => text.split('\n', 1)[0]
@@ -93,8 +98,13 @@ export function mountNotes(options: {
   let container: HTMLElement | null = null
   let diff: FileDiff | null = null
   let file: SelectionFile | null = null
-  /** The open editor: a new note at `anchor`, or the message `message` of the note `id`, and the text it started with. Its element lives on across renders, and the text with it. */
+  /**
+   * The open editor: a new note at `anchor`, a reply to the thread `id`, or the message `message` of the thread `id`, and
+   * the text it started with. Its element lives on across renders, and the text with it.
+   */
   let editor: { anchor: Anchor; id?: string; message?: string; start: string; el: HTMLElement; area: HTMLTextAreaElement; error: HTMLElement } | null = null
+  /** The resolved threads opened from their one line. */
+  const unfolded = new Set<string>()
   let saving = false
   /** A press in the rows is held: the selection is still being made. */
   let pressed = false
@@ -119,7 +129,7 @@ export function mountNotes(options: {
   const sendButton = h('button', { class: 'tool', title: t('notesSend', { count: 0 }), 'aria-label': t('notesSend', { count: 0 }), onclick: () => void openSend() }, icon('send'), sendCount)
   const notices = () => [refused, warning].filter(Boolean)
   const syncCount = () => {
-    count.textContent = `${t('notesButton')} (${notes.length})`
+    count.textContent = `${t('notesButton')} (${active(notes).length})`
     const said = notices()
     button.classList.toggle('notes-warn', said.length > 0)
     button.title = said.length ? said.join('\n') : t('notesButtonTip')
@@ -169,14 +179,31 @@ export function mountNotes(options: {
     refresh()
   }
 
+  /** Drops the threads `ids` the worker no longer has, and the editor open in one of them. */
+  function forget(ids: string[]): void {
+    notes = notes.filter((n) => !ids.includes(n.id))
+    if (editor?.id && ids.includes(editor.id)) editor = null
+    refresh()
+  }
+
   /** Deletes the notes `ids`; with `all`, every note of the repository, those a cut list did not show too. */
   async function remove(ids: string[], all = false): Promise<void> {
     try {
       const result = all ? await api.notesDeleteAll(root) : await api.notesDelete(root, ids)
       if (!result.ok) return notify(result.reason ?? '')
-      notes = notes.filter((n) => !ids.includes(n.id))
-      if (editor?.id && ids.includes(editor.id)) editor = null
-      refresh()
+      forget(ids)
+    } catch (caught) {
+      notify(errorMessage(caught))
+    }
+  }
+
+  /** Shows the thread `id` as a change of it left it: changed, or gone with its last message. */
+  async function change(id: string, request: Promise<NoteResult>): Promise<void> {
+    try {
+      const result = await request
+      if (!result.ok) notify(result.reason)
+      else if (result.note) put(result.note)
+      else forget([id])
     } catch (caught) {
       notify(errorMessage(caught))
     }
@@ -209,7 +236,8 @@ export function mountNotes(options: {
     return true
   }
 
-  function openEditor(at: Anchor, edit?: { id: string; message: string }, text = ''): void {
+  /** Opens the editor of a new note at `at`, of a reply to the thread `of.id`, or of its message `of.message`. */
+  function openEditor(at: Anchor, of?: { id: string; message?: string }, text = ''): void {
     const open = editor
     // Typed text is not dropped for another editor: the open one is shown instead. One out of view (another file) cannot be.
     if (open && open.area.value.trim() !== open.start && open.el.isConnected) {
@@ -234,7 +262,7 @@ export function mountNotes(options: {
     })
     area.value = text
     const error = h('div', { class: 'd-note-error' })
-    editor = { anchor: at, id: edit?.id, message: edit?.message, start: text, el: h('div', { class: 'd-note-edit' }, area, error), area, error }
+    editor = { anchor: at, id: of?.id, message: of?.message, start: text, el: h('div', { class: 'd-note-edit' }, area, error), area, error }
     options.rerender()
     area.focus()
   }
@@ -248,12 +276,16 @@ export function mountNotes(options: {
     const open = editor
     if (!open || saving || !open.area.value.trim()) return
     // An edit that changes nothing sends nothing.
-    if (open.id && open.area.value.trim() === open.start) return closeEditor()
+    if (open.message && open.area.value.trim() === open.start) return closeEditor()
     saving = true
     open.error.textContent = ''
     try {
       const body = open.area.value
-      const result = open.id && open.message ? await api.noteEdit(root, open.id, open.message, body) : await api.noteAdd(root, { ...open.anchor, body })
+      const result = !open.id
+        ? await api.noteAdd(root, { ...open.anchor, body })
+        : open.message
+          ? await api.noteEdit(root, open.id, open.message, body)
+          : await api.noteReply(root, open.id, body)
       if (!result.ok) open.error.textContent = result.reason
       else if (result.note) {
         if (editor === open) editor = null
@@ -266,37 +298,66 @@ export function mountNotes(options: {
     }
   }
 
-  function card(n: ReviewNote): HTMLElement {
-    const tool = (name: keyof typeof ICONS, key: MessageKey, run: () => void) =>
-      h('button', { class: 'tool', title: t(key), 'aria-label': t(key), onclick: run }, icon(name))
-    // Sending again takes the sent mark off the messages nobody answered, so they go with the next sending.
-    const resend = async () => {
-      try {
-        const result = await api.noteResend(root, n.id)
-        if (!result.ok) notify(result.reason)
-        else if (result.note) put(result.note)
-      } catch (caught) {
-        notify(errorMessage(caught))
-      }
-    }
-    const draft = unsentOf(n).pop()
+  /** A message: its author and time, an agent's verdict, Not sent on the user's own until it goes out and Edit until then, Delete. */
+  function message(n: ReviewNote, m: NoteMessage): HTMLElement {
+    const draft = m.author === 'user' && m.sentAt === undefined
     return h(
       'div',
-      { class: 'd-note', dataset: { id: n.id } },
+      { class: `d-note-msg ${m.author}`, dataset: { id: m.id } },
+      h(
+        'div',
+        { class: 'd-note-msg-head' },
+        h('span', { class: 'd-note-author' }, authorOf(m)),
+        h('span', { class: 'muted', title: fullDate(m.at / 1000) }, relativeDate(m.at / 1000)),
+        ...verdict(m),
+        draft ? h('span', { class: 'muted d-note-unsent' }, t('noteUnsent')) : null,
+        h('span', { class: 'spacer' }),
+        draft ? tool('edit', 'noteEdit', () => openEditor(n, { id: n.id, message: m.id }, m.body)) : null,
+        tool('drop', 'noteDeleteMessage', () => void change(n.id, api.noteRemove(root, n.id, m.id)))
+      ),
+      h('div', { class: 'md' }, mdDom(m.body, openLink))
+    )
+  }
+
+  /** A thread: its state and buttons, its messages, and Reply… under them; a resolved one is one line until it is opened. */
+  function card(n: ReviewNote): HTMLElement {
+    const resolved = n.resolvedAt !== undefined
+    const mine = editor?.id === n.id ? editor : null
+    // The editor open in a thread keeps it open.
+    const open = !resolved || unfolded.has(n.id) || mine !== null
+    const fold = () => {
+      if (!unfolded.delete(n.id)) unfolded.add(n.id)
+      options.rerender()
+    }
+    const resolve = (yes: boolean) => {
+      unfolded.delete(n.id)
+      void change(n.id, api.noteResolve(root, n.id, yes))
+    }
+    return h(
+      'div',
+      { class: `d-note${resolved ? ' resolved' : ''}`, dataset: { id: n.id } },
       h(
         'div',
         { class: 'd-note-head' },
-        ...labels(n),
-        h('span', { class: 'spacer' }),
-        stateOf(n) === 'waiting' ? tool('refresh', 'noteResend', () => void resend()) : null,
-        draft ? tool('edit', 'noteEdit', () => openEditor(n, { id: n.id, message: draft.id }, draft.body)) : null,
-        tool('drop', 'noteDelete', () => void remove([n.id]))
+        ...(resolved
+          ? [
+              h(
+                'button',
+                { class: 'd-note-fold', 'aria-expanded': String(open), onclick: fold },
+                ...labels(n),
+                h('span', { class: 'd-note-first' }, firstLine(n.messages[0]?.body ?? '')),
+                h('span', { class: 'muted' }, t('noteMessages', { count: n.messages.length }))
+              )
+            ]
+          : [...labels(n), h('span', { class: 'spacer' })]),
+        // Sending again takes the sent mark off the messages nobody answered, so they go with the next sending.
+        stateOf(n) === 'waiting' ? tool('refresh', 'noteResend', () => void change(n.id, api.noteResend(root, n.id))) : null,
+        resolved ? tool('undo', 'noteReopen', () => resolve(false)) : tool('check', 'noteResolve', () => resolve(true)),
+        tool('drop', 'noteDeleteThread', () => void remove([n.id]))
       ),
-      ...n.messages.map((m) =>
-        m.author === 'user'
-          ? h('div', { class: 'md' }, mdDom(m.body, openLink))
-          : h('div', { class: 'd-note-reply' }, h('div', { class: 'd-note-caption' }, t('noteReply')), h('div', { class: 'md' }, mdDom(m.body, openLink)))
-      )
+      ...(open ? n.messages.map((m) => (mine?.message === m.id ? mine.el : message(n, m))) : []),
+      // A reply being written stays in its thread, resolved meanwhile or not; a new one starts only in a thread not resolved.
+      mine && !mine.message ? mine.el : resolved ? null : h('button', { class: 'd-note-reply', onclick: () => openEditor(n, { id: n.id }) }, t('noteReply'))
     )
   }
 
@@ -493,13 +554,15 @@ export function mountNotes(options: {
     const section = skillsSection(await skills)
     const box = h('div', { class: 'notes-list' }, section)
     const fill = () => {
-      const sorted = [...notes].sort((a, b) => a.path.localeCompare(b.path) || a.start.line - b.start.line)
+      // The resolved threads last.
+      const sorted = [...notes].sort((a, b) => Number(a.resolvedAt !== undefined) - Number(b.resolvedAt !== undefined) || a.path.localeCompare(b.path) || a.start.line - b.start.line)
       const said = notices()
       let confirming = false
+      // Every thread of the repository goes, those a cut list did not show too: the question names no count.
       const clearAll = (event: MouseEvent) => {
         if (confirming) return void remove(sorted.map((n) => n.id), true)
         confirming = true
-        ;(event.currentTarget as HTMLElement).textContent = t('notesClearConfirm', { count: sorted.length })
+        ;(event.currentTarget as HTMLElement).textContent = t('notesClearConfirm')
       }
       // The skills stay in place: a redraw of the notes keeps the open path field, its text and its focus.
       while (box.firstChild && box.firstChild !== section) box.firstChild.remove()
@@ -591,16 +654,23 @@ export function mountNotes(options: {
     const index = files.findIndex((f) => (n.side === 'new' ? f.path : (f.oldPath ?? f.path)) === n.path)
     return h(
       'div',
-      { class: 'notes-item' },
+      { class: `notes-item${n.resolvedAt !== undefined ? ' resolved' : ''}` },
       // A note of a file this tab does not have stays in the list without a way to it.
       h(
         'button',
         { class: 'notes-open', disabled: index < 0, onclick: () => reveal(index, n.id) },
-        h('span', { class: 'notes-where' }, h('span', { class: 'path' }, `${n.path}:${lineSpan(n)}`), label(n.side === 'old' ? 'noteSideOld' : 'noteSideNew'), ...labels(n)),
+        h(
+          'span',
+          { class: 'notes-where' },
+          h('span', { class: 'path' }, `${n.path}:${lineSpan(n)}`),
+          label(n.side === 'old' ? 'noteSideOld' : 'noteSideNew'),
+          ...labels(n),
+          h('span', { class: 'muted' }, t('noteMessages', { count: n.messages.length }))
+        ),
         h('span', { class: 'mono muted' }, firstLine(n.quote)),
         h('span', null, firstLine(n.messages[0]?.body ?? ''))
       ),
-      h('button', { class: 'tool', title: t('noteDelete'), 'aria-label': t('noteDelete'), onclick: () => void remove([n.id]) }, icon('drop'))
+      tool('drop', 'noteDeleteThread', () => void remove([n.id]))
     )
   }
 
@@ -644,7 +714,7 @@ export function mountNotes(options: {
   return {
     buttons: [button, sendButton],
     rowsAfter(side, line, mode) {
-      const rows = shown.filter((n) => n.side === side && n.end.line === line).map((n) => row(side, mode, editor?.id === n.id ? editor.el : card(n)))
+      const rows = shown.filter((n) => n.side === side && n.end.line === line).map((n) => row(side, mode, card(n)))
       const open = editor
       if (open && !open.id && open.anchor.side === side && open.anchor.end.line === line && open.anchor.blob === blobOf(side)) rows.push(row(side, mode, open.el))
       return rows
