@@ -153,7 +153,7 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   notes (shown while a note is unsent), opens a menu of agent kinds (the ones Orca lists, plus claude and codex; the last one used
   first): all unsent notes, or only those of the file shown. The plugin writes a folder
   `.orca-git-log/review-<id>/` in the workspace with `notes.md` (every note: file, lines, the commit it
-  was written on, the selected text, the whole thread of messages oldest first with the new ones marked NEW and each answer of the agent naming the messages it answers, and how to answer; the agent writes one answer file per thread, stored as the agent's message of that send), `SKILL.md` (a short guide for an
+  was written on, an `Outdated:` line when HEAD changed its lines, as the Notes list marks it, the selected text, the whole thread of messages oldest first with the new ones marked NEW and each answer of the agent naming the messages it answers, and how to answer; the agent writes one answer file per thread, stored as the agent's message of that send), `SKILL.md` (a short guide for an
   independent reviewer) and an empty `answers/`, adds `.orca-git-log/` to the repository's
   `.git/info/exclude`, marks the notes sent and starts a new agent in that workspace whose prompt names
   the three paths. If the agent does not start, the folder is removed and the notes go back to unsent;
