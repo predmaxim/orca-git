@@ -39,12 +39,19 @@ const note = (side: NoteSide, blob: string, rev: string) => ({ side, blob, rev }
 
 test('a new-side note opens the commit that wrote its content', async () => {
   const { git, run, commit, blob } = repo()
-  commit('one', { 'a.txt': '1\n' })
+  const one = commit('one', { 'a.txt': '1\n' })
   const edit = commit('two', { 'a.txt': '2\n' })
-  assert.equal(await findNoteCommit(git, note('new', blob(edit, 'a.txt'), edit)), edit)
+  // git log walks on until it has shown as many commits as -n asks: one search, of one commit.
+  const runs: string[][] = []
+  const counted: Git = { ...git, run: (args, options) => (runs.push(args), git.run(args, options)) }
+  assert.equal(await findNoteCommit(counted, note('new', blob(edit, 'a.txt'), edit)), edit)
+  assert.deepEqual(runs.map((args) => args.slice(args.indexOf('-n'), args.indexOf('-n') + 2)), [['-n', '1']])
   // As in readSelectionFiles: under another log output encoding git would print the hashes in it.
   run('config', 'i18n.logOutputEncoding', 'UTF-16')
   assert.equal(await findNoteCommit(git, note('new', blob(edit, 'a.txt'), edit)), edit)
+  // As in readSelectionFiles: without --root, log.showRoot=false hides the diff of the commit that wrote the file.
+  run('config', 'log.showRoot', 'false')
+  assert.equal(await findNoteCommit(git, note('new', blob(one, 'a.txt'), one)), one)
 })
 
 test('a rename at the edge of the selection still finds the commit that changed the content', async () => {
@@ -97,6 +104,11 @@ test('a note whose content no commit changes has no commit', async () => {
     assert.equal(await findNoteCommit(refused, note('new', b, rev)), null)
     assert.equal(await findNoteCommit(refused, note('old', b, rev)), null)
   }
+})
+
+test('a git stopped before it answers is an error, not a note without a commit', async () => {
+  const stopped = { root: '/', gitPath: 'git', run: async () => ({ ok: false, code: null, stdout: '', stderr: 'git log was stopped' }) } as unknown as Git
+  for (const side of ['new', 'old'] as const) await assert.rejects(findNoteCommit(stopped, note(side, 'e'.repeat(40), 'd'.repeat(40))), /git log was stopped/)
 })
 
 test('notes.open shows a note in its commit and asks the panel to select that commit', async () => {
