@@ -58,9 +58,10 @@ const LONG = { timeoutMs: 120_000 }
 /** Whether `error` is Orca giving up on a request the worker may still be running. */
 export const timedOut = (error: unknown): boolean => (error as { code?: unknown } | null)?.code === 'timeout'
 
-// Every request carries the frame language so the worker answers in it.
+// Every request carries the frame language so the worker answers in it. Orca takes the input as z.json(), which refuses an
+// undefined value at any depth ("input: Invalid input"); a JSON round trip drops those keys.
 const call = (name: string, input: object, options?: { timeoutMs?: number }): Promise<any> =>
-  orca.plugin.request(name, { ...input, locale: orca.locale }, options)
+  orca.plugin.request(name, JSON.parse(JSON.stringify({ ...input, locale: orca.locale })), options)
 
 export const api = {
   resolve: (root?: string, workspaceId?: string): Promise<RepoResult> =>
