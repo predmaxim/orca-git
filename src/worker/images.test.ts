@@ -350,6 +350,9 @@ test('storing bytes again makes their file new, so the sweep leaves it until its
     assert.equal(storeImage(root, PNG, 'again.png').ok, true)
     sweepImages(root, [], Date.now())
     assert.equal(existsSync(file), true)
+    // A time that cannot be set (Windows asks for write access to set it) does not fail the reuse.
+    const refused = storeImage(root, PNG, 'third.png', () => { throw Object.assign(new Error('operation not permitted'), { code: 'EPERM' }) })
+    assert.deepEqual(refused, { ok: true, image: { id: first.image.id, name: 'third.png', bytes: PNG.length } })
   } finally {
     gone(root)
   }

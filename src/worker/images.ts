@@ -1,6 +1,6 @@
 // The images of review messages: files in <root>/.orca-git-log/images/, named by the hash of their content.
 import { createHash, randomBytes } from 'node:crypto'
-import { closeSync, constants, fstatSync, futimesSync, linkSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, unlinkSync, writeFileSync } from 'node:fs'
+import { closeSync, constants, fstatSync, linkSync, lstatSync, lutimesSync, mkdirSync, openSync, readdirSync, readSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { t } from '../shared/i18n.ts'
 import { IMAGE_ID, MAX_IMAGE_BYTES, MAX_IMAGES } from '../shared/notes.ts'
@@ -42,8 +42,8 @@ function ensureFolder(path: string): boolean {
   return isFolder(path)
 }
 
-/** Stores the bytes as .orca-git-log/images/<12 hex of sha256>.<kind>; the same bytes give the same file. */
-export function storeImage(root: string, bytes: Uint8Array, name: string): { ok: true; image: NoteImage } | { ok: false; reason: string } {
+/** Stores the bytes as .orca-git-log/images/<12 hex of sha256>.<kind>; the same bytes give the same file. `touch` sets a reused file's times (a test replaces it). */
+export function storeImage(root: string, bytes: Uint8Array, name: string, touch: (path: string, atime: Date, mtime: Date) => void = lutimesSync): { ok: true; image: NoteImage } | { ok: false; reason: string } {
   const kind = imageKind(bytes)
   if (!kind) return failure(t('imageKind'))
   if (bytes.length > MAX_IMAGE_BYTES) return failure(t('imageBig'))
@@ -66,14 +66,15 @@ export function storeImage(root: string, bytes: Uint8Array, name: string): { ok:
         linkSync(tmp, file)
       } catch (error: any) {
         if (error?.code !== 'EEXIST') throw error
-        const same = withFile(file, false, (open, size) => {
-          if (size !== bytes.length || !Buffer.from(readBytes(open, 0, size)).equals(bytes)) return false
-          // Reused as if made now: the sweep of unused files older than a day must leave it until its message is saved.
-          const now = new Date()
-          futimesSync(open, now, now)
-          return true
-        })
+        const same = withFile(file, false, (open, size) => size === bytes.length && Buffer.from(readBytes(open, 0, size)).equals(bytes))
         if (!same) return failure(t('imageFailed', { error: 'EEXIST' }))
+        try {
+          // Reused as if made now: the sweep of unused files older than a day must leave it until its message is saved. lutimes never follows a link.
+          const now = new Date()
+          touch(file, now, now)
+        } catch {
+          // Times that cannot be set (Windows wants write access for them) do not fail the reuse: the file is the same.
+        }
       }
     } finally {
       try {

@@ -40,10 +40,10 @@ test('a review folder holds the notes, the guide and a place for answers', () =>
   assert.ok(text.includes('very short and with no filler') && !text.includes('confidence'))
   assert.equal(statSync(paths.answers).isDirectory(), true)
   // How to show a picture so that the plugin attaches it, and that the user's images are to be opened.
-  for (const part of ['saved next to the answer file and shown as `![caption](file-name.png)` with the file\'s bare name', 'A line starting with "Images:" under a message lists files the user attached to it: open them.']) assert.ok(text.includes(part), part)
+  for (const part of ['saved next to the answer file and shown as `![caption](file-name.png)` with the file\'s bare name', 'A line starting with "Images:" under a message lists the files attached to that message: open them.']) assert.ok(text.includes(part), part)
   assert.ok(!text.includes('full path'))
   for (const part of ['- the facts: a code snippet, a `file:line` reference, or a screenshot of the design mockup (save the image next to the answer file and show it as `![caption](file-name.png)`, with the file\'s bare name);',
-    'answer the messages marked NEW. If a message has an "Images:" line, open those files: the user attached them.', 'You are an independent reviewer. The user left notes on a diff.']) assert.ok(REVIEW_GUIDE.includes(part), part)
+    'answer the messages marked NEW. If a message has an "Images:" line, open those files: they are attached to that message.', 'You are an independent reviewer. The user left notes on a diff.']) assert.ok(REVIEW_GUIDE.includes(part), part)
   assert.ok(!REVIEW_GUIDE.includes('fresh') && !REVIEW_GUIDE.includes('full path'))
 })
 
