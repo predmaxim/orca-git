@@ -1,9 +1,9 @@
 import { rmSync } from 'node:fs'
 import { assert, mountWorker, test } from 'orca/testing'
 import { t } from '../shared/i18n.ts'
-import { lastAnswer, MAX_MESSAGES, stateOf, waitingFor } from '../shared/notes.ts'
+import { lastAnswer, MAX_MESSAGES, stateOf, unsentOf, waitingFor } from '../shared/notes.ts'
 import * as main from './main.ts'
-import { addNote, deleteNotes, editMessage, listNotes, markSent, markUnsent, noteKey, notesKey, pendingRoots, removeMessage, replyNote, resendNote, resolveNote, setAnswers, type NoteStore } from './notes.ts'
+import { addNote, deleteNotes, editMessage, listNotes, markSent, markUnsent, noteKey, notesKey, pendingRoots, removeMessage, replyNote, resendNote, resolveNote, setAnswers, setNotesLog, type NoteStore } from './notes.ts'
 import { draft, fixture, host, memory } from './testkit.ts'
 
 const answer = (review: string, body = 'no') => ({ review, verdict: 'refuted', fixed: false, body, at: 9 }) as const
@@ -15,6 +15,9 @@ async function added(store: NoteStore): Promise<string> {
   return result.note.id
 }
 const stored = async (store: NoteStore, id: string) => (await listNotes(store, '/r')).find((n) => n.id === id)!
+/** Sends what the notes `ids` hold unsent, as the worker does after it wrote the notes file. */
+const mark = async (store: NoteStore, ids: string[], review: string, now?: number) =>
+  markSent(store, '/r', new Map(await Promise.all(ids.map(async (id) => [id, unsentOf(await stored(store, id)).map((m) => m.id)] as const))), review, now)
 
 test('a note starts as a thread with the user\'s first message', async () => {
   const store = memory()
@@ -53,11 +56,11 @@ test('a note is stored with a cut quote', async () => {
 test('the states of a thread', async () => {
   const store = memory()
   const id = await added(store)
-  await markSent(store, '/r', [id], 'r1')
+  await mark(store, [id], 'r1')
   assert.equal(stateOf(await stored(store, id)), 'waiting')
   assert.equal(waitingFor(await stored(store, id)), 'r1')
   assert.deepEqual(await pendingRoots(store), ['/r'])
-  assert.equal(await setAnswers(store, '/r', new Map([[id, answer('r1')]])), true)
+  assert.equal((await setAnswers(store, '/r', new Map([[id, answer('r1')]]))).changed, true)
   assert.equal(stateOf(await stored(store, id)), 'answered')
   assert.deepEqual(await pendingRoots(store), [])
   assert.equal((await replyNote(store, '/r', id, 'and this?', undefined)).ok, true)
@@ -86,7 +89,7 @@ test('Resolved and Open again', async () => {
 test('nothing is removed but by a removal', async () => {
   const store = memory()
   const id = await added(store)
-  await markSent(store, '/r', [id], 'r1')
+  await mark(store, [id], 'r1')
   await setAnswers(store, '/r', new Map([[id, answer('r1')]]))
   await replyNote(store, '/r', id, 'and this?', undefined)
   const [first, agent, third] = (await stored(store, id)).messages
@@ -117,11 +120,11 @@ test('nothing is removed but by a removal', async () => {
 test('a reply to a thread that waits keeps it waiting, and the answer goes at the end', async () => {
   const store = memory()
   const id = await added(store)
-  await markSent(store, '/r', [id], 'r1')
+  await mark(store, [id], 'r1')
   await replyNote(store, '/r', id, 'and this?', undefined)
   assert.equal(stateOf(await stored(store, id)), 'waiting')
   assert.deepEqual(await pendingRoots(store), ['/r'])
-  assert.equal(await setAnswers(store, '/r', new Map([[id, answer('r1')]])), true)
+  assert.equal((await setAnswers(store, '/r', new Map([[id, answer('r1')]]))).changed, true)
   const note = await stored(store, id)
   assert.deepEqual(note.messages.map((m) => [m.author, m.body, m.review]), [['user', 'why?', 'r1'], ['user', 'and this?', undefined], ['agent', 'no', 'r1']])
   assert.equal(stateOf(note), 'unsent')
@@ -131,11 +134,11 @@ test('a reply to a thread that waits keeps it waiting, and the answer goes at th
 test('a resolved thread still waits for its answer, and stores it', async () => {
   const store = memory()
   const id = await added(store)
-  await markSent(store, '/r', [id], 'r1')
+  await mark(store, [id], 'r1')
   await resolveNote(store, '/r', id, true)
   assert.equal(stateOf(await stored(store, id)), 'resolved')
   assert.deepEqual(await pendingRoots(store), ['/r'])
-  assert.equal(await setAnswers(store, '/r', new Map([[id, answer('r1')]])), true)
+  assert.equal((await setAnswers(store, '/r', new Map([[id, answer('r1')]]))).changed, true)
   const note = await stored(store, id)
   assert.equal(stateOf(note), 'resolved')
   assert.equal(lastAnswer(note)?.review, 'r1')
@@ -145,18 +148,18 @@ test('a resolved thread still waits for its answer, and stores it', async () => 
 test('an answer is replaced only when it differs, and only for its own send', async () => {
   const store = memory()
   const id = await added(store)
-  await markSent(store, '/r', [id], 'r1')
-  assert.equal(await setAnswers(store, '/r', new Map([[id, answer('r1')]])), true)
+  await mark(store, [id], 'r1')
+  assert.equal((await setAnswers(store, '/r', new Map([[id, answer('r1')]]))).changed, true)
   const before = (await stored(store, id)).messages[1]
-  assert.equal(await setAnswers(store, '/r', new Map([[id, { ...answer('r1'), at: 10 }]])), false)
-  assert.equal(await setAnswers(store, '/r', new Map([[id, answer('r1', 'yes, it is')]])), true)
+  assert.equal((await setAnswers(store, '/r', new Map([[id, { ...answer('r1'), at: 10 }]]))).changed, false)
+  assert.equal((await setAnswers(store, '/r', new Map([[id, answer('r1', 'yes, it is')]]))).changed, true)
   const after = (await stored(store, id)).messages[1]
   assert.deepEqual([after.id, after.at, after.body], [before.id, before.at, 'yes, it is'])
   // An answer for a send this thread never went out with is not put in.
-  assert.equal(await setAnswers(store, '/r', new Map([[id, answer('r9')]])), false)
+  assert.equal((await setAnswers(store, '/r', new Map([[id, answer('r9')]]))).changed, false)
   await replyNote(store, '/r', id, 'and this?', undefined)
-  await markSent(store, '/r', [id], 'r2')
-  assert.equal(await setAnswers(store, '/r', new Map([[id, answer('r2', 'second')]])), true)
+  await mark(store, [id], 'r2')
+  assert.equal((await setAnswers(store, '/r', new Map([[id, answer('r2', 'second')]]))).changed, true)
   const agents = (await stored(store, id)).messages.filter((m) => m.author === 'agent')
   assert.deepEqual(agents.map((m) => [m.review, m.body]), [['r1', 'yes, it is'], ['r2', 'second']])
   assert.equal(agents[0].id, before.id)
@@ -168,7 +171,7 @@ test('send again takes the mark off the messages nobody answered', async () => {
   const unchanged = await resendNote(store, '/r', id)
   assert.ok(unchanged.ok && unchanged.note)
   assert.equal(stateOf(unchanged.note), 'unsent')
-  await markSent(store, '/r', [id], 'r1', 6)
+  await mark(store, [id], 'r1', 6)
   const resent = await resendNote(store, '/r', id)
   assert.ok(resent.ok && resent.note)
   assert.deepEqual(resent.note.messages.map((m) => [m.review, m.sentAt]), [[undefined, undefined]])
@@ -180,8 +183,8 @@ test('taking a send back unmarks only its messages', async () => {
   const store = memory()
   const a = await added(store)
   const b = await added(store)
-  await markSent(store, '/r', [a], 'r1')
-  await markSent(store, '/r', [b], 'r2')
+  await mark(store, [a], 'r1')
+  await mark(store, [b], 'r2')
   await markUnsent(store, '/r', 'r2')
   assert.deepEqual((await listNotes(store, '/r')).map(waitingFor), ['r1', undefined])
   assert.deepEqual((await stored(store, b)).messages.map((m) => [m.review, m.sentAt]), [[undefined, undefined]])
@@ -242,7 +245,7 @@ test('a sent mark is all or nothing', async () => {
   const b = await added(store)
   const set = store.set
   store.set = async (key, value) => { if (key === noteKey('/r', b)) throw new Error('value exceeds 262144 bytes'); return set(key, value) }
-  await assert.rejects(markSent(store, '/r', [a, b], 'r1'))
+  await assert.rejects(mark(store, [a, b], 'r1'))
   assert.deepEqual((await listNotes(store, '/r')).map(stateOf), ['unsent', 'unsent'])
 })
 
@@ -250,7 +253,7 @@ test('deleting notes removes their values', async () => {
   const store = memory()
   const a = await added(store)
   const b = await added(store)
-  await markSent(store, '/r', [a], 'r1')
+  await mark(store, [a], 'r1')
   assert.deepEqual((await deleteNotes(store, '/r', [a, 'nope'])).map((n) => n.id), [a])
   assert.equal(await store.get(noteKey('/r', a)), null)
   assert.deepEqual(await store.get(notesKey('/r')), { root: '/r', ids: [b] })
@@ -262,7 +265,7 @@ test('a root is pending from the send to the last answer', async () => {
   const store = memory()
   const a = await added(store)
   const b = await added(store)
-  await markSent(store, '/r', [a, b], 'r1')
+  await mark(store, [a, b], 'r1')
   assert.deepEqual(await pendingRoots(store), ['/r'])
   await setAnswers(store, '/r', new Map([[a, answer('r1')]]))
   assert.deepEqual(await pendingRoots(store), ['/r'])
@@ -322,4 +325,56 @@ test('the list answers at most 900000 bytes of threads, leaving out resolved and
   } finally {
     rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   }
+})
+
+test('a send marks the messages of the notes file, not one written after it', async () => {
+  const store = memory()
+  const id = await added(store)
+  const file = new Map([[id, unsentOf(await stored(store, id)).map((m) => m.id)]])
+  await replyNote(store, '/r', id, 'later', [], 7)
+  await markSent(store, '/r', file, 'r1')
+  assert.deepEqual((await stored(store, id)).messages.map((m) => m.review), ['r1', undefined])
+  assert.equal(unsentOf(await stored(store, id)).length, 1)
+})
+
+test('an answer needs its send; one thread refused does not undo the others', async () => {
+  const store = memory()
+  const a = await added(store)
+  const b = await added(store)
+  await mark(store, [a, b], 'r1')
+  const set = store.set
+  store.set = async (key, value) => { if (key === noteKey('/r', a)) throw new Error('value exceeds 262144 bytes'); return set(key, value) }
+  const done = await setAnswers(store, '/r', new Map([[a, answer('r1')], [b, answer('r1')]]))
+  assert.deepEqual(done, { changed: true, refused: [{ id: a, error: 'value exceeds 262144 bytes' }] })
+  assert.equal(lastAnswer(await stored(store, b))?.review, 'r1')
+  assert.equal(lastAnswer(await stored(store, a)), undefined)
+  assert.deepEqual(await pendingRoots(store), ['/r'])
+})
+
+test('a pending key that cannot be written is logged and does not fail the change', async () => {
+  const store = memory()
+  const lines: string[] = []
+  setNotesLog((line) => lines.push(line))
+  try {
+    const id = await added(store)
+    const set = store.set
+    store.set = async (key, value) => { if (key === 'pending') throw new Error('full'); return set(key, value) }
+    await mark(store, [id], 'r1')
+    assert.equal(stateOf(await stored(store, id)), 'waiting')
+    assert.equal(lines.length, 1)
+    assert.match(lines[0], /pending not saved for \/r: full/)
+  } finally {
+    setNotesLog(() => undefined)
+  }
+})
+
+test('deleting all takes a thread that was added just before it', async () => {
+  const store = memory()
+  await added(store)
+  const gone = deleteNotes(store, '/r', 'all')
+  await added(store)
+  assert.equal((await gone).length, 1)
+  assert.equal((await listNotes(store, '/r')).length, 1)
+  assert.equal((await deleteNotes(store, '/r', 'all')).length, 1)
+  assert.deepEqual(await listNotes(store, '/r'), [])
 })

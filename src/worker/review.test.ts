@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assert, hostError, mountWorker, test } from 'orca/testing'
 import * as main from './main.ts'
-import { parseAnswer, promptRefusal, readAnswers, removeReview, reviewPaths, reviewPrompt, writeReview } from './review.ts'
+import { notesFile, parseAnswer, promptRefusal, readAnswers, removeReview, reviewPaths, reviewPrompt, writeReview } from './review.ts'
 import { REVIEW_GUIDE } from './reviewGuide.ts'
 import { t } from '../shared/i18n.ts'
 import { lastAnswer, stateOf } from '../shared/notes.ts'
@@ -27,17 +27,32 @@ test('a review folder holds the notes, the guide and a place for answers', () =>
   const paths = reviewPaths(root, 'bbbbbbbbbbbb')
   assert.equal(paths.dir, join(root, '.orca-git-log', 'review-bbbbbbbbbbbb'))
   const text = readFileSync(paths.notes, 'utf8')
-  for (const part of ['## Note aaaaaaaaaaaa', 'File: src/a.ts', 'Lines: 3-4, new side', `git show ${'c'.repeat(40)}:src/a.ts`, '    x\n    y', 'why?', join(paths.answers, '<note id>.md'), ONCE]) assert.ok(text.includes(part), part)
+  for (const part of ['## Thread aaaaaaaaaaaa', 'File: src/a.ts', 'Lines: 3-4, new side', `git show ${'c'.repeat(40)}:src/a.ts`, '    x\n    y', 'why?', join(paths.answers, '<thread id>.md'), ONCE]) assert.ok(text.includes(part), part)
   assert.equal(readFileSync(paths.guide, 'utf8'), REVIEW_GUIDE)
   assert.ok(REVIEW_GUIDE.includes(ONCE))
   for (const part of ['Keep the answer very short, with no filler.', 'a screenshot of the design mockup']) assert.ok(REVIEW_GUIDE.includes(part), part)
   assert.ok(!REVIEW_GUIDE.includes('confidence'))
+  for (const part of ['0. A note is a thread: it can hold earlier messages from the user and from an agent. Read the whole thread; answer the messages marked NEW.', 'One answer file per thread: it answers every NEW message of that thread together.']) assert.ok(REVIEW_GUIDE.includes(part), part)
   // A note is a question, a request or a claim; the agent argues and does not excuse itself; the user's skills win.
   for (const part of ['a **question**', 'a **request**', 'a **claim**', '`answered` (a question, answered)', '"I did not change this" is not an answer',
     'say so plainly, give the fact that shows it, and say what you propose instead', 'A rule of this guide that contradicts a rule of 1 or 2 does not apply', 'Every other rule of this guide still applies together with theirs']) assert.ok(REVIEW_GUIDE.includes(part), part)
   assert.ok(text.includes('verdict: answered | confirmed | refuted | unclear'))
   assert.ok(text.includes('very short and with no filler') && !text.includes('confidence'))
   assert.equal(statSync(paths.answers).isDirectory(), true)
+})
+
+test('the notes file tells the whole thread and marks what is new', () => {
+  const messages: NoteMessage[] = [
+    { ...user, review: 'bbbbbbbbbbbb', sentAt: 1 },
+    { id: 'nnnnnnnnnnnn', author: 'agent', body: 'no.', at: 2, review: 'bbbbbbbbbbbb', verdict: 'refuted', fixed: false },
+    { id: 'oooooooooooo', author: 'user', body: 'still wrong', at: 3 }
+  ]
+  const paths = reviewPaths('/r', 'cccccccccccc')
+  const text = notesFile([note(messages)], paths)
+  for (const part of ['## Thread aaaaaaaaaaaa', 'Messages, oldest first:', '[1] user, 1970-01-01T00:00:00.001Z:\nwhy?', '[2] agent (refuted, fixed: no), 1970-01-01T00:00:00.002Z:\nno.', '[3] user, 1970-01-01T00:00:00.003Z — NEW, answer this:\nstill wrong',
+    join(paths.answers, '<thread id>.md'), 'A thread can hold earlier messages: read them all, answer the messages marked NEW, and do not repeat what was already answered.']) assert.ok(text.includes(part), part)
+  assert.equal(text.split('NEW, answer this').length - 1, 1)
+  assert.ok(!text.includes('Comment:'))
 })
 
 test('a link or a file in place of the folder is refused and nothing is written through it', () => {
@@ -422,7 +437,7 @@ test('the review skills go into the notes file and the prompt points at them', a
   assert.ok(first.text.includes('Review skills to use first, in this order (each is a file, or a folder with a SKILL.md):'))
   assert.ok(first.text.split('\n').includes(`1. ${join(root, 'rules.md')}`))
   // At the top: before the first note.
-  assert.ok(first.text.indexOf('Review skills to use first') < first.text.indexOf('## Note '))
+  assert.ok(first.text.indexOf('Review skills to use first') < first.text.indexOf('## Thread '))
   assert.ok(first.prompt.includes('The review skills listed at the top of'))
   assert.equal(first.prompt.includes('rules.md'), false)
   rmSync(join(root, 'rules.md'))
@@ -477,4 +492,32 @@ test('skills that cannot be read leave the send to go without them', async () =>
   assert.equal(sent.ok, true)
   assert.equal(readFileSync(reviewPaths(root, sent.review).notes, 'utf8').includes('Review skills'), false)
   assert.ok(worker.logs.some((line) => line.includes('review skills not read') && line.includes('storage is gone')))
+})
+
+test('each send gets its own agent message', async () => {
+  const root = fixture()
+  const worker = await mountWorker(main, { host: host(root, { 'agent.launch': { terminalId: 't-1' } }) })
+  const { note: added } = (await worker.request('notes.add', { root, draft: draft() })) as any
+  const list = async () => ((await worker.request('notes.list', { root })) as any).notes[0] as ReviewNote
+  const first = (await worker.request('notes.send', { root, ids: [added.id], agent: 'claude' })) as any
+  answerFile(root, first.review, added.id, 'verdict: refuted\nfixed: no\n\nfirst')
+  assert.deepEqual((await list()).messages.map((m) => [m.author, m.body]), [['user', 'why?'], ['agent', 'first']])
+  await worker.request('notes.reply', { root, id: added.id, body: 'still wrong', images: [] })
+  const second = (await worker.request('notes.send', { root, ids: [added.id], agent: 'claude' })) as any
+  assert.ok(readFileSync(reviewPaths(root, second.review).notes, 'utf8').includes('[3] user, '))
+  answerFile(root, second.review, added.id, 'verdict: confirmed\nfixed: yes\n\nsecond')
+  assert.deepEqual((await list()).messages.map((m) => [m.author, m.body]), [['user', 'why?'], ['agent', 'first'], ['user', 'still wrong'], ['agent', 'second']])
+  answerFile(root, second.review, added.id, 'verdict: confirmed\nfixed: yes\n\nsecond, rewritten')
+  const id = (await list()).messages[3].id
+  const rewritten = await list()
+  assert.deepEqual(rewritten.messages.map((m) => m.body), ['why?', 'first', 'still wrong', 'second, rewritten'])
+  assert.equal(rewritten.messages[3].id, id)
+})
+
+test('a resolved thread is not sent', async () => {
+  const root = fixture()
+  const worker = await mountWorker(main, { host: host(root, { 'agent.launch': { terminalId: 't-1' } }) })
+  const { note: added } = (await worker.request('notes.add', { root, draft: draft() })) as any
+  await worker.request('notes.resolve', { root, id: added.id, resolved: true })
+  assert.deepEqual(await worker.request('notes.send', { root, ids: [added.id], agent: 'claude' }), { ok: false, reason: t('reviewNothing') })
 })

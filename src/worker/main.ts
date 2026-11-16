@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path'
 import type { OrcaWorkerApi, PanelRequestContext } from 'orca/worker'
 import { pickLocale, setLocale, t } from '../shared/i18n.ts'
 import type { ActionResult, DiffTabState, NoteResult, RepoResult, ReviewNote } from '../shared/protocol.ts'
-import { stateOf, waitingFor } from '../shared/notes.ts'
+import { stateOf, unsentOf, waitingFor } from '../shared/notes.ts'
 import { checkRewrite, runAction } from './actions.ts'
 import { checkBackup, checkReset, deleteBackup, runGuarded } from './backup.ts'
 import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
@@ -15,7 +15,7 @@ import { readDetails, readLogPage, readRefs } from './log.ts'
 import { resolveRepo, toplevel } from './repo.ts'
 import { readFileDiff } from './diff.ts'
 import { readRangeDiff, readSelectionFiles } from './selection.ts'
-import { addNote, deleteNotes, editMessage, fitList, listNotes, markSent, markUnsent, pendingRoots, removeMessage, replyNote, resendNote, resolveNote, setAnswers } from './notes.ts'
+import { addNote, deleteNotes, editMessage, fitList, listNotes, markSent, markUnsent, pendingRoots, removeMessage, replyNote, resendNote, resolveNote, setAnswers, setNotesLog } from './notes.ts'
 import { promptRefusal, readAnswers, removeReview, reviewPrompt, writeReview } from './review.ts'
 import { browseSkills, checkSkills, listSkills, saveSkills, skillsForReview } from './skills.ts'
 import { createPatch } from './patch.ts'
@@ -200,6 +200,7 @@ async function focusDiff({ root }: { root: string }): Promise<{ ok: boolean; rea
 }
 
 export default function activate(orca: OrcaWorkerApi): void {
+  setNotesLog((line) => orca.log(line))
   orcaApi = orca
   // A panel drops what it waited for from a worker before this one: that is never posted.
   orca.panels.post('worker.started', {})
@@ -346,7 +347,11 @@ export default function activate(orca: OrcaWorkerApi): void {
   /** Stores the answers the agent has written for `root` and tells the panels. Throws when they cannot be read or stored. */
   const ingest = async (root: string): Promise<void> => {
     const found = readAnswers(root, await listNotes(orca.storage, root))
-    if (found.size && (await setAnswers(orca.storage, root, found))) orca.panels.post('notes.changed', { root })
+    if (!found.size) return
+    const { changed, refused } = await setAnswers(orca.storage, root, found)
+    if (changed) orca.panels.post('notes.changed', { root })
+    // The ones stored stay stored; the caller tells the user about the rest.
+    if (refused.length) throw new Error(`${refused.length} of ${found.size}: ${refused[0].error}`)
   }
 
   orca.events.on('agent.status.changed', async () => {
@@ -433,7 +438,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     let gone: ReviewNote[]
     try {
       // All: the threads a cut list did not show go too.
-      gone = await deleteNotes(orca.storage, key, all === true ? (await listNotes(orca.storage, key)).map((n) => n.id) : ids)
+      gone = await deleteNotes(orca.storage, key, all === true ? 'all' : ids)
     } catch (error) {
       return { ok: false, reason: t('notesSaveFailed', { error: errorText(error) }) }
     }
@@ -469,7 +474,8 @@ export default function activate(orca: OrcaWorkerApi): void {
       removeReview(key, review)
       return { ok: false, reason: refusal }
     }
-    const sent = notes.map((n) => n.id)
+    // The messages the notes file marks NEW: one written since stays unsent.
+    const sent = new Map(notes.map((n) => [n.id, unsentOf(n).map((m) => m.id)]))
     // Marked before the launch: a mark that failed after it would leave a running agent and unsent notes, which a second send would give to another agent.
     try {
       await markSent(orca.storage, key, sent, review)

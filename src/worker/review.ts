@@ -1,7 +1,7 @@
 import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readSync, rmdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { t } from '../shared/i18n.ts'
-import { lastAnswer, MAX_REPLY, waitingFor } from '../shared/notes.ts'
+import { lastAnswer, MAX_REPLY, unsentOf, waitingFor } from '../shared/notes.ts'
 import type { NoteMessage, NoteReply, NoteVerdict, ReviewNote } from '../shared/protocol.ts'
 import { REVIEW_GUIDE } from './reviewGuide.ts'
 
@@ -21,20 +21,25 @@ const indent = (text: string): string => text.split(/\r?\n/).map((line) => `    
 export function notesFile(notes: ReviewNote[], paths: ReviewPaths, skills: string[] = []): string {
   const head = [
     '# Review notes',
-    `Write one answer file per note to \`${join(paths.answers, '<note id>.md')}\`. The first line is \`verdict: answered | confirmed | refuted | unclear\` (\`answered\` — the note was a question and you answered it), the second \`fixed: yes | no\`, then a blank line, then the answer in markdown, very short and with no filler: the answer itself (to a question — what the user asked; to a request or a claim — what you did or why you did not), with the facts (a code snippet, a file:line reference, or a screenshot of the design mockup saved next to the answer file, with its full path). Write each answer file once, when you are done with that note — after the fix, if you make one.`,
+    `Write one answer file per thread to \`${join(paths.answers, '<thread id>.md')}\`. The first line is \`verdict: answered | confirmed | refuted | unclear\` (\`answered\` — the note was a question and you answered it), the second \`fixed: yes | no\`, then a blank line, then the answer in markdown, very short and with no filler: the answer itself (to a question — what the user asked; to a request or a claim — what you did or why you did not), with the facts (a code snippet, a file:line reference, or a screenshot of the design mockup saved next to the answer file, with its full path). Write each answer file once, when you are done with that note — after the fix, if you make one. A thread can hold earlier messages: read them all, answer the messages marked NEW, and do not repeat what was already answered.`,
     ...(skills.length ? [['Review skills to use first, in this order (each is a file, or a folder with a SKILL.md):', ...skills.map((path, i) => `${i + 1}. ${path}`)].join('\n')] : [])
   ].join('\n\n')
-  const each = notes.map((n) =>
-    [
-      `## Note ${n.id}`,
+  const each = notes.map((n) => {
+    const fresh = new Set(unsentOf(n))
+    return [
+      `## Thread ${n.id}`,
       `File: ${n.path}`,
       `Lines: ${n.start.line}-${n.end.line}, ${n.side} side, as of commit ${n.rev} (git show ${n.rev}:${n.path})`,
       'Selected:',
       indent(n.quote),
-      'Comment:',
-      n.messages.filter((m) => m.author === 'user').map((m) => m.body).join('\n\n')
+      'Messages, oldest first:',
+      ...n.messages.flatMap((m, i) => {
+        const time = new Date(m.at).toISOString()
+        const who = m.author === 'agent' ? `agent (${m.verdict ?? 'unclear'}, fixed: ${m.fixed ? 'yes' : 'no'}), ${time}` : `user, ${time}${fresh.has(m) ? ' — NEW, answer this' : ''}`
+        return [`[${i + 1}] ${who}:`, m.body]
+      })
     ].join('\n')
-  )
+  })
   return `${[head, ...each].join('\n\n')}\n`
 }
 
@@ -182,8 +187,8 @@ function readAnswerFile(path: string): string | null {
  * may have rewritten its file): answers/<note id>.md, a regular file of at most 65536 bytes, never through a link. A note
  * or send whose id is not 12 hex is skipped: frames share the storage, so a stored id is not guaranteed.
  */
-export function readAnswers(root: string, notes: ReviewNote[], now = Date.now()): Map<string, Omit<NoteMessage, 'id' | 'author'>> {
-  const found = new Map<string, Omit<NoteMessage, 'id' | 'author'>>()
+export function readAnswers(root: string, notes: ReviewNote[], now = Date.now()): Map<string, Omit<NoteMessage, 'id' | 'author'> & { review: string }> {
+  const found = new Map<string, Omit<NoteMessage, 'id' | 'author'> & { review: string }>()
   for (const note of notes) {
     const review = waitingFor(note) ?? lastAnswer(note)?.review
     if (!review || !ID.test(review) || !ID.test(note.id)) continue

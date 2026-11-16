@@ -31,6 +31,7 @@ A note can be more than one of these: answer the question and make the change.
 
 ## For each note
 
+0. A note is a thread: it can hold earlier messages from the user and from an agent. Read the whole thread; answer the messages marked NEW.
 1. Read the selected text in its place: \`git show <commit>:<path>\` prints the version the note was written on. Then find that code in the working tree and read the function, its callers and its tests, not only the selected lines.
 2. Decide the verdict: \`answered\` (a question, answered), \`confirmed\` (the claim holds, or the request is right and done), \`refuted\` (the claim does not hold, or the request should not be done — and why), \`unclear\` (you cannot tell: say what you would need to know).
 3. Back it with a fact that can be opened: a code snippet, a \`file:line\` reference, the output of a test you ran, the rule that applies, or a screenshot of the design mockup.
@@ -41,6 +42,8 @@ A note can be more than one of these: answer the question and make the change.
 ## Answer
 
 One file per note, at the path the notes file gives: \`verdict:\` on the first line, \`fixed: yes\` or \`fixed: no\` on the second, a blank line, then the answer in markdown. \`fixed: yes\` only when you changed code for this very note: a question you only answered is \`fixed: no\`, even if another note changed the same code.
+
+One answer file per thread: it answers every NEW message of that thread together.
 
 Keep the answer very short, with no filler. It holds only:
 

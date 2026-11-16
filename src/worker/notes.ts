@@ -62,11 +62,21 @@ async function read(store: NoteStore, root: string): Promise<ReviewNote[]> {
 /** Writes the list of `root`: the ids of `notes`, so a name of no note drops out of it. */
 const writeList = (store: NoteStore, root: string, notes: ReviewNote[]): Promise<void> => store.set(notesKey(root), { root, ids: notes.map((n) => n.id) })
 
-/** Recomputes `pending` for `root` from its notes: pending while one waits for an answer, resolved or not. */
+let log: (line: string) => void = () => undefined
+/** Where the store functions report what they could not do but did not have to fail for. */
+export const setNotesLog = (write: (line: string) => void): void => {
+  log = write
+}
+
+/** Recomputes `pending` for `root` from its notes: pending while one waits for an answer, resolved or not. A failed write is logged, not thrown: the change it follows is stored already. */
 async function syncPending(store: NoteStore, root: string, notes: ReviewNote[]): Promise<void> {
-  const next = (await pendingRoots(store)).filter((r) => r !== root)
-  if (notes.some((n) => waitingFor(n) !== undefined)) next.push(root)
-  await store.set(PENDING, next)
+  try {
+    const next = (await pendingRoots(store)).filter((r) => r !== root)
+    if (notes.some((n) => waitingFor(n) !== undefined)) next.push(root)
+    await store.set(PENDING, next)
+  } catch (error) {
+    log(`pending not saved for ${root}: ${error instanceof Error ? error.message : String(error)}`)
+  }
 }
 
 const failed = (error: unknown): { ok: false; reason: string } => ({ ok: false, reason: t('notesSaveFailed', { error: error instanceof Error ? error.message : String(error) }) })
@@ -181,12 +191,12 @@ export function resolveNote(store: NoteStore, root: string, id: unknown, resolve
   })
 }
 
-/** Returns the notes it removed. */
+/** Returns the notes it removed; 'all' is every note there is when the queue gets to it. */
 export function deleteNotes(store: NoteStore, root: string, ids: unknown): Promise<ReviewNote[]> {
   return serial(async () => {
-    if (!Array.isArray(ids)) return []
+    if (ids !== 'all' && !Array.isArray(ids)) return []
     const notes = await read(store, root)
-    const gone = notes.filter((n) => ids.includes(n.id))
+    const gone = notes.filter((n) => ids === 'all' || (ids as unknown[]).includes(n.id))
     if (!gone.length) return []
     const left = notes.filter((n) => !gone.includes(n))
     // The list first: a value it no longer names is out of sight even if its delete fails.
@@ -219,14 +229,11 @@ async function changeAll(store: NoteStore, root: string, change: (note: ReviewNo
   return true
 }
 
-/** Marks every unsent message of the user in the notes `ids` as gone out with `review`. */
-export function markSent(store: NoteStore, root: string, ids: string[], review: string, now = Date.now()): Promise<void> {
+/** Marks the messages of the user `sent` names (note id → message ids: what went into the notes file) as gone out with `review`; one written since stays unsent. */
+export function markSent(store: NoteStore, root: string, sent: Map<string, string[]>, review: string, now = Date.now()): Promise<void> {
   return serial(async () => {
-    await changeAll(store, root, (n) =>
-      ids.includes(n.id) && n.messages.some((m) => m.author === 'user' && m.sentAt === undefined)
-        ? { ...n, messages: n.messages.map((m) => (m.author === 'user' && m.sentAt === undefined ? { ...m, review, sentAt: now } : m)) }
-        : n
-    )
+    const ours = (n: ReviewNote, m: NoteMessage) => m.author === 'user' && m.sentAt === undefined && (sent.get(n.id) ?? []).includes(m.id)
+    await changeAll(store, root, (n) => (n.messages.some((m) => ours(n, m)) ? { ...n, messages: n.messages.map((m) => (ours(n, m) ? { ...m, review, sentAt: now } : m)) } : n))
   })
 }
 
@@ -240,20 +247,34 @@ export function markUnsent(store: NoteStore, root: string, review: string): Prom
 
 const imageIds = (m: Pick<NoteMessage, 'images'>): string => (m.images ?? []).map((i) => i.id).join()
 
-/** Puts each answer in as the agent's message for its send, or replaces that message when verdict, fixed, body or images differ. */
-export function setAnswers(store: NoteStore, root: string, answers: Map<string, Omit<NoteMessage, 'id' | 'author'>>): Promise<boolean> {
-  return serial(() =>
-    changeAll(store, root, (n) => {
+/** Puts each answer in as the agent's message for its send, or replaces that message when verdict, fixed, body or images differ. Each thread is written on its own: `refused` names those whose write failed, with the store's reason. */
+export function setAnswers(store: NoteStore, root: string, answers: Map<string, Omit<NoteMessage, 'id' | 'author'> & { review: string }>): Promise<{ changed: boolean; refused: { id: string; error: string }[] }> {
+  return serial(async () => {
+    const notes = await read(store, root)
+    const refused: { id: string; error: string }[] = []
+    const next = notes.map((n) => {
       const answer = answers.get(n.id)
       // An answer for a send the thread did not go out with (taken back since it was read) stays out.
       if (!answer || !n.messages.some((m) => m.author === 'user' && m.review === answer.review)) return n
       const stored = n.messages.find((m) => m.author === 'agent' && m.review === answer.review)
-      if (!stored) return { ...n, messages: [...n.messages, { ...answer, id: newId(), author: 'agent' }] }
+      if (!stored) return { ...n, messages: [...n.messages, { ...answer, id: newId(), author: 'agent' as const }] }
       // When it was read does not count.
       if (stored.verdict === answer.verdict && stored.fixed === answer.fixed && stored.body === answer.body && imageIds(stored) === imageIds(answer)) return n
-      return { ...n, messages: n.messages.map((m) => (m === stored ? { ...answer, id: stored.id, author: 'agent', at: stored.at } : m)) }
+      return { ...n, messages: n.messages.map((m) => (m === stored ? { ...answer, id: stored.id, author: 'agent' as const, at: stored.at } : m)) }
     })
-  )
+    for (const [i, note] of next.entries()) {
+      if (note === notes[i]) continue
+      try {
+        await store.set(noteKey(root, note.id), note)
+      } catch (error) {
+        refused.push({ id: note.id, error: error instanceof Error ? error.message : String(error) })
+        next[i] = notes[i]
+      }
+    }
+    const changed = next.some((n, i) => n !== notes[i])
+    if (changed) await syncPending(store, root, next)
+    return { changed, refused }
+  })
 }
 
 /** Roots with a thread that waits for an answer. */
