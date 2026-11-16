@@ -97,7 +97,8 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   independent reviewer) and an empty `answers/`, adds `.orca-git-log/` to the repository's
   `.git/info/exclude`, marks the notes sent and starts a new agent in that workspace whose prompt names
   the three paths. If the agent does not start, the folder is removed and the notes go back to unsent;
-  the reason shows under the button. One send per repository runs at a time.
+  the reason shows under the button. One send per repository runs at a time, and a note waits for one
+  answer at a time: while its last send has no answer it shows "Sent, no answer yet" and is not sent again.
 - **Review skills** of a repository: under the notes in the Notes list, set up to 10 skills the agent
   takes first, in their order, before the project's own rules and skills and the plugin's guide. A skill
   is an `.md` file or a skill folder, as a full path, `~/…` or from the repository root (a trailing `/`
@@ -403,7 +404,9 @@ keeps them all.
   a regular file); anything else is ignored. `fixed` is the agent's word: the plugin does not check it.
 - Review notes: up to 200 per repository, each with up to 100 messages. Orca limits a stored value to
   256 KiB, and a note with its answers is one value: a note or an answer that does not fit is refused with
-  a message; deleting notes frees space.
+  a message; deleting notes frees space. The Notes list carries at most 900,000 bytes of notes (Orca
+  limits a worker's answer to 1 MiB): unresolved notes first, then resolved, newest first; a warning
+  counts the ones left out, and Delete all removes those too.
 
 ## Third-party code
 

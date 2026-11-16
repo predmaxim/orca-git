@@ -395,7 +395,8 @@ declare module 'orca' {
     /** Removes one message; the last one takes the thread with it. */
     'notes.remove': { input: { root: string; id: string; message: string }; output: NoteResult }
     'notes.resolve': { input: { root: string; id: string; resolved: boolean }; output: NoteResult }
-    'notes.delete': { input: { root: string; ids: string[] }; output: { ok: boolean; reason?: string } }
+    /** `all`: every thread of the root, those a cut list did not show too. */
+    'notes.delete': { input: { root: string; ids?: string[]; all?: boolean }; output: { ok: boolean; reason?: string } }
     'notes.send': { input: { root: string; ids: string[]; agent: string }; output: { ok: true; review: string } | { ok: false; reason: string } }
     'skills.list': { input: { root: string }; output: { skills: string[] } }
     'skills.set': { input: { root: string; skills: string[] }; output: { ok: true; skills: string[] } | { ok: false; reason: string } }

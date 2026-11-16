@@ -6,7 +6,7 @@ import * as main from './main.ts'
 import { parseAnswer, promptRefusal, readAnswers, removeReview, reviewPaths, reviewPrompt, writeReview } from './review.ts'
 import { REVIEW_GUIDE } from './reviewGuide.ts'
 import { t } from '../shared/i18n.ts'
-import { lastAnswer } from '../shared/notes.ts'
+import { lastAnswer, stateOf } from '../shared/notes.ts'
 import type { NoteMessage, NoteReply, ReviewNote } from '../shared/protocol.ts'
 import { noteKey, notesKey } from './notes.ts'
 import { skillsKey } from './skills.ts'
@@ -348,6 +348,49 @@ test('send again or a removal drops the folder of the review no message referenc
   const removed = (await worker.request('notes.remove', { root, id: b.id, message: b.messages[0].id })) as any
   assert.deepEqual(removed, { ok: true, note: null })
   assert.equal(existsSync(reviewPaths(root, sent.review).dir), false)
+})
+
+test('a thread that waits for its answer, or is resolved, is not sent', async () => {
+  const root = fixture()
+  const h = host(root, { 'agent.launch': { terminalId: 't-1' } })
+  const worker = await mountWorker(main, { host: h })
+  const { note: a } = (await worker.request('notes.add', { root, draft: draft() })) as any
+  const { note: b } = (await worker.request('notes.add', { root, draft: draft() })) as any
+  const send = (id: string) => worker.request('notes.send', { root, ids: [id], agent: 'claude' }) as Promise<any>
+  const sent = await send(a.id)
+  assert.equal(((await worker.request('notes.reply', { root, id: a.id, body: 'and this?' })) as any).ok, true)
+  assert.deepEqual(await send(a.id), { ok: false, reason: t('reviewNothing') })
+  assert.equal(((await worker.request('notes.resolve', { root, id: b.id, resolved: true })) as any).ok, true)
+  assert.deepEqual(await send(b.id), { ok: false, reason: t('reviewNothing') })
+  assert.equal(h.callsOf('agent.launch').length, 1)
+  // The answer to the first send comes after the reply, at the end; then the reply can go.
+  answerFile(root, sent.review, a.id, 'verdict: answered\n\nYes.')
+  const [stored] = ((await worker.request('notes.list', { root })) as any).notes
+  assert.deepEqual(stored.messages.map((m: any) => m.author), ['user', 'user', 'agent'])
+  assert.equal(stateOf(stored), 'unsent')
+  assert.equal((await send(a.id)).ok, true)
+})
+
+test('a removed answer does not come back', async () => {
+  const root = fixture()
+  const h = host(root, { 'agent.launch': { terminalId: 't-1' } })
+  const worker = await mountWorker(main, { host: h, events: ['agent.status.changed'] })
+  const { note: added } = (await worker.request('notes.add', { root, draft: draft() })) as any
+  const sent = (await worker.request('notes.send', { root, ids: [added.id], agent: 'claude' })) as any
+  answerFile(root, sent.review, added.id, 'verdict: refuted\nfixed: no\n\nNo.')
+  const first = async () => ((await worker.request('notes.list', { root })) as any).notes[0]
+  const answered = await first()
+  assert.deepEqual(answered.messages.map((m: any) => m.author), ['user', 'agent'])
+  const removed = (await worker.request('notes.remove', { root, id: added.id, message: answered.messages[1].id })) as any
+  assert.equal(removed.ok, true)
+  assert.equal(removed.note.messages.length, 1)
+  assert.equal(removed.note.messages[0].review, undefined)
+  assert.equal(typeof removed.note.messages[0].sentAt, 'number')
+  assert.equal(stateOf(removed.note), 'idle')
+  assert.equal(existsSync(reviewPaths(root, sent.review).dir), false)
+  await worker.emit('agent.status.changed', status)
+  assert.equal((await first()).messages.length, 1)
+  assert.deepEqual(h.data().storage.pending, [])
 })
 
 test('nothing to send, a bad agent name', async () => {

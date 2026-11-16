@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { MAX_BODY, MAX_MESSAGES, MAX_NOTES, MAX_QUOTE, stateOf, waitingFor } from '../shared/notes.ts'
+import { MAX_BODY, MAX_MESSAGES, MAX_NOTES, MAX_QUOTE, waitingFor } from '../shared/notes.ts'
 import { t } from '../shared/i18n.ts'
 import type { NoteDraft, NoteMessage, NotePoint, NoteResult, ReviewNote } from '../shared/protocol.ts'
 
@@ -62,10 +62,10 @@ async function read(store: NoteStore, root: string): Promise<ReviewNote[]> {
 /** Writes the list of `root`: the ids of `notes`, so a name of no note drops out of it. */
 const writeList = (store: NoteStore, root: string, notes: ReviewNote[]): Promise<void> => store.set(notesKey(root), { root, ids: notes.map((n) => n.id) })
 
-/** Recomputes `pending` for `root` from its notes. */
+/** Recomputes `pending` for `root` from its notes: pending while one waits for an answer, resolved or not. */
 async function syncPending(store: NoteStore, root: string, notes: ReviewNote[]): Promise<void> {
   const next = (await pendingRoots(store)).filter((r) => r !== root)
-  if (notes.some((n) => stateOf(n) === 'waiting')) next.push(root)
+  if (notes.some((n) => waitingFor(n) !== undefined)) next.push(root)
   await store.set(PENDING, next)
 }
 
@@ -155,11 +155,20 @@ export function resendNote(store: NoteStore, root: string, id: unknown): Promise
   })
 }
 
-/** Removes any message; with the last one the thread goes too. */
+/**
+ * Removes any message; with the last one the thread goes too. An agent's answer takes its send off the user's messages
+ * of it (they stay sent): the thread no longer waits for that send, so its answer file is never read in again.
+ */
 export function removeMessage(store: NoteStore, root: string, id: unknown, message: unknown): Promise<NoteResult> {
   return changeNote(store, root, id, (note) => {
-    const messages = note.messages.filter((m) => m.id !== message)
-    if (messages.length === note.messages.length) return t('noteMissing')
+    const gone = note.messages.find((m) => m.id === message)
+    if (!gone) return t('noteMissing')
+    const leaveSend = (m: NoteMessage): NoteMessage => {
+      if (gone.author !== 'agent' || m.author !== 'user' || m.review === undefined || m.review !== gone.review) return m
+      const { review, ...rest } = m
+      return rest
+    }
+    const messages = note.messages.filter((m) => m !== gone).map(leaveSend)
     return messages.length ? { ...note, messages } : null
   })
 }
@@ -251,4 +260,21 @@ export function setAnswers(store: NoteStore, root: string, answers: Map<string, 
 export async function pendingRoots(store: NoteStore): Promise<string[]> {
   const value = await store.get(PENDING)
   return Array.isArray(value) ? value.filter((r): r is string => typeof r === 'string') : []
+}
+
+/** The most bytes of threads (JSON, UTF-8) `notes.list` answers: Orca refuses a worker's answer over 1 MiB. */
+const MAX_LIST_BYTES = 900000
+
+/** The threads a list can carry, in their stored order, and how many are left out: unresolved ones first, then resolved, newest first in each. */
+export function fitList(notes: ReviewNote[]): { notes: ReviewNote[]; cut: number } {
+  const order = [...notes].sort((a, b) => Number(a.resolvedAt !== undefined) - Number(b.resolvedAt !== undefined) || b.createdAt - a.createdAt)
+  const kept = new Set<ReviewNote>()
+  let total = 0
+  for (const note of order) {
+    const bytes = new TextEncoder().encode(JSON.stringify(note)).length
+    if (total + bytes > MAX_LIST_BYTES) continue
+    total += bytes
+    kept.add(note)
+  }
+  return { notes: notes.filter((n) => kept.has(n)), cut: notes.length - kept.size }
 }

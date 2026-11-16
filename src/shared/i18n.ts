@@ -486,6 +486,10 @@ export const en = {
   noteMissing: 'The note no longer exists.',
   noteFull: 'This thread is full: {count} messages.',
   noteSentFixed: 'A sent message cannot be changed.',
+  notesCut: {
+    one: '{count} thread is not shown: the list is too large. Delete threads you no longer need.',
+    other: '{count} threads are not shown: the list is too large. Delete threads you no longer need.'
+  },
   notesSaveFailed: 'Could not save the note: {error}',
   notesSend: 'Send to a new agent ({count})',
   notesSendAll: 'All unsent ({count})',
@@ -991,6 +995,12 @@ export const ru: Record<keyof typeof en, Message> = {
   noteMissing: 'Заметки уже нет.',
   noteFull: 'Обсуждение заполнено: {count} сообщений.',
   noteSentFixed: 'Отправленное сообщение изменить нельзя.',
+  notesCut: {
+    one: '{count} обсуждение не показано: список слишком большой. Удалите ненужные обсуждения.',
+    few: '{count} обсуждения не показаны: список слишком большой. Удалите ненужные обсуждения.',
+    many: '{count} обсуждений не показано: список слишком большой. Удалите ненужные обсуждения.',
+    other: '{count} обсуждения не показаны: список слишком большой. Удалите ненужные обсуждения.'
+  },
   notesSaveFailed: 'Не удалось сохранить заметку: {error}',
   notesSend: 'Отправить новому агенту ({count})',
   notesSendAll: 'Все неотправленные ({count})',

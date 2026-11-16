@@ -1,7 +1,7 @@
 import { rmSync } from 'node:fs'
 import { assert, mountWorker, test } from 'orca/testing'
 import { t } from '../shared/i18n.ts'
-import { MAX_MESSAGES, stateOf, waitingFor } from '../shared/notes.ts'
+import { lastAnswer, MAX_MESSAGES, stateOf, waitingFor } from '../shared/notes.ts'
 import * as main from './main.ts'
 import { addNote, deleteNotes, editMessage, listNotes, markSent, markUnsent, noteKey, notesKey, pendingRoots, removeMessage, replyNote, resendNote, resolveNote, setAnswers, type NoteStore } from './notes.ts'
 import { draft, fixture, host, memory } from './testkit.ts'
@@ -102,12 +102,44 @@ test('nothing is removed but by a removal', async () => {
   const removed = await removeMessage(store, '/r', id, agent.id)
   assert.ok(removed.ok && removed.note)
   assert.deepEqual(removed.note.messages.map((m) => m.author), ['user', 'user'])
+  // The removed answer's send is left: its message stays sent, and the thread waits for nothing.
+  assert.deepEqual(removed.note.messages.map((m) => [m.review, m.sentAt === undefined]), [[undefined, false], [undefined, true]])
+  assert.equal(waitingFor(removed.note), undefined)
+  assert.equal((await editMessage(store, '/r', id, first.id, 'changed')).ok, false)
   assert.equal((await removeMessage(store, '/r', id, 'nope')).ok, false)
   await removeMessage(store, '/r', id, first.id)
   assert.deepEqual(await removeMessage(store, '/r', id, third.id), { ok: true, note: null })
   assert.equal(await store.get(noteKey('/r', id)), null)
   assert.deepEqual(await store.get(notesKey('/r')), { root: '/r', ids: [] })
   assert.deepEqual(await listNotes(store, '/r'), [])
+})
+
+test('a reply to a thread that waits keeps it waiting, and the answer goes at the end', async () => {
+  const store = memory()
+  const id = await added(store)
+  await markSent(store, '/r', [id], 'r1')
+  await replyNote(store, '/r', id, 'and this?', undefined)
+  assert.equal(stateOf(await stored(store, id)), 'waiting')
+  assert.deepEqual(await pendingRoots(store), ['/r'])
+  assert.equal(await setAnswers(store, '/r', new Map([[id, answer('r1')]])), true)
+  const note = await stored(store, id)
+  assert.deepEqual(note.messages.map((m) => [m.author, m.body, m.review]), [['user', 'why?', 'r1'], ['user', 'and this?', undefined], ['agent', 'no', 'r1']])
+  assert.equal(stateOf(note), 'unsent')
+  assert.deepEqual(await pendingRoots(store), [])
+})
+
+test('a resolved thread still waits for its answer, and stores it', async () => {
+  const store = memory()
+  const id = await added(store)
+  await markSent(store, '/r', [id], 'r1')
+  await resolveNote(store, '/r', id, true)
+  assert.equal(stateOf(await stored(store, id)), 'resolved')
+  assert.deepEqual(await pendingRoots(store), ['/r'])
+  assert.equal(await setAnswers(store, '/r', new Map([[id, answer('r1')]])), true)
+  const note = await stored(store, id)
+  assert.equal(stateOf(note), 'resolved')
+  assert.equal(lastAnswer(note)?.review, 'r1')
+  assert.deepEqual(await pendingRoots(store), [])
 })
 
 test('an answer is replaced only when it differs, and only for its own send', async () => {
@@ -260,6 +292,32 @@ test('the worker stores a note and tells the frames', async () => {
     assert.equal(stateOf(note), 'resolved')
     assert.equal(worker.posts.filter((p) => p.event === 'notes.changed').length, 6)
     assert.deepEqual(worker.refusals, [])
+    await worker.deactivate()
+  } finally {
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
+})
+
+test('the list answers at most 900000 bytes of threads, leaving out resolved and then older ones; Delete all takes them too', async () => {
+  const root = fixture()
+  try {
+    // Five threads of about 252 KB each, of which three fit; the resolved one is the newest.
+    const { body, ...anchor } = draft()
+    const thread = (id: string, createdAt: number, resolved: boolean) => ({
+      ...anchor, id, createdAt, ...(resolved ? { resolvedAt: 9 } : {}),
+      messages: Array.from({ length: 62 }, (_, i) => ({ id: `m${i}`, author: 'user', body: 'x'.repeat(4000), at: 1 }))
+    })
+    const threads = [thread('aaaaaaaaaaa1', 5, true), ...[2, 3, 4, 5].map((i) => thread(`aaaaaaaaaaa${i}`, i - 1, false))]
+    const ids = threads.map((n) => n.id)
+    const storage: any = { [notesKey(root)]: { root, ids }, ...Object.fromEntries(threads.map((n) => [noteKey(root, n.id), n])) }
+    const h = host(root, {}, storage)
+    const worker = await mountWorker(main, { host: h })
+    const listed = await worker.request('notes.list', { root })
+    assert.deepEqual(listed.notes.map((n) => n.id), ['aaaaaaaaaaa3', 'aaaaaaaaaaa4', 'aaaaaaaaaaa5'])
+    assert.equal(listed.warning, t('notesCut', { count: 2 }))
+    assert.deepEqual(await worker.request('notes.delete', { root, all: true }), { ok: true })
+    assert.deepEqual(Object.keys(h.data().storage).filter((key) => key.startsWith('note:')), [])
+    assert.deepEqual(await worker.request('notes.list', { root }), { notes: [] })
     await worker.deactivate()
   } finally {
     rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })

@@ -169,9 +169,10 @@ export function mountNotes(options: {
     refresh()
   }
 
-  async function remove(ids: string[]): Promise<void> {
+  /** Deletes the notes `ids`; with `all`, every note of the repository, those a cut list did not show too. */
+  async function remove(ids: string[], all = false): Promise<void> {
     try {
-      const result = await api.notesDelete(root, ids)
+      const result = all ? await api.notesDeleteAll(root) : await api.notesDelete(root, ids)
       if (!result.ok) return notify(result.reason ?? '')
       notes = notes.filter((n) => !ids.includes(n.id))
       if (editor?.id && ids.includes(editor.id)) editor = null
@@ -496,7 +497,7 @@ export function mountNotes(options: {
       const said = notices()
       let confirming = false
       const clearAll = (event: MouseEvent) => {
-        if (confirming) return void remove(sorted.map((n) => n.id))
+        if (confirming) return void remove(sorted.map((n) => n.id), true)
         confirming = true
         ;(event.currentTarget as HTMLElement).textContent = t('notesClearConfirm', { count: sorted.length })
       }

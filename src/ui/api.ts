@@ -103,6 +103,8 @@ export const api = {
   noteRemove: (root: string, id: string, message: string): Promise<NoteResult> => call('notes.remove', { root, id, message }),
   noteResolve: (root: string, id: string, resolved: boolean): Promise<NoteResult> => call('notes.resolve', { root, id, resolved }),
   notesDelete: (root: string, ids: string[]): Promise<{ ok: boolean; reason?: string }> => call('notes.delete', { root, ids }),
+  /** Every thread of the repository, those a cut list did not show too. */
+  notesDeleteAll: (root: string): Promise<{ ok: boolean; reason?: string }> => call('notes.delete', { root, all: true }),
   notesSend: (root: string, ids: string[], agent: string): Promise<{ ok: true; review: string } | { ok: false; reason: string }> =>
     call('notes.send', { root, ids, agent }),
   skills: (root: string): Promise<{ skills: string[] }> => call('skills.list', { root }),

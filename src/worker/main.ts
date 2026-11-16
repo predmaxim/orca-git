@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path'
 import type { OrcaWorkerApi, PanelRequestContext } from 'orca/worker'
 import { pickLocale, setLocale, t } from '../shared/i18n.ts'
 import type { ActionResult, DiffTabState, NoteResult, RepoResult, ReviewNote } from '../shared/protocol.ts'
-import { unsentOf, waitingFor } from '../shared/notes.ts'
+import { stateOf, waitingFor } from '../shared/notes.ts'
 import { checkRewrite, runAction } from './actions.ts'
 import { checkBackup, checkReset, deleteBackup, runGuarded } from './backup.ts'
 import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
@@ -15,7 +15,7 @@ import { readDetails, readLogPage, readRefs } from './log.ts'
 import { resolveRepo, toplevel } from './repo.ts'
 import { readFileDiff } from './diff.ts'
 import { readRangeDiff, readSelectionFiles } from './selection.ts'
-import { addNote, deleteNotes, editMessage, listNotes, markSent, markUnsent, pendingRoots, removeMessage, replyNote, resendNote, resolveNote, setAnswers } from './notes.ts'
+import { addNote, deleteNotes, editMessage, fitList, listNotes, markSent, markUnsent, pendingRoots, removeMessage, replyNote, resendNote, resolveNote, setAnswers } from './notes.ts'
 import { promptRefusal, readAnswers, removeReview, reviewPrompt, writeReview } from './review.ts'
 import { browseSkills, checkSkills, listSkills, saveSkills, skillsForReview } from './skills.ts'
 import { createPatch } from './patch.ts'
@@ -373,7 +373,8 @@ export default function activate(orca: OrcaWorkerApi): void {
       // Most likely the stored value would pass Orca's 262144 bytes: the user has to know, and can free space.
       warning = t('notesAnswersFailed', { error: errorText(error) })
     }
-    const notes = await listNotes(orca.storage, key)
+    const { notes, cut } = fitList(await listNotes(orca.storage, key))
+    if (cut) warning = [warning, t('notesCut', { count: cut })].filter(Boolean).join(' ')
     return warning ? { notes, warning } : { notes }
   })
 
@@ -427,11 +428,12 @@ export default function activate(orca: OrcaWorkerApi): void {
     return told(key, result)
   })
 
-  handle('notes.delete', async ({ root, ids }) => {
+  handle('notes.delete', async ({ root, ids, all }) => {
     const key = (await gitFor(root)).root
     let gone: ReviewNote[]
     try {
-      gone = await deleteNotes(orca.storage, key, ids)
+      // All: the threads a cut list did not show go too.
+      gone = await deleteNotes(orca.storage, key, all === true ? (await listNotes(orca.storage, key)).map((n) => n.id) : ids)
     } catch (error) {
       return { ok: false, reason: t('notesSaveFailed', { error: errorText(error) }) }
     }
@@ -444,7 +446,8 @@ export default function activate(orca: OrcaWorkerApi): void {
 
   /** Writes the review folder, marks the notes sent, then starts the agent; a refused launch takes the mark off again. */
   const sendNotes = async (git: Git, key: string, ids: unknown, agent: unknown): Promise<{ ok: true; review: string } | { ok: false; reason: string }> => {
-    const notes = (await listNotes(orca.storage, key)).filter((n) => Array.isArray(ids) && ids.includes(n.id) && unsentOf(n).length > 0)
+    // Not resolved, not waiting for an answer (one send at a time per thread), with text not sent.
+    const notes = (await listNotes(orca.storage, key)).filter((n) => Array.isArray(ids) && ids.includes(n.id) && stateOf(n) === 'unsent')
     if (!notes.length) return { ok: false, reason: t('reviewNothing') }
     if (typeof agent !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(agent)) return { ok: false, reason: t('reviewBadAgent', { agent: String(agent).slice(0, 64) }) }
     const workspace = await workspaceFor(orca, key, await gitPath())

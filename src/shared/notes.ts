@@ -22,10 +22,11 @@ export function waitingFor(note: ReviewNote): string | undefined {
 
 export type NoteState = 'resolved' | 'unsent' | 'waiting' | 'answered' | 'idle'
 
+/** A thread waits for one send at a time: while it waits, its new text is not sent, so waiting comes before unsent. */
 export function stateOf(note: ReviewNote): NoteState {
   if (note.resolvedAt !== undefined) return 'resolved'
-  if (unsentOf(note).length) return 'unsent'
   if (waitingFor(note) !== undefined) return 'waiting'
+  if (unsentOf(note).length) return 'unsent'
   return note.messages[note.messages.length - 1]?.author === 'agent' ? 'answered' : 'idle'
 }
 
