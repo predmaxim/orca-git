@@ -949,10 +949,13 @@ function drawFiles(): void {
 let repoNotes: ReviewNote[] = []
 let notesToken = 0
 
-/** Loads the notes of `root`; a failure shows none. */
+/** Loads the notes of `root`; a failure shows none and says so in the banner. */
 function loadNotes(root: string): void {
   const token = ++notesToken
-  void api.notes(root).then((answer) => answer.notes, () => []).then((notes) => {
+  void api.notes(root).then((answer) => answer.notes, (error) => {
+    if (token === notesToken) showBanner(t('notesLoadFailed', { error: errorMessage(error) }), 'error')
+    return []
+  }).then((notes) => {
     if (token !== notesToken) return
     repoNotes = notes
     if (fileTree.length) drawFiles()

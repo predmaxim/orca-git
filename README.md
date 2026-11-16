@@ -59,7 +59,8 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   confirmed or fixed), the first line, the start of the first message. Resolved notes come last, with a
   check and pale; the file row counts the others. Hover a note for its path, lines, side, state and
   whole first message; a click (or Enter) opens the file in the Diff tab at the note's card. The rows
-  follow every change of the notes, here or in the Diff tab.
+  follow every change of the notes, here or in the Diff tab. When the notes cannot be loaded, the banner
+  says so and the files show no notes.
   Tree keys (here and in the branch tree): ↑ / ↓ move between rows, → opens a folder or steps into it,
   ← closes it or steps up to the parent folder (from a note, to its file), Space opens or closes a
   folder; each tree is one Tab stop, and a redraw keeps its scroll position.
