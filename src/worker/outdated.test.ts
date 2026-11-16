@@ -1,9 +1,10 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { after } from 'node:test'
-import { assert, mountWorker, test } from 'orca/testing'
+// node:test's test: orca/testing's re-export is typed without options, and a test here skips on Windows (a #!/bin/sh git).
+import { after, test } from 'node:test'
+import { assert, mountWorker } from 'orca/testing'
 import type { NoteSide, ReviewNote } from '../shared/protocol.ts'
 import { createGit } from './git.ts'
 import * as main from './main.ts'
@@ -134,4 +135,36 @@ test('a send writes the outdated mark into the notes file', async () => {
   assert.equal(sent.ok, true)
   assert.match(readFileSync(reviewPaths(root, sent.review).notes, 'utf8'), new RegExp(`\nOutdated: the code at these lines changed after ${a};`))
   await worker.deactivate()
+})
+
+test('a message edited while a send compares the notes with HEAD goes to the agent as it is marked sent', { skip: process.platform === 'win32' }, async () => {
+  const { root, commit, blob } = repo()
+  const a = commit('a', { 'a.txt': text(...SIX) })
+  commit('b', { 'a.txt': text('a', 'b', 'C', 'd', 'e', 'f') })
+  const changed = note('aaaaaaaaaaa1', 'new', blob(a), a, 3, 4)
+  // git's cat-file of the comparison with HEAD waits until the test has saved the edit.
+  const started = join(root, '.git', 'compare-started')
+  const go = join(root, '.git', 'compare-go')
+  const gitPath = join(root, '.git', 'waiting-git')
+  writeFileSync(gitPath, `#!/bin/sh\nfor a; do if [ "$a" = --batch-check ]; then touch '${started}'; while [ ! -e '${go}' ]; do sleep 0.01; done; fi; done\nexec git "$@"\n`)
+  chmodSync(gitPath, 0o755)
+  const storage: any = { [notesKey(root)]: { root, ids: [changed.id] }, [noteKey(root, changed.id)]: changed }
+  const h = host(root, { 'agent.launch': { terminalId: 't-1' } }, storage, { gitPath })
+  const worker = await mountWorker(main, { host: h })
+  try {
+    const sending = worker.request('notes.send', { root, ids: [changed.id], agent: 'claude' }) as Promise<any>
+    for (let i = 0; i < 1000 && !existsSync(started); i++) await new Promise((resolve) => setTimeout(resolve, 10))
+    assert.equal(existsSync(started), true)
+    assert.equal(((await worker.request('notes.edit', { root, id: changed.id, message: 'm1', body: 'use Y' })) as any).ok, true)
+    writeFileSync(go, '')
+    const sent = await sending
+    assert.equal(sent.ok, true)
+    const stored = (h.data().storage as any)[noteKey(root, changed.id)].messages[0]
+    assert.equal(stored.body, 'use Y')
+    assert.equal(stored.review, sent.review)
+    assert.match(readFileSync(reviewPaths(root, sent.review).notes, 'utf8'), /\n {4}use Y\n/)
+  } finally {
+    writeFileSync(go, '')
+    await worker.deactivate()
+  }
 })

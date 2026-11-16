@@ -3,7 +3,7 @@ import { api, copyText, errorMessage, orca, timedOut } from './api.ts'
 import { backupBlock, suggestBackupName, type BackupBlock } from './backup.ts'
 import { lateResults } from './late.ts'
 import { buildFileTree, orderedFiles, type FileNode } from '../shared/filetree.ts'
-import { notesUnder, placeCandidate } from '../shared/notes.ts'
+import { notesUnder, PLACE_FILES, placeCandidate } from '../shared/notes.ts'
 import { dirPaths, renderFileTree } from './filetree.ts'
 import { renderBranches } from './branches.ts'
 import { renderCommitList, renderPlaceholder } from './details.ts'
@@ -970,8 +970,9 @@ let placesToken = 0
 
 /**
  * Asks the worker where the notes of other versions stand on the files of the selection a note may be carried to (`placeCandidate`),
- * 100 files a request: a frame's message holds at most 64 KiB. The answer redraws the files unless the selection, the repository or
- * the notes changed since; until it comes, the places taken last stay. A failed request carries no notes: the worker logs why.
+ * PLACE_FILES files a request. The answer redraws the files unless the selection, the repository or the notes changed since; until
+ * it comes, the places taken last stay. A failed request carries no notes: the worker logs an error of its own, not a request the
+ * frame stopped waiting for.
  */
 function placeNotes(): void {
   const token = ++placesToken
@@ -982,7 +983,7 @@ function placeNotes(): void {
   }
   const root = repo.root
   const chunks: SelectionFile[][] = []
-  for (let i = 0; i < files.length; i += 100) chunks.push(files.slice(i, i + 100))
+  for (let i = 0; i < files.length; i += PLACE_FILES) chunks.push(files.slice(i, i + PLACE_FILES))
   void Promise.all(chunks.map((chunk) => api.notesPlace(root, chunk).then((answer) => answer.places, (): NotePlace[][] => []))).then((answers) => {
     if (token !== placesToken) return
     notePlaces = new Map(chunks.flatMap((chunk, i) => chunk.map((file, j) => [file, answers[i][j] ?? []] as const)))

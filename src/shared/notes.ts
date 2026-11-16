@@ -67,6 +67,9 @@ export function placeTarget(note: Pick<ReviewNote, 'side' | 'path' | 'blob'>, fi
   return path && blob !== note.blob ? blob : undefined
 }
 
+/** Files one `notes.place` request takes at most: a frame's message holds at most 64 KiB. */
+export const PLACE_FILES = 100
+
 /** Whether `notes.place` may carry a note of another version of a side of `file` to it (`placeTarget`). */
 export function placeCandidate(notes: ReviewNote[], file: SelectionFile): boolean {
   return notes.some((n) => placeTarget(n, file) !== undefined)

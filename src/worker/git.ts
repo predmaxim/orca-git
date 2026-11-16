@@ -9,6 +9,8 @@ export interface GitResult {
   stderr: string
   /** stdout as git wrote it, with `bytes: true`. */
   bytes?: Uint8Array
+  /** Killed (a signal, a time limit, the output cap) rather than refused. */
+  stopped?: true
 }
 
 export interface GitOptions {
@@ -84,7 +86,7 @@ export function createGit(root: string, gitPath = 'git'): Git {
           const stopped = Boolean((error as any)?.signal) || (error as any)?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
           const text = err || (error && !stopped ? error.message : '')
           const note = stopped ? `${text.trimEnd()}\n${t('gitStopped', { command: subcommand(args) })}`.trimStart() : text
-          resolve({ ok: !error, code, stdout: String(stdout), stderr: note, ...(options.bytes ? { bytes: stdout } : {}) })
+          resolve({ ok: !error, code, stdout: String(stdout), stderr: note, ...(options.bytes ? { bytes: stdout } : {}), ...(stopped ? { stopped: true as const } : {}) })
         }
       )
       if (options.input !== undefined) child.stdin?.end(options.input)

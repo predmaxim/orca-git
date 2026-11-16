@@ -1,14 +1,15 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { after } from 'node:test'
-import { assert, mountWorker, test } from 'orca/testing'
+// node:test's test: orca/testing's re-export is typed without options, and a test here skips on Windows (a #!/bin/sh git).
+import { after, test } from 'node:test'
+import { assert, mountWorker } from 'orca/testing'
 import { t } from '../shared/i18n.ts'
 import type { NoteSide, ReviewNote } from '../shared/protocol.ts'
 import { createGit, timeoutFor } from './git.ts'
 import * as main from './main.ts'
-import { carryLines, parseHunks, placeNotes } from './notePlace.ts'
+import { blobHunks, carryLines, parseHunks, placeNotes } from './notePlace.ts'
 import { noteKey, notesKey } from './notes.ts'
 import { readSelectionFiles } from './selection.ts'
 import { host } from './testkit.ts'
@@ -56,6 +57,8 @@ test('parseHunks reads every hunk header, a count git leaves out being 1', () =>
   // A line of the file that reads like a header is a line of a hunk: it starts with its +, - or space.
   const diff = 'diff --git a/1 b/2\nindex 1..2 100644\n--- a/1\n+++ b/2\n@@ -1,0 +2 @@ fn\n+@@ -9 +9 @@\n@@ -4,2 +5,3 @@\n-d\n-e\n+D\n+E\n+F\n@@ -9 +10,0 @@\n-i\n'
   assert.deepEqual(parseHunks(diff), [[1, 0, 2, 1], [4, 2, 5, 3], [9, 1, 10, 0]])
+  // git ends a line with LF only: a CR, U+2028 or U+2029 inside a changed line, before what reads like a header, starts no hunk.
+  for (const end of ['\r', '\u2028', '\u2029']) assert.deepEqual(parseHunks(`@@ -5 +5 @@\n-5\n+x${end}@@ -1,0 +1,50 @@\n`), [[5, 1, 5, 1]])
 })
 
 test('carryLines moves lines past the hunks above them, and gives null when a hunk touches them', () => {
@@ -139,6 +142,41 @@ test('user diff settings do not change the hunks', async () => {
   assert.deepEqual(await placeNotes(git, [note('n1', 'new', blob(a), a, 3, 3)], await files([c]), new Map()), [[at('n1', 4, 4)]])
 })
 
+test('GIT_DIFF_OPTS in the environment does not widen the hunks', async () => {
+  const { root, commit, files, blob } = repo()
+  const a = commit('a', { 'a.txt': text(...SIX) })
+  const c = commit('c', { 'a.txt': text('a', 'b', 'c', 'D', 'e', 'f') })
+  const [file] = await files([c])
+  const before = process.env.GIT_DIFF_OPTS
+  // git reads it over -U0: the hunk of line 4 would take in line 2 with its context.
+  process.env.GIT_DIFF_OPTS = '--unified=3'
+  try {
+    assert.deepEqual(await placeNotes(createGit(root), [note('n1', 'new', blob(a), a, 2, 2)], [file], new Map()), [[at('n1', 2, 2)]])
+  } finally {
+    if (before === undefined) delete process.env.GIT_DIFF_OPTS
+    else process.env.GIT_DIFF_OPTS = before
+  }
+})
+
+test('a diff git was killed on is kept as none, and a refused one is not kept', { skip: process.platform === 'win32' }, async () => {
+  const { root, commit, blob } = repo()
+  const a = commit('a', { 'a.txt': text(...SIX) })
+  const c = commit('c', { 'a.txt': text('x', ...SIX) })
+  // A diff past the output cap or the time limit is killed the same way every time: blobs never change.
+  const runs = join(root, '.git', 'diff-runs')
+  const gitPath = join(root, '.git', 'killed-git')
+  writeFileSync(gitPath, `#!/bin/sh\nfor a; do if [ "$a" = --inter-hunk-context=0 ]; then echo >> '${runs}'; kill -9 $$; fi; done\nexec git "$@"\n`)
+  chmodSync(gitPath, 0o755)
+  const killed = createGit(root, gitPath)
+  const cache = new Map()
+  assert.equal(await blobHunks(killed, blob(a), blob(c), cache), null)
+  assert.equal(await blobHunks(killed, blob(a), blob(c), cache), null)
+  assert.equal(readFileSync(runs, 'utf8'), '\n')
+  // A blob git does not have may come with a fetch.
+  assert.equal(await blobHunks(createGit(root), blob(a), 'f'.repeat(40), cache), null)
+  assert.equal(cache.has(`${blob(a)}:${'f'.repeat(40)}`), false)
+})
+
 test('a file that became binary shows its notes neither carried nor outdated', async () => {
   const { git, commit, files, blob, run } = repo()
   const a = commit('a', { 'a.txt': text(...SIX) })
@@ -163,6 +201,9 @@ test('notes.place carries a stored note to the files a frame sends, at most 100 
   const [file] = await files([c])
   // A file without candidates (another path) is in the answer too, empty.
   assert.deepEqual(await worker.request('notes.place', { root, files: [file, { ...file, path: 'b.txt' }] }), { places: [[at(stored.id, 5, 6)], []] })
-  await assert.rejects(worker.request('notes.place', { root, files: Array(101).fill(file) }), (error: unknown) => String(error).includes(t('notesPlaceTooMany')))
+  const tooMany = t('notesPlaceTooMany', { count: 100 })
+  await assert.rejects(worker.request('notes.place', { root, files: Array(101).fill(file) }), (error: unknown) => String(error).includes(tooMany))
+  // A frame shows nothing of a refusal: the worker's log says it.
+  assert.ok(worker.logs.some((line) => line === `notes not placed: ${tooMany}`))
   await worker.deactivate()
 })

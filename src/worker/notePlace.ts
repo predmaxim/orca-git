@@ -16,9 +16,16 @@ export const setPlaceLog = (write: (line: string) => void): void => {
   log = write
 }
 
-/** The hunk headers of a `git diff` output; a count git leaves out is 1. A line of the file starts with +, - or a space, so it is never read as one. */
+/**
+ * The hunk headers of a `git diff` output; a count git leaves out is 1. git ends a line with LF only, and a line of the file
+ * starts with +, - or a space, so it is never read as one: not even past a CR, U+2028 or U+2029 in it, which a regex's `^`
+ * with the m flag would take for the start of a line.
+ */
 export function parseHunks(diff: string): Hunk[] {
-  return [...diff.matchAll(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm)].map((m) => [Number(m[1]), Number(m[2] ?? 1), Number(m[3]), Number(m[4] ?? 1)])
+  return diff.split('\n').flatMap((line): Hunk[] => {
+    const m = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line)
+    return m ? [[Number(m[1]), Number(m[2] ?? 1), Number(m[3]), Number(m[4] ?? 1)]] : []
+  })
 }
 
 /**
@@ -37,27 +44,27 @@ export function carryLines(hunks: Hunk[], start: number, end: number): { start: 
 }
 
 /**
- * The hunks between two blobs: from `cache` (a blob never changes) or one `git diff`. Null for binary content, kept, and when
- * git gives none (a blob it does not have), not kept: the blob may come with a fetch, or be in another repository. Both logged.
+ * The hunks between two blobs: from `cache` (a blob never changes) or one `git diff`. Null for binary content and for a diff
+ * git was killed on (past the output cap or the time limit: the same blobs would be again), both kept, and when git refuses
+ * (a blob it does not have), not kept: the blob may come with a fetch, or be in another repository. All logged.
  * `--inter-hunk-context=0`: diff.interHunkContext would join hunks over the unchanged lines between them. `--text`: a -diff or
  * binary attribute, which git matches against the blob ids too, would make it "Binary files differ"; so git compares binary
- * blobs as text too, and binary content is told by a NUL byte in the lines that changed.
+ * blobs as text too, and binary content is told by a NUL byte in the lines that changed. An empty GIT_DIFF_OPTS: git reads
+ * its `--unified=<n>` over -U0, and the context lines would outdate notes next to a change.
  */
 export async function blobHunks(git: Git, from: string, to: string, cache: Map<string, Hunk[] | null>): Promise<Hunk[] | null> {
   const key = `${from}:${to}`
   if (cache.has(key)) return cache.get(key) ?? null
   if (!hex(from) || !hex(to)) return null
-  const diff = await git.run(['diff', '-U0', '--inter-hunk-context=0', '--text', '--no-color', '--no-ext-diff', '--no-textconv', from, to])
-  if (!diff.ok) {
-    log(`notes not carried from ${from} to ${to}: ${lastLines(diff.stderr)}`)
-    return null
-  }
+  const diff = await git.run(['diff', '-U0', '--inter-hunk-context=0', '--text', '--no-color', '--no-ext-diff', '--no-textconv', from, to], { env: { GIT_DIFF_OPTS: '' } })
+  if (!diff.ok) log(`notes not carried from ${from} to ${to}: ${lastLines(diff.stderr)}`)
+  if (!diff.ok && !diff.stopped) return null
   // shortcut: git calls a blob binary for a NUL in its first 8000 bytes, this for one anywhere in a changed line (a note's own
   // blob, written on lines the Diff tab showed, has none); read the blobs' first bytes if a text file with a late NUL loses notes.
-  const binary = diff.stdout.includes('\0')
+  const binary = diff.ok && diff.stdout.includes('\0')
   if (binary) log(`notes not carried from ${from} to ${to}: binary content`)
   if (cache.size >= MAX_PAIRS) cache.clear()
-  const hunks = binary ? null : parseHunks(diff.stdout)
+  const hunks = diff.ok && !binary ? parseHunks(diff.stdout) : null
   cache.set(key, hunks)
   return hunks
 }
