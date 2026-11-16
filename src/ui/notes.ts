@@ -1,7 +1,7 @@
 // Review notes in the Diff tab: the selection and its button, the editor, the cards under their lines and the list of all notes.
 import type { FileDiff, NoteDraft, NotePoint, NoteSide, NoteVerdict, ReviewNote, SelectionFile } from '../shared/protocol.ts'
 import { t, type MessageKey } from '../shared/i18n.ts'
-import { MAX_BODY, MAX_QUOTE, MAX_REVIEW_SKILLS } from '../shared/notes.ts'
+import { lastAnswer, MAX_BODY, MAX_QUOTE, MAX_REVIEW_SKILLS, stateOf, unsentOf } from '../shared/notes.ts'
 import { api, copyText, errorMessage, orca } from './api.ts'
 import type { DiffMode } from './diff.ts'
 import { h, icon, ICONS } from './dom.ts'
@@ -45,11 +45,13 @@ function openLink(url: string): void {
 
 const label = (key: MessageKey, tone = '') => h('span', { class: `d-label ${tone}` }, t(key))
 
-/** Not sent, sent, or the verdict of the answer. */
-const labels = (n: ReviewNote): HTMLElement[] =>
-  n.reply
-    ? [label(VERDICT[n.reply.verdict], n.reply.verdict), ...(n.reply.fixed ? [label('noteFixed', 'fixed')] : [])]
-    : [label(n.sentAt === undefined ? 'noteUnsent' : 'noteSent')]
+/** Not sent, sent, or the verdict of the agent's last answer. */
+function labels(n: ReviewNote): HTMLElement[] {
+  const state = stateOf(n)
+  const answer = lastAnswer(n)
+  if (state === 'answered' && answer?.verdict) return [label(VERDICT[answer.verdict], answer.verdict), ...(answer.fixed ? [label('noteFixed', 'fixed')] : [])]
+  return state === 'unsent' ? [label('noteUnsent')] : state === 'waiting' ? [label('noteSent')] : []
+}
 
 const firstLine = (text: string) => text.split('\n', 1)[0]
 const lineSpan = (n: ReviewNote) => (n.start.line === n.end.line ? `${n.start.line}` : `${n.start.line}-${n.end.line}`)
@@ -91,8 +93,8 @@ export function mountNotes(options: {
   let container: HTMLElement | null = null
   let diff: FileDiff | null = null
   let file: SelectionFile | null = null
-  /** The open editor: a new note at `anchor`, or the note `id`, and the text it started with. Its element lives on across renders, and the text with it. */
-  let editor: { anchor: Anchor; id?: string; start: string; el: HTMLElement; area: HTMLTextAreaElement; error: HTMLElement } | null = null
+  /** The open editor: a new note at `anchor`, or the message `message` of the note `id`, and the text it started with. Its element lives on across renders, and the text with it. */
+  let editor: { anchor: Anchor; id?: string; message?: string; start: string; el: HTMLElement; area: HTMLTextAreaElement; error: HTMLElement } | null = null
   let saving = false
   /** A press in the rows is held: the selection is still being made. */
   let pressed = false
@@ -206,7 +208,7 @@ export function mountNotes(options: {
     return true
   }
 
-  function openEditor(at: Anchor, id?: string, text = ''): void {
+  function openEditor(at: Anchor, edit?: { id: string; message: string }, text = ''): void {
     const open = editor
     // Typed text is not dropped for another editor: the open one is shown instead. One out of view (another file) cannot be.
     if (open && open.area.value.trim() !== open.start && open.el.isConnected) {
@@ -231,7 +233,7 @@ export function mountNotes(options: {
     })
     area.value = text
     const error = h('div', { class: 'd-note-error' })
-    editor = { anchor: at, id, start: text, el: h('div', { class: 'd-note-edit' }, area, error), area, error }
+    editor = { anchor: at, id: edit?.id, message: edit?.message, start: text, el: h('div', { class: 'd-note-edit' }, area, error), area, error }
     options.rerender()
     area.focus()
   }
@@ -244,15 +246,15 @@ export function mountNotes(options: {
   async function save(): Promise<void> {
     const open = editor
     if (!open || saving || !open.area.value.trim()) return
-    // An edit that changes nothing keeps the note as it is, and the agent's answer with it.
+    // An edit that changes nothing sends nothing.
     if (open.id && open.area.value.trim() === open.start) return closeEditor()
     saving = true
     open.error.textContent = ''
     try {
       const body = open.area.value
-      const result = open.id ? await api.noteUpdate(root, open.id, body) : await api.noteAdd(root, { ...open.anchor, body })
+      const result = open.id && open.message ? await api.noteEdit(root, open.id, open.message, body) : await api.noteAdd(root, { ...open.anchor, body })
       if (!result.ok) open.error.textContent = result.reason
-      else {
+      else if (result.note) {
         if (editor === open) editor = null
         put(result.note)
       }
@@ -266,16 +268,17 @@ export function mountNotes(options: {
   function card(n: ReviewNote): HTMLElement {
     const tool = (name: keyof typeof ICONS, key: MessageKey, run: () => void) =>
       h('button', { class: 'tool', title: t(key), 'aria-label': t(key), onclick: run }, icon(name))
-    // Sending again is an update with the same text: it clears the sent mark, so the note goes with the next sending.
+    // Sending again takes the sent mark off the messages nobody answered, so they go with the next sending.
     const resend = async () => {
       try {
-        const result = await api.noteUpdate(root, n.id, n.body)
-        if (result.ok) put(result.note)
-        else notify(result.reason)
+        const result = await api.noteResend(root, n.id)
+        if (!result.ok) notify(result.reason)
+        else if (result.note) put(result.note)
       } catch (caught) {
         notify(errorMessage(caught))
       }
     }
+    const draft = unsentOf(n).pop()
     return h(
       'div',
       { class: 'd-note', dataset: { id: n.id } },
@@ -284,12 +287,15 @@ export function mountNotes(options: {
         { class: 'd-note-head' },
         ...labels(n),
         h('span', { class: 'spacer' }),
-        n.sentAt !== undefined && !n.reply ? tool('refresh', 'noteResend', () => void resend()) : null,
-        tool('edit', 'noteEdit', () => openEditor(n, n.id, n.body)),
+        stateOf(n) === 'waiting' ? tool('refresh', 'noteResend', () => void resend()) : null,
+        draft ? tool('edit', 'noteEdit', () => openEditor(n, { id: n.id, message: draft.id }, draft.body)) : null,
         tool('drop', 'noteDelete', () => void remove([n.id]))
       ),
-      h('div', { class: 'md' }, mdDom(n.body, openLink)),
-      n.reply ? h('div', { class: 'd-note-reply' }, h('div', { class: 'd-note-caption' }, t('noteReply')), h('div', { class: 'md' }, mdDom(n.reply.body, openLink))) : null
+      ...n.messages.map((m) =>
+        m.author === 'user'
+          ? h('div', { class: 'md' }, mdDom(m.body, openLink))
+          : h('div', { class: 'd-note-reply' }, h('div', { class: 'd-note-caption' }, t('noteReply')), h('div', { class: 'md' }, mdDom(m.body, openLink)))
+      )
     )
   }
 
@@ -585,7 +591,7 @@ export function mountNotes(options: {
         { class: 'notes-open', disabled: index < 0, onclick: () => reveal(index, n.id) },
         h('span', { class: 'notes-where' }, h('span', { class: 'path' }, `${n.path}:${lineSpan(n)}`), label(n.side === 'old' ? 'noteSideOld' : 'noteSideNew'), ...labels(n)),
         h('span', { class: 'mono muted' }, firstLine(n.quote)),
-        h('span', null, firstLine(n.body))
+        h('span', null, firstLine(n.messages[0]?.body ?? ''))
       ),
       h('button', { class: 'tool', title: t('noteDelete'), 'aria-label': t('noteDelete'), onclick: () => void remove([n.id]) }, icon('drop'))
     )

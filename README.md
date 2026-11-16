@@ -79,7 +79,8 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   file on its side (its blob), so it shows in every diff where that side is the same, also after a
   rebase or an amend that left the file alone. Its card stands under the last selected line, in the
   half of its side in split, with the selected text highlighted, the note's state (not sent, sent, or
-  the agent's verdict), Edit, Delete and, for a sent note without an answer, Send again; links open
+  the agent's verdict), Edit while its text is not sent (sent text stays as the agent saw it), Delete and,
+  for a sent note without an answer, Send again; links open
   in the browser. **Notes (N)** in the tab's header lists every note of the repository with its file,
   lines, side, the start of the quote and of the text and its state; Copy all copies them as markdown,
   Delete all asks once more. A click on a note opens its file and scrolls to it, with Whole file when
@@ -119,7 +120,7 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   answer is shown as text (caption and address), the image itself is not shown. The plugin reads
   them when the agent's status changes and when the notes are listed, and shows under the note the verdict
   label, "Fixed" and the markdown. An answer file the agent rewrites replaces the answer shown the next
-  time the answers are read. Deleting or editing the last note of a send removes its folder.
+  time the answers are read. Deleting the last note of a send, or Send again on it, removes its folder.
 - **Looks like Orca**: the sidebar is drawn as Orca draws its own: section headers in its small
   uppercase labels with the count on the right, no lines between sections, [Lucide](https://lucide.dev)
   icons (the set Orca uses), outline buttons, its field and icon-button sizes. Colors come from the
@@ -400,9 +401,9 @@ keeps them all.
   repository whose path holds a control character or a backtick cannot send notes.
 - An answer appears when the agent has written its file in that form (a known `verdict:`, at most 64 KiB,
   a regular file); anything else is ignored. `fixed` is the agent's word: the plugin does not check it.
-- Review notes: up to 200 per repository, and fewer when notes and answers are long, because Orca limits
-  the stored value to 256 KiB and all notes of a repository, with their answers, are one value. A note or
-  an answer that does not fit is refused with a message; deleting notes frees space.
+- Review notes: up to 200 per repository, each with up to 100 messages. Orca limits a stored value to
+  256 KiB, and a note with its answers is one value: a note or an answer that does not fit is refused with
+  a message; deleting notes frees space.
 
 ## Third-party code
 

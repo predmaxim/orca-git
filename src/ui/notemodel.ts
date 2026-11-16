@@ -1,3 +1,4 @@
+import { stateOf } from '../shared/notes.ts'
 import type { DiffHunk, DiffLine, FileDiff, NotePoint, NoteSide, ReviewNote } from '../shared/protocol.ts'
 import type { DiffMode } from './diff.ts'
 
@@ -69,8 +70,9 @@ export function coveredRange(note: Pick<ReviewNote, 'side' | 'start' | 'end'>, s
   return from < to ? [from, to] : null
 }
 
+/** The notes the send button counts and sends: those whose state is unsent. */
 export function unsent(notes: ReviewNote[]): ReviewNote[] {
-  return notes.filter((n) => n.sentAt === undefined)
+  return notes.filter((n) => stateOf(n) === 'unsent')
 }
 
 /** All notes as markdown, for Copy all. */
@@ -79,7 +81,8 @@ export function notesText(notes: ReviewNote[]): string {
     .map((n) => {
       const lines = n.start.line === n.end.line ? `${n.start.line}` : `${n.start.line}-${n.end.line}`
       const quote = n.quote.split('\n').map((l) => `> ${l}`).join('\n')
-      return `${n.path}:${lines} (${n.side})\n${quote}\n\n${n.body}`
+      const text = n.messages.filter((m) => m.author === 'user').map((m) => m.body).join('\n\n')
+      return `${n.path}:${lines} (${n.side})\n${quote}\n\n${text}`
     })
     .join('\n\n---\n\n')
 }

@@ -6,12 +6,18 @@ import * as main from './main.ts'
 import { parseAnswer, promptRefusal, readAnswers, removeReview, reviewPaths, reviewPrompt, writeReview } from './review.ts'
 import { REVIEW_GUIDE } from './reviewGuide.ts'
 import { t } from '../shared/i18n.ts'
-import type { NoteReply } from '../shared/protocol.ts'
-import { notesKey } from './notes.ts'
+import { lastAnswer } from '../shared/notes.ts'
+import type { NoteMessage, NoteReply, ReviewNote } from '../shared/protocol.ts'
+import { noteKey, notesKey } from './notes.ts'
 import { skillsKey } from './skills.ts'
 import { draft, fixture, host, refusingStorage } from './testkit.ts'
 
-const note = () => ({ ...draft(), id: 'aaaaaaaaaaaa', createdAt: 1 })
+const user: NoteMessage = { id: 'mmmmmmmmmmmm', author: 'user', body: 'why?', at: 1 }
+const sentUser: NoteMessage = { ...user, review: 'bbbbbbbbbbbb', sentAt: 1 }
+const note = (messages: NoteMessage[] = [user]): ReviewNote => {
+  const { body, ...anchor } = draft()
+  return { ...anchor, id: 'aaaaaaaaaaaa', createdAt: 1, messages }
+}
 const ONCE = 'Write each answer file once, when you are done with that note — after the fix, if you make one.'
 
 test('a review folder holds the notes, the guide and a place for answers', () => {
@@ -121,7 +127,7 @@ test('an answer may carry the markdown agents decorate it with', () => {
 
 test('an answer that is a link, too large or not a file is skipped', () => {
   const root = mkdtempSync(join(tmpdir(), 'git-log-review-'))
-  const sent = { ...note(), review: 'bbbbbbbbbbbb', sentAt: 1 }
+  const sent = note([sentUser])
   writeReview(root, 'bbbbbbbbbbbb', [sent])
   const file = join(reviewPaths(root, 'bbbbbbbbbbbb').answers, `${sent.id}.md`)
   const outside = join(mkdtempSync(join(tmpdir(), 'git-log-outside-')), 'a.md')
@@ -136,9 +142,12 @@ test('an answer that is a link, too large or not a file is skipped', () => {
   assert.equal(readAnswers(root, [sent]).size, 0)
   rmSync(file, { recursive: true })
   writeFileSync(file, 'verdict: confirmed\n\nx')
-  assert.equal(readAnswers(root, [sent], 5).get(sent.id)?.at, 5)
+  assert.deepEqual(readAnswers(root, [sent], 5).get(sent.id), { verdict: 'confirmed', fixed: false, body: 'x', at: 5, review: 'bbbbbbbbbbbb' })
   // An answered note is read again: the agent may have rewritten its answer.
-  assert.equal(readAnswers(root, [{ ...sent, reply: { verdict: 'unclear', fixed: false, body: '', at: 1 } }]).size, 1)
+  const answered = note([sentUser, { id: 'nnnnnnnnnnnn', author: 'agent', review: 'bbbbbbbbbbbb', verdict: 'unclear', fixed: false, body: '', at: 1 }])
+  assert.equal(readAnswers(root, [answered]).get(sent.id)?.review, 'bbbbbbbbbbbb')
+  // Nothing sent: nothing to read.
+  assert.equal(readAnswers(root, [note()]).size, 0)
 })
 
 test('a stored note id that is not 12 hex reads no answer', () => {
@@ -146,7 +155,7 @@ test('a stored note id that is not 12 hex reads no answer', () => {
   writeReview(root, 'bbbbbbbbbbbb', [note()])
   // Where answers/../x.md lands.
   writeFileSync(join(reviewPaths(root, 'bbbbbbbbbbbb').dir, 'x.md'), 'verdict: confirmed\n\nx')
-  assert.equal(readAnswers(root, [{ ...note(), id: '../x', review: 'bbbbbbbbbbbb', sentAt: 1 }]).size, 0)
+  assert.equal(readAnswers(root, [{ ...note([sentUser]), id: '../x' }]).size, 0)
 })
 
 const answerFile = (root: string, review: string, id: string, text: string) => writeFileSync(join(reviewPaths(root, review).answers, `${id}.md`), text)
@@ -162,7 +171,8 @@ test('the agent event brings the answer in', async () => {
   await worker.emit('agent.status.changed', status)
   assert.deepEqual(worker.posts.slice(-1), [{ event: 'notes.changed', payload: { root } }])
   const [stored] = ((await worker.request('notes.list', { root })) as any).notes
-  assert.equal(stored.reply.verdict, 'refuted')
+  assert.equal(lastAnswer(stored)?.verdict, 'refuted')
+  assert.equal(lastAnswer(stored)?.review, sent.review)
   assert.deepEqual(h.data().storage.pending, [])
 })
 
@@ -176,7 +186,7 @@ test('a new worker picks up the answer', async () => {
   const two = await mountWorker(main, { host: second, events: ['agent.status.changed'] })
   answerFile(root, sent.review, added.id, 'verdict: confirmed\nfixed: yes\n\nDone.')
   await two.emit('agent.status.changed', status)
-  assert.equal((((await two.request('notes.list', { root })) as any).notes[0]).reply.fixed, true)
+  assert.equal(lastAnswer(((await two.request('notes.list', { root })) as any).notes[0])?.fixed, true)
   assert.deepEqual(second.data().storage.pending, [])
 })
 
@@ -187,12 +197,13 @@ test('one root whose answers cannot be read does not stop the others', async () 
   const { note: added } = (await one.request('notes.add', { root, draft: draft() })) as any
   const sent = (await one.request('notes.send', { root, ids: [added.id], agent: 'claude' })) as any
   const bad = '/nowhere/bad'
-  const storage: any = { ...first.data().storage, [notesKey(bad)]: { root: bad, notes: [null] }, pending: [bad, root] }
+  const storage: any = { ...first.data().storage, [notesKey(bad)]: { root: bad, ids: ['aaaaaaaaaaaa'] }, [noteKey(bad, 'aaaaaaaaaaaa')]: { id: 'aaaaaaaaaaaa', messages: [null] }, pending: [bad, root] }
   const two = await mountWorker(main, { host: host(root, undefined, storage), events: ['agent.status.changed'] })
   answerFile(root, sent.review, added.id, 'verdict: confirmed\n\nDone.')
   await two.emit('agent.status.changed', status)
   assert.deepEqual(two.posts.slice(-1), [{ event: 'notes.changed', payload: { root } }])
-  assert.equal((((await two.request('notes.list', { root })) as any).notes[0]).reply.verdict, 'confirmed')
+  assert.equal(lastAnswer(((await two.request('notes.list', { root })) as any).notes[0])?.verdict, 'confirmed')
+  assert.ok(two.logs.some((line) => line.includes(`answers not read for ${bad}`)))
 })
 
 test('the list itself picks up an answer', async () => {
@@ -202,7 +213,7 @@ test('the list itself picks up an answer', async () => {
   const { note: added } = (await worker.request('notes.add', { root, draft: draft() })) as any
   const sent = (await worker.request('notes.send', { root, ids: [added.id], agent: 'claude' })) as any
   answerFile(root, sent.review, added.id, 'verdict: unclear\n\nWhich?')
-  assert.equal((((await worker.request('notes.list', { root })) as any).notes[0]).reply.verdict, 'unclear')
+  assert.equal(lastAnswer(((await worker.request('notes.list', { root })) as any).notes[0])?.verdict, 'unclear')
 })
 
 test('an answer the agent rewrites replaces the stored one; an unchanged one is left alone', async () => {
@@ -212,23 +223,28 @@ test('an answer the agent rewrites replaces the stored one; an unchanged one is 
   const { note: added } = (await worker.request('notes.add', { root, draft: draft() })) as any
   const sent = (await worker.request('notes.send', { root, ids: [added.id], agent: 'claude' })) as any
   const list = async () => (await worker.request('notes.list', { root })) as any
+  const answer = (listed: any) => lastAnswer(listed.notes[0])!
   answerFile(root, sent.review, added.id, 'verdict: confirmed\nfixed: no\n\nLooking into it.')
-  assert.equal((await list()).notes[0].reply.fixed, false)
+  const first = answer(await list())
+  assert.equal(first.fixed, false)
   answerFile(root, sent.review, added.id, 'verdict: confirmed\nfixed: yes\n\nFixed in a.ts.')
   const posted = worker.posts.length
   const listed = await list()
-  assert.equal(listed.notes[0].reply.fixed, true)
-  assert.equal(listed.notes[0].reply.body, 'Fixed in a.ts.')
+  assert.equal(answer(listed).fixed, true)
+  assert.equal(answer(listed).body, 'Fixed in a.ts.')
+  // The same message, rewritten: one answer per send.
+  assert.equal(answer(listed).id, first.id)
+  assert.equal(listed.notes[0].messages.length, 2)
   assert.equal(listed.warning, undefined)
   assert.equal(worker.posts.length, posted + 1)
   // Listed again with the file unchanged: nothing is written, nothing posted, the time it was read stays.
-  assert.equal((await list()).notes[0].reply.at, listed.notes[0].reply.at)
+  assert.equal(answer(await list()).at, answer(listed).at)
   assert.equal(worker.posts.length, posted + 1)
 })
 
 test('answers that cannot be stored come back with the notes as a warning', async () => {
   const root = fixture()
-  const replied = (key: string, value: any) => key === notesKey(root) && value.notes.some((n: any) => n.reply)
+  const replied = (key: string, value: any) => key.startsWith('note:') && value.messages.some((m: any) => m.author === 'agent')
   const h = host(root, { 'agent.launch': { terminalId: 't-1' }, ...refusingStorage(replied) })
   const worker = await mountWorker(main, { host: h })
   const { note: added } = (await worker.request('notes.add', { root, draft: draft() })) as any
@@ -236,7 +252,7 @@ test('answers that cannot be stored come back with the notes as a warning', asyn
   answerFile(root, sent.review, added.id, 'verdict: confirmed\n\nDone.')
   const listed = (await worker.request('notes.list', { root })) as any
   assert.equal(listed.notes.length, 1)
-  assert.equal(listed.notes[0].reply, undefined)
+  assert.equal(lastAnswer(listed.notes[0]), undefined)
   assert.equal(typeof listed.warning, 'string')
   assert.match(listed.warning, /262144/)
 })
@@ -277,7 +293,7 @@ test('sending launches a new agent and marks the notes', async () => {
   assert.equal(call.agent, 'claude')
   assert.ok(call.prompt.includes(reviewPaths(root, sent.review).notes))
   assert.ok(readFileSync(join(root, '.git', 'info', 'exclude'), 'utf8').split('\n').includes('.orca-git-log/'))
-  assert.equal(((await worker.request('notes.list', { root })) as any).notes[0].review, sent.review)
+  assert.equal(((await worker.request('notes.list', { root })) as any).notes[0].messages[0].review, sent.review)
   assert.deepEqual(worker.refusals, [])
 })
 
@@ -289,14 +305,14 @@ test('a launch that fails leaves the notes unsent and no folder', async () => {
   const sent = (await worker.request('notes.send', { root, ids: [added.id], agent: 'claude' })) as any
   assert.equal(sent.ok, false)
   const [stored] = ((await worker.request('notes.list', { root })) as any).notes
-  assert.equal(stored.sentAt, undefined)
-  assert.equal(stored.review, undefined)
+  assert.equal(stored.messages[0].sentAt, undefined)
+  assert.equal(stored.messages[0].review, undefined)
   assert.deepEqual(readdirSync(join(root, '.orca-git-log')), [])
 })
 
 test('a sent mark that cannot be saved starts no agent and leaves no folder', async () => {
   const root = fixture()
-  const marked = (key: string, value: any) => key === notesKey(root) && value.notes.some((n: any) => n.sentAt !== undefined)
+  const marked = (key: string, value: any) => key.startsWith('note:') && value.messages.some((m: any) => m.sentAt !== undefined)
   const h = host(root, { 'agent.launch': { terminalId: 't-1' }, ...refusingStorage(marked) })
   const worker = await mountWorker(main, { host: h })
   const { note: added } = (await worker.request('notes.add', { root, draft: draft() })) as any
@@ -305,7 +321,7 @@ test('a sent mark that cannot be saved starts no agent and leaves no folder', as
   assert.match(sent.reason, /262144/)
   assert.equal(h.callsOf('agent.launch').length, 0)
   assert.deepEqual(readdirSync(join(root, '.orca-git-log')), [])
-  assert.equal(((await worker.request('notes.list', { root })) as any).notes[0].sentAt, undefined)
+  assert.equal(((await worker.request('notes.list', { root })) as any).notes[0].messages[0].sentAt, undefined)
 })
 
 test('one send at a time per repository', async () => {
@@ -320,16 +336,17 @@ test('one send at a time per repository', async () => {
   assert.equal(answers.find((a) => !a.ok).reason, t('reviewBusy'))
 })
 
-test('an edit removes the folder of the review no note references any more', async () => {
+test('send again or a removal drops the folder of the review no message references any more', async () => {
   const root = fixture()
   const h = host(root, { 'agent.launch': { terminalId: 't-1' } })
   const worker = await mountWorker(main, { host: h })
   const { note: a } = (await worker.request('notes.add', { root, draft: draft() })) as any
   const { note: b } = (await worker.request('notes.add', { root, draft: draft() })) as any
   const sent = (await worker.request('notes.send', { root, ids: [a.id, b.id], agent: 'claude' })) as any
-  assert.equal(((await worker.request('notes.update', { root, id: a.id, body: 'again' })) as any).ok, true)
+  assert.equal(((await worker.request('notes.resend', { root, id: a.id })) as any).ok, true)
   assert.equal(existsSync(reviewPaths(root, sent.review).dir), true)
-  assert.equal(((await worker.request('notes.update', { root, id: b.id, body: 'again' })) as any).ok, true)
+  const removed = (await worker.request('notes.remove', { root, id: b.id, message: b.messages[0].id })) as any
+  assert.deepEqual(removed, { ok: true, note: null })
   assert.equal(existsSync(reviewPaths(root, sent.review).dir), false)
 })
 

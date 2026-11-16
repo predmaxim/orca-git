@@ -1,8 +1,8 @@
 import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readSync, rmdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { t } from '../shared/i18n.ts'
-import { MAX_REPLY } from '../shared/notes.ts'
-import type { NoteReply, NoteVerdict, ReviewNote } from '../shared/protocol.ts'
+import { lastAnswer, MAX_REPLY, waitingFor } from '../shared/notes.ts'
+import type { NoteMessage, NoteReply, NoteVerdict, ReviewNote } from '../shared/protocol.ts'
 import { REVIEW_GUIDE } from './reviewGuide.ts'
 
 export interface ReviewPaths { dir: string; notes: string; guide: string; answers: string }
@@ -32,7 +32,7 @@ export function notesFile(notes: ReviewNote[], paths: ReviewPaths, skills: strin
       'Selected:',
       indent(n.quote),
       'Comment:',
-      n.body
+      n.messages.filter((m) => m.author === 'user').map((m) => m.body).join('\n\n')
     ].join('\n')
   )
   return `${[head, ...each].join('\n\n')}\n`
@@ -178,17 +178,18 @@ function readAnswerFile(path: string): string | null {
 }
 
 /**
- * The answers found for the sent notes, answered ones too (the agent may have rewritten its file): answers/<note id>.md,
- * a regular file of at most 65536 bytes, never through a link. A note whose id is not 12 hex is skipped: frames share the
- * storage, so a stored id is not guaranteed.
+ * The answers found by note id, each for the send the note waits for, else for the send its last answer is for (the agent
+ * may have rewritten its file): answers/<note id>.md, a regular file of at most 65536 bytes, never through a link. A note
+ * or send whose id is not 12 hex is skipped: frames share the storage, so a stored id is not guaranteed.
  */
-export function readAnswers(root: string, notes: ReviewNote[], now = Date.now()): Map<string, NoteReply> {
-  const found = new Map<string, NoteReply>()
+export function readAnswers(root: string, notes: ReviewNote[], now = Date.now()): Map<string, Omit<NoteMessage, 'id' | 'author'>> {
+  const found = new Map<string, Omit<NoteMessage, 'id' | 'author'>>()
   for (const note of notes) {
-    if (!note.review || !ID.test(note.review) || !ID.test(note.id)) continue
-    const text = readAnswerFile(join(reviewPaths(root, note.review).answers, `${note.id}.md`))
+    const review = waitingFor(note) ?? lastAnswer(note)?.review
+    if (!review || !ID.test(review) || !ID.test(note.id)) continue
+    const text = readAnswerFile(join(reviewPaths(root, review).answers, `${note.id}.md`))
     const reply = text === null ? null : parseAnswer(text, now)
-    if (reply) found.set(note.id, reply)
+    if (reply) found.set(note.id, { ...reply, review })
   }
   return found
 }

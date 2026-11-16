@@ -137,11 +137,26 @@ export type NoteSide = 'old' | 'new'
 export interface NotePoint { line: number; col: number }
 // answered: the note was a question, and the agent answered it
 export type NoteVerdict = 'answered' | 'confirmed' | 'refuted' | 'unclear'
+/** An answer file as read: what the agent's message for that send says. */
 export interface NoteReply { verdict: NoteVerdict; fixed: boolean; body: string; at: number }
-/** A review note as the Diff tab sends it: anchored to the blob of one side of one file. */
-export interface NoteDraft { path: string; side: NoteSide; blob: string; rev: string; start: NotePoint; end: NotePoint; quote: string; body: string }
-export interface ReviewNote extends NoteDraft { id: string; createdAt: number; updatedAt?: number; review?: string; sentAt?: number; reply?: NoteReply }
-export type NoteResult = { ok: true; note: ReviewNote } | { ok: false; reason: string }
+export type NoteAuthor = 'user' | 'agent'
+/** id: the image's file name in .orca-git-log/images (12 hex of its sha256 and its extension); name: as the user sees it. */
+export interface NoteImage { id: string; name: string; bytes: number }
+export interface NoteMessage {
+  id: string; author: NoteAuthor; body: string; at: number; images?: NoteImage[]
+  /** A user's message: the send it went out with. An agent's message: the send it answers. */
+  review?: string
+  sentAt?: number
+  verdict?: NoteVerdict; fixed?: boolean; agent?: string
+}
+/** Where a review note is: the blob of one side of one file. */
+export interface NoteAnchor { path: string; side: NoteSide; blob: string; rev: string; start: NotePoint; end: NotePoint; quote: string }
+/** A review note as the Diff tab sends it: its anchor and the user's first message. */
+export interface NoteDraft extends NoteAnchor { body: string; images?: NoteImage[] }
+/** A review note is a thread: the messages of the user and the agent, oldest first. */
+export interface ReviewNote extends NoteAnchor { id: string; createdAt: number; messages: NoteMessage[]; resolvedAt?: number }
+/** null: the note is gone. */
+export type NoteResult = { ok: true; note: ReviewNote | null } | { ok: false; reason: string }
 
 export type RebaseAction = 'pick' | 'reword' | 'squash' | 'fixup' | 'drop'
 
@@ -371,7 +386,15 @@ declare module 'orca' {
     'diff.index': { input: { root: string; index: number }; output: { ok: boolean } }
     'notes.list': { input: { root: string }; output: { notes: ReviewNote[]; warning?: string } }
     'notes.add': { input: { root: string; draft: NoteDraft }; output: NoteResult }
-    'notes.update': { input: { root: string; id: string; body: string }; output: NoteResult }
+    /** A new message of the user at the end of the thread; it opens a resolved one again. */
+    'notes.reply': { input: { root: string; id: string; body: string; images?: NoteImage[] }; output: NoteResult }
+    /** Changes a message of the user that was not sent. */
+    'notes.edit': { input: { root: string; id: string; message: string; body: string }; output: NoteResult }
+    /** Takes the sent mark off the messages of the send nobody answered. */
+    'notes.resend': { input: { root: string; id: string }; output: NoteResult }
+    /** Removes one message; the last one takes the thread with it. */
+    'notes.remove': { input: { root: string; id: string; message: string }; output: NoteResult }
+    'notes.resolve': { input: { root: string; id: string; resolved: boolean }; output: NoteResult }
     'notes.delete': { input: { root: string; ids: string[] }; output: { ok: boolean; reason?: string } }
     'notes.send': { input: { root: string; ids: string[]; agent: string }; output: { ok: true; review: string } | { ok: false; reason: string } }
     'skills.list': { input: { root: string }; output: { skills: string[] } }
