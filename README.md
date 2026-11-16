@@ -109,8 +109,13 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   paths in order, and the prompt tells the agent to use them first; without skills the prompt is as
   before. The skills are kept in the plugin's storage.
 - **Answers under the notes**: the agent writes one file per note to `answers/<note id>.md`: `verdict:
-  confirmed | refuted | unclear`, optionally `fixed: yes | no`, a blank line and a very short markdown answer:
-  the facts (code, `file:line` or a screenshot of the design mockup) and a conclusion. An image path in an
+  answered | confirmed | refuted | unclear`, optionally `fixed: yes | no`, a blank line and a very short markdown
+  answer: the answer itself with the facts (code, `file:line` or a screenshot of the design mockup). The plugin's
+  guide (`SKILL.md` in the review folder) tells the agent that a note is a question, a request or a claim: a
+  question is answered (`answered`, no code changed), a request is made at once, a claim is checked and fixed when
+  it holds; a note that is wrong is argued with — the fact and what to do instead — and "I did not change this
+  code" is not an answer. The review skills of the repository and the project's own rules come before the guide:
+  a rule of the guide that contradicts them does not apply, the rest of it applies with them. An image path in an
   answer is shown as text (caption and address), the image itself is not shown. The plugin reads
   them when the agent's status changes and when the notes are listed, and shows under the note the verdict
   label, "Fixed" and the markdown. An answer file the agent rewrites replaces the answer shown the next

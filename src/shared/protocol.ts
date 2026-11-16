@@ -135,7 +135,8 @@ export interface FileDiff {
 
 export type NoteSide = 'old' | 'new'
 export interface NotePoint { line: number; col: number }
-export type NoteVerdict = 'confirmed' | 'refuted' | 'unclear'
+// answered: the note was a question, and the agent answered it
+export type NoteVerdict = 'answered' | 'confirmed' | 'refuted' | 'unclear'
 export interface NoteReply { verdict: NoteVerdict; fixed: boolean; body: string; at: number }
 /** A review note as the Diff tab sends it: anchored to the blob of one side of one file. */
 export interface NoteDraft { path: string; side: NoteSide; blob: string; rev: string; start: NotePoint; end: NotePoint; quote: string; body: string }

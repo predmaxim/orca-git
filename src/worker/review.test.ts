@@ -26,6 +26,10 @@ test('a review folder holds the notes, the guide and a place for answers', () =>
   assert.ok(REVIEW_GUIDE.includes(ONCE))
   for (const part of ['Keep the answer very short, with no filler.', 'a screenshot of the design mockup']) assert.ok(REVIEW_GUIDE.includes(part), part)
   assert.ok(!REVIEW_GUIDE.includes('confidence'))
+  // A note is a question, a request or a claim; the agent argues and does not excuse itself; the user's skills win.
+  for (const part of ['a **question**', 'a **request**', 'a **claim**', '`answered` (a question, answered)', '"I did not change this" is not an answer',
+    'say so plainly, give the fact that shows it, and say what you propose instead', 'A rule of this guide that contradicts a rule of 1 or 2 does not apply', 'Every other rule of this guide still applies together with theirs']) assert.ok(REVIEW_GUIDE.includes(part), part)
+  assert.ok(text.includes('verdict: answered | confirmed | refuted | unclear'))
   assert.ok(text.includes('very short and with no filler') && !text.includes('confidence'))
   assert.equal(statSync(paths.answers).isDirectory(), true)
 })
@@ -50,6 +54,10 @@ test('the prompt names three paths, has no backtick and fits', () => {
     assert.equal(prompt.includes('\n'), false)
     assert.ok(prompt.length <= 4096)
     assert.equal(promptRefusal(prompt), null)
+    // The three kinds of note, the fourth verdict, and whose rules win.
+    for (const part of ['a question — answer it', 'a request — make the change, or say why it should not be made', '(answered, confirmed, refuted or unclear)',
+      `a rule of ${paths.guide} that contradicts them does not apply, the rest of ${paths.guide} applies with them`]) assert.ok(prompt.includes(part), part)
+    assert.equal(prompt.includes('The review skills listed at the top of'), withSkills)
   }
 })
 
@@ -84,6 +92,8 @@ test('an answer reads as a verdict, a fixed mark and markdown', () => {
   assert.deepEqual(parseAnswer('verdict: confirmed\nfixed: yes\n\nDone in `a.ts:3`.', 7), { verdict: 'confirmed', fixed: true, body: 'Done in `a.ts:3`.', at: 7 })
   assert.deepEqual(parseAnswer('\uFEFFFixed: no\r\nVerdict: Refuted\r\n\r\nNo.\r\n', 7), { verdict: 'refuted', fixed: false, body: 'No.', at: 7 })
   assert.deepEqual(parseAnswer('verdict: unclear\n\nWhich file?', 7), { verdict: 'unclear', fixed: false, body: 'Which file?', at: 7 })
+  // A question gets its own verdict: nothing was claimed, nothing to fix.
+  assert.deepEqual(parseAnswer('verdict: answered\nfixed: no\n\nIt caches the list: `a.ts:3`.', 7), { verdict: 'answered', fixed: false, body: 'It caches the list: `a.ts:3`.', at: 7 })
   assert.equal(parseAnswer('verdict: maybe\n\nx'), null)
   assert.equal(parseAnswer('Looks fine to me.'), null)
   assert.equal(parseAnswer(`verdict: confirmed\n\n${'b'.repeat(9000)}`)?.body.length, 8000)
@@ -353,12 +363,12 @@ test('the review skills go into the notes file and the prompt points at them', a
   assert.ok(first.text.split('\n').includes(`1. ${join(root, 'rules.md')}`))
   // At the top: before the first note.
   assert.ok(first.text.indexOf('Review skills to use first') < first.text.indexOf('## Note '))
-  assert.ok(first.prompt.includes('Use the review skills listed at the top of'))
+  assert.ok(first.prompt.includes('The review skills listed at the top of'))
   assert.equal(first.prompt.includes('rules.md'), false)
   rmSync(join(root, 'rules.md'))
   const second = await send()
   assert.equal(second.text.includes('Review skills'), false)
-  assert.ok(second.prompt.includes("Use this project's own review skills and rules first"))
+  assert.ok(second.prompt.includes("This project's own review skills and rules come first"))
   assert.deepEqual(worker.refusals, [])
 })
 

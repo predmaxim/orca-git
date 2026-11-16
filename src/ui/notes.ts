@@ -30,7 +30,7 @@ export interface NotesView {
 /** Where a note goes: everything of a draft but its text. */
 type Anchor = Omit<NoteDraft, 'body'>
 
-const VERDICT: Record<NoteVerdict, MessageKey> = { confirmed: 'noteConfirmed', refuted: 'noteRefuted', unclear: 'noteUnclear' }
+const VERDICT: Record<NoteVerdict, MessageKey> = { answered: 'noteAnswered', confirmed: 'noteConfirmed', refuted: 'noteRefuted', unclear: 'noteUnclear' }
 
 /** Opens a link of a note or an answer outside Orca: http, https and mailto only, whatever the markdown let through. */
 function openLink(url: string): void {

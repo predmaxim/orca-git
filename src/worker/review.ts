@@ -21,7 +21,7 @@ const indent = (text: string): string => text.split(/\r?\n/).map((line) => `    
 export function notesFile(notes: ReviewNote[], paths: ReviewPaths, skills: string[] = []): string {
   const head = [
     '# Review notes',
-    `Write one answer file per note to \`${join(paths.answers, '<note id>.md')}\`. The first line is \`verdict: confirmed | refuted | unclear\`, the second \`fixed: yes | no\`, then a blank line, then the answer in markdown, very short and with no filler: the facts (a code snippet, a file:line reference, or a screenshot of the design mockup saved next to the answer file, with its full path), then your conclusion or opinion in one or two sentences. Write each answer file once, when you are done with that note — after the fix, if you make one.`,
+    `Write one answer file per note to \`${join(paths.answers, '<note id>.md')}\`. The first line is \`verdict: answered | confirmed | refuted | unclear\` (\`answered\` — the note was a question and you answered it), the second \`fixed: yes | no\`, then a blank line, then the answer in markdown, very short and with no filler: the answer itself (to a question — what the user asked; to a request or a claim — what you did or why you did not), with the facts (a code snippet, a file:line reference, or a screenshot of the design mockup saved next to the answer file, with its full path). Write each answer file once, when you are done with that note — after the fix, if you make one.`,
     ...(skills.length ? [['Review skills to use first, in this order (each is a file, or a folder with a SKILL.md):', ...skills.map((path, i) => `${i + 1}. ${path}`)].join('\n')] : [])
   ].join('\n\n')
   const each = notes.map((n) =>
@@ -38,12 +38,13 @@ export function notesFile(notes: ReviewNote[], paths: ReviewPaths, skills: strin
   return `${[head, ...each].join('\n\n')}\n`
 }
 
-/** With `withSkills`, the agent takes the review skills `notesFile` lists first; their paths stay out of the prompt. */
+/** With `withSkills`, the review skills `notesFile` lists come first; their paths stay out of the prompt. */
 export function reviewPrompt(paths: ReviewPaths, withSkills = false): string {
   const rules = withSkills
-    ? `Use the review skills listed at the top of ${paths.notes} first, then this project's own review skills and rules (.claude/skills, .agents/skills, AGENTS.md, CLAUDE.md)`
-    : "Use this project's own review skills and rules first (.claude/skills, .agents/skills, AGENTS.md, CLAUDE.md)"
-  return `Review notes from the user are in ${paths.notes}. Work through every note: check it against the code, answer it (confirmed, refuted or unclear) with your evidence, and fix the code for each note you confirm. ${rules}; where they say nothing, follow ${paths.guide}. Write one answer file per note into ${paths.answers}, in the form the notes file describes.`
+    ? `The review skills listed at the top of ${paths.notes} come first, then this project's own review skills and rules (.claude/skills, .agents/skills, AGENTS.md, CLAUDE.md)`
+    : "This project's own review skills and rules come first (.claude/skills, .agents/skills, AGENTS.md, CLAUDE.md)"
+  // The user's skills and the project's rules win over the plugin's guide; what they do not contradict of it still applies.
+  return `Review notes from the user are in ${paths.notes}. Work through every note: a question — answer it; a request — make the change, or say why it should not be made; a claim — check it against the code and fix the code when it holds. Answer each note (answered, confirmed, refuted or unclear) with your evidence. ${rules}; a rule of ${paths.guide} that contradicts them does not apply, the rest of ${paths.guide} applies with them. Write one answer file per note into ${paths.answers}, in the form the notes file describes.`
 }
 
 /** Why `prompt` cannot go to `agent.launch`, or null: Orca takes at most 4096 characters, and the prompt must stay one line with no backtick whatever the repository path holds. */
@@ -119,7 +120,7 @@ export function removeReview(root: string, review: string): void {
   }
 }
 
-const VERDICTS: readonly string[] = ['confirmed', 'refuted', 'unclear']
+const VERDICTS: readonly string[] = ['answered', 'confirmed', 'refuted', 'unclear']
 const MAX_ANSWER = 65536
 
 const blank = (line: string): boolean => line.trim() === ''

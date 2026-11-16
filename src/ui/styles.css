@@ -2054,6 +2054,7 @@ input[type='radio']:focus-visible {
   --tone: var(--state-done);
 }
 
+.d-label.answered,
 .d-label.refuted {
   --tone: var(--state-info);
 }
