@@ -1,4 +1,4 @@
-import type { NoteMessage, NoteSide, ReviewNote, SelectionFile } from './protocol.ts'
+import type { NoteMessage, NotePlace, NoteSide, ReviewNote, SelectionFile } from './protocol.ts'
 
 /** Limits of review notes; the worker enforces them, the frames use them to size inputs. */
 export const MAX_NOTES = 200
@@ -49,11 +49,51 @@ export function noteBlob(file: Pick<SelectionFile, 'status' | 'oldBlob' | 'newBl
   return side === 'old' ? file.oldBlob : file.newBlob
 }
 
+/** Open notes by line, then resolved ones by line. */
+const byLine = (a: ReviewNote, b: ReviewNote): number => Number(a.resolvedAt !== undefined) - Number(b.resolvedAt !== undefined) || a.start.line - b.start.line
+
 /** The notes the Diff tab shows on this file of a selection (`noteBlob`), open ones by line, then resolved ones by line. */
 export function notesOfFile(notes: ReviewNote[], file: SelectionFile): ReviewNote[] {
-  return notes
-    .filter((n) => n.blob === noteBlob(file, n.side))
-    .sort((a, b) => Number(a.resolvedAt !== undefined) - Number(b.resolvedAt !== undefined) || a.start.line - b.start.line)
+  return notes.filter((n) => n.blob === noteBlob(file, n.side)).sort(byLine)
+}
+
+/**
+ * The blob of a side of `file` that `notes.place` may carry `note` to: the side's (`noteBlob`), when the note has the side's path
+ * (on the new side, also the path before a rename in this diff) and another blob. One rule for the worker and the frames that ask it.
+ */
+export function placeTarget(note: Pick<ReviewNote, 'side' | 'path' | 'blob'>, file: SelectionFile): string | undefined {
+  const blob = noteBlob(file, note.side)
+  const path = note.side === 'new' ? note.path === file.path || note.path === file.oldPath : note.path === (file.oldPath ?? file.path)
+  return path && blob !== note.blob ? blob : undefined
+}
+
+/** Files one `notes.place` request takes at most: a frame's message holds at most 64 KiB. */
+export const PLACE_FILES = 100
+
+/** Whether `notes.place` may carry a note of another version of a side of `file` to it (`placeTarget`). */
+export function placeCandidate(notes: ReviewNote[], file: SelectionFile): boolean {
+  return notes.some((n) => placeTarget(n, file) !== undefined)
+}
+
+/** Copies of the notes `places` carries to a file, at their lines there; the outdated ones and notes gone are left out. */
+export function carriedNotes(notes: ReviewNote[], places: NotePlace[]): ReviewNote[] {
+  return places.flatMap((p) => {
+    if (!('start' in p)) return []
+    const note = notes.find((n) => n.id === p.id)
+    return note ? [{ ...note, start: p.start, end: p.end }] : []
+  })
+}
+
+/**
+ * The notes the Files section lists under a file: its own and those `places` carries to it, at their lines there, and the outdated
+ * ones at their own lines with `outdated`; open ones by line, then resolved ones by line. The list's `outdated` (as of HEAD) is left off.
+ */
+export function notesUnder(notes: ReviewNote[], file: SelectionFile, places: NotePlace[]): ReviewNote[] {
+  const outdated = new Set(places.flatMap((p) => ('start' in p ? [] : [p.id])))
+  return [
+    ...[...notesOfFile(notes, file), ...carriedNotes(notes, places)].map(({ outdated: _, ...n }) => n),
+    ...notes.filter((n) => outdated.has(n.id)).map((n) => ({ ...n, outdated: true as const }))
+  ].sort(byLine)
 }
 
 /** The file a note shows in: the current one first, then the one at the note's path on its side, then the first; -1: none. */

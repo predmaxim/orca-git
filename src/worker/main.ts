@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path'
 import type { OrcaWorkerApi, PanelRequestContext } from 'orca/worker'
 import { pickLocale, setLocale, t } from '../shared/i18n.ts'
 import type { ActionResult, DiffTabState, NoteImage, NoteResult, RepoResult, RevealResult, ReviewNote, SelectionFile } from '../shared/protocol.ts'
-import { noteFileIndex, stateOf, unsentOf, waitingFor } from '../shared/notes.ts'
+import { noteFileIndex, PLACE_FILES, stateOf, unsentOf, waitingFor } from '../shared/notes.ts'
 import { answerImages, attachImage, checkImages, dropImages, putImage, readImage, sweepImages } from './images.ts'
 import { checkRewrite, runAction } from './actions.ts'
 import { checkBackup, checkReset, deleteBackup, runGuarded } from './backup.ts'
@@ -18,6 +18,7 @@ import { takeReveal } from './reveal.ts'
 import { readFileDiff } from './diff.ts'
 import { readRangeDiff, readSelectionFiles } from './selection.ts'
 import { findNoteCommit } from './noteCommit.ts'
+import { outdatedAtHead, placeNotes, setPlaceLog, type Hunk } from './notePlace.ts'
 import { addNote, agentKey, deleteNotes, diffKey, editMessage, fitList, listNotes, markSent, markUnsent, pendingRoots, removeMessage, replyNote, resendNote, resolveNote, setAnswers, setNotesLog } from './notes.ts'
 import { promptRefusal, readAnswers, removeReview, reviewPaths, reviewPrompt, writeReview } from './review.ts'
 import { browseSkills, checkSkills, listSkills, saveSkills, skillPathAbs, skillsForReview } from './skills.ts'
@@ -39,6 +40,8 @@ const diffStates = new Map<string, DiffKept>()
 const changing = new Set<string>()
 /** Roots with a `notes.send` running: a second one at once would start a second agent. */
 const sending = new Set<string>()
+/** The hunks between two blobs, by `<from>:<to>`: a blob never changes, so they are kept for every repository and request. */
+const blobPairs = new Map<string, Hunk[] | null>()
 
 /**
  * Runs `change` on `root` (as `gitFor` accepted it) unless another change to it is running: that one is refused, not
@@ -271,6 +274,7 @@ export default function activate(orca: OrcaWorkerApi): void {
   // A worker Orca restarts begins with nothing in memory; the tests mount it again in the same process.
   diffStates.clear()
   setNotesLog((line) => orca.log(line))
+  setPlaceLog((line) => orca.log(line))
   orcaApi = orca
   // A panel drops what it waited for from a worker before this one: that is never posted.
   orca.panels.post('worker.started', {})
@@ -484,7 +488,8 @@ export default function activate(orca: OrcaWorkerApi): void {
   })
 
   handle('notes.list', async ({ root }) => {
-    const key = (await gitFor(root)).root
+    const git = await gitFor(root)
+    const key = git.root
     let warning = ''
     try {
       await ingest(key)
@@ -493,7 +498,10 @@ export default function activate(orca: OrcaWorkerApi): void {
       // Most likely the stored value would pass Orca's 262144 bytes: the user has to know, and can free space.
       warning = t('notesAnswersFailed', { error: errorText(error) })
     }
-    const { notes, cut } = fitList(await listNotes(orca.storage, key))
+    const all = await listNotes(orca.storage, key)
+    const outdated = await outdatedAtHead(git, all, blobPairs)
+    // Copies: the mark holds for HEAD as it is now, and is never stored.
+    const { notes, cut } = fitList(all.map((n) => (outdated.has(n.id) ? { ...n, outdated: true as const } : n)))
     if (cut) warning = [warning, t('notesCut', { count: cut })].filter(Boolean).join(' ')
     return warning ? { notes, warning } : { notes }
   })
@@ -512,6 +520,21 @@ export default function activate(orca: OrcaWorkerApi): void {
     const shown = await showDiff(key, [hash], files, index, note.id)
     if (shown.ok) orca.panels.post('commit.reveal', { root: key, hash, path: files[index].path })
     return shown
+  })
+
+  // The notes of other versions of the frame's files, carried or outdated. The frame sends only files whose path a note has,
+  // at most PLACE_FILES a request.
+  handle('notes.place', async ({ root, files }) => {
+    try {
+      if (Array.isArray(files) && files.length > PLACE_FILES) throw new Error(t('notesPlaceTooMany', { count: PLACE_FILES }))
+      if (!Array.isArray(files)) throw new Error(t('invalidSelection'))
+      const git = await gitFor(root)
+      return { places: await placeNotes(git, await listNotes(orca.storage, git.root), files, blobPairs) }
+    } catch (error) {
+      // A frame shows no carried notes then and says nothing: the log is where to look.
+      orca.log(`notes not placed: ${errorText(error)}`)
+      throw error
+    }
   })
 
   /** Tells the panels when a change of the notes of `root` went through. */
@@ -650,11 +673,14 @@ export default function activate(orca: OrcaWorkerApi): void {
       // The notes still go, without the skills.
       orca.log(`review skills not read for ${key}: ${errorText(error)}`)
     }
+    // Before the threads are read: git takes a while, and an edit saved meanwhile would be marked sent with text the notes file
+    // does not have. A note's lines, side and blob never change, so the threads read below get the same marks.
+    const outdated = await outdatedAtHead(git, (await listNotes(orca.storage, key)).filter((n) => Array.isArray(ids) && ids.includes(n.id)), blobPairs)
     // The threads and their NEW messages as they are now, after the waits above: what the notes file says is what gets marked.
     const notes = await unsentNotes()
     if (!notes.length) return { ok: false, reason: t('reviewNothing') }
     const review = randomBytes(6).toString('hex')
-    const made = writeReview(key, review, notes, skills)
+    const made = writeReview(key, review, notes, skills, outdated)
     if (!made.ok) return { ok: false, reason: made.reason }
     const prompt = reviewPrompt(made.paths, skills.length > 0)
     const refusal = promptRefusal(prompt, same !== null)
@@ -757,6 +783,7 @@ export default function activate(orca: OrcaWorkerApi): void {
 
 export function deactivate(): void {
   setNotesLog(() => undefined)
+  setPlaceLog(() => undefined)
   for (const watcher of watchers.values()) void watcher.then((w) => w?.close())
   watchers.clear()
   watchedBy.clear()

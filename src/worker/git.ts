@@ -9,6 +9,8 @@ export interface GitResult {
   stderr: string
   /** stdout as git wrote it, with `bytes: true`. */
   bytes?: Uint8Array
+  /** Killed (a signal, a time limit, the output cap) rather than refused. */
+  stopped?: true
 }
 
 export interface GitOptions {
@@ -47,7 +49,7 @@ export function stdoutOf(args: string[], result: GitResult): string {
 }
 
 /** Subcommands the worker only reads with. */
-const READ_ONLY = new Set(['cat-file', 'check-ref-format', 'config', 'diff', 'diff-tree', 'for-each-ref', 'format-patch', 'hash-object', 'log', 'ls-files', 'ls-tree', 'remote', 'rev-list', 'rev-parse', 'show', 'show-ref', 'status', 'symbolic-ref', 'version'])
+const READ_ONLY = new Set(['cat-file', 'check-ref-format', 'config', 'diff', 'diff-tree', 'for-each-ref', 'format-patch', 'hash-object', 'log', 'ls-files', 'ls-tree', 'merge-base', 'remote', 'rev-list', 'rev-parse', 'show', 'show-ref', 'status', 'symbolic-ref', 'version'])
 
 /** The subcommand of `args`, past any `-c name=value` in front. */
 export const subcommand = (args: string[]) => args.find((arg, i) => !arg.startsWith('-') && args[i - 1] !== '-c') ?? ''
@@ -84,7 +86,7 @@ export function createGit(root: string, gitPath = 'git'): Git {
           const stopped = Boolean((error as any)?.signal) || (error as any)?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
           const text = err || (error && !stopped ? error.message : '')
           const note = stopped ? `${text.trimEnd()}\n${t('gitStopped', { command: subcommand(args) })}`.trimStart() : text
-          resolve({ ok: !error, code, stdout: String(stdout), stderr: note, ...(options.bytes ? { bytes: stdout } : {}) })
+          resolve({ ok: !error, code, stdout: String(stdout), stderr: note, ...(options.bytes ? { bytes: stdout } : {}), ...(stopped ? { stopped: true as const } : {}) })
         }
       )
       if (options.input !== undefined) child.stdin?.end(options.input)

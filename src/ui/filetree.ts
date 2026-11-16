@@ -5,7 +5,7 @@ import { t, type MessageKey } from '../shared/i18n.ts'
 import { lastAnswer, noteTone, type NoteTone } from '../shared/notes.ts'
 import { h, icon, mountTree } from './dom.ts'
 import { fileIcon, folderIcon } from './fileicons.ts'
-import { statusName } from './format.ts'
+import { shortHash, statusName } from './format.ts'
 import { active } from './notemodel.ts'
 
 export interface FileTreeHost {
@@ -15,24 +15,25 @@ export interface FileTreeHost {
   current: string | null
   open(file: SelectionFile): void
   onToggle(): void
-  /** The review notes shown under `file`, in their order. */
+  /** The review notes shown under `file`, in their order: its own, those carried to it, and the outdated ones with `outdated`. */
   notes?(file: SelectionFile): ReviewNote[]
-  /** Opens `file` in the Diff tab, scrolled to the card of `note`. */
+  /** Opens `file` in the Diff tab, scrolled to the card of `note`; an outdated note, in the commit it was written in. */
   openNote?(file: SelectionFile, note: ReviewNote): void
 }
 
 const STATE: Record<NoteTone, MessageKey> = { unsent: 'noteUnsent', waiting: 'noteSent', answered: 'noteAnswered', done: 'noteConfirmed', resolved: 'noteResolve' }
 
-/** The tooltip of a note row: path, lines, side and state of the note, then its first message whole. */
+/** The tooltip of a note row: path, lines, side and state of the note, that its lines changed when outdated, then its first message whole. */
 export function noteTip(note: ReviewNote): string {
   const tone = noteTone(note)
   const lines = note.start.line === note.end.line ? `${note.start.line}` : `${note.start.line}-${note.end.line}`
+  const outdated = note.outdated ? `${t('noteOutdatedTip', { rev: shortHash(note.rev) })}\n` : ''
   return t('fileNoteTip', {
     path: note.path,
     lines,
     side: t(note.side === 'old' ? 'noteSideOld' : 'noteSideNew'),
     state: t(tone === 'done' && lastAnswer(note)?.fixed ? 'noteFixed' : STATE[tone]),
-    message: note.messages[0]?.body ?? ''
+    message: outdated + (note.messages[0]?.body ?? '')
   })
 }
 
@@ -112,7 +113,8 @@ export function renderFileTree(container: HTMLElement, nodes: FileNode[], host: 
                 title: noteTip(note),
                 onclick: () => host.openNote?.(file, note)
               },
-              tone === 'resolved' ? icon('check') : h('span', { class: `note-dot tone-${tone}` }),
+              // An outdated note (its lines changed in this version) stands at its own line, with a dashed circle.
+              note.outdated ? h('span', { class: 'note-dot outdated' }) : tone === 'resolved' ? icon('check') : h('span', { class: `note-dot tone-${tone}` }),
               h('span', { class: 'mono muted' }, note.start.line),
               h('span', { class: 'name' }, (note.messages[0]?.body ?? '').split('\n', 1)[0])
             )

@@ -21,3 +21,7 @@ test('noteTip: the path, lines and side of a note and its state, then its first 
   assert.equal(head(note({ messages: [sent, agent({ verdict: 'unclear', fixed: true })] })), 'src/x.ts:3-5 (new) · Fixed')
   assert.equal(head(note({ messages: [sent, agent({ verdict: 'confirmed' })], resolvedAt: 9 })), 'src/x.ts:3-5 (new) · Resolved')
 })
+
+test('noteTip: an outdated note says its lines changed after its commit, before its first message', () => {
+  assert.equal(noteTip(note({ outdated: true })), 'src/x.ts:3-5 (new) · Not sent\nThe code at these lines changed after ffffffff\nWhy here?\nIt runs twice.')
+})

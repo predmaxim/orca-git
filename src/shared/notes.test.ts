@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { NoteMessage, ReviewNote, SelectionFile } from './protocol.ts'
-import { noteBlob, noteFileIndex, notesOfFile, noteTone } from './notes.ts'
+import { carriedNotes, noteBlob, noteFileIndex, notesOfFile, notesUnder, noteTone, placeCandidate, placeTarget } from './notes.ts'
 
 const A = 'a'.repeat(40)
 const B = 'b'.repeat(40)
@@ -72,4 +72,55 @@ test('noteTone: each state of a thread', () => {
   assert.equal(noteTone(note('n', 'new', B, 1, { messages: [sent, agent({ verdict: 'unclear', fixed: true })] })), 'done')
   assert.equal(noteTone(note('n', 'new', B, 1, { messages: [sent, agent({ verdict: 'confirmed' })], resolvedAt: 9 })), 'resolved')
   assert.equal(noteTone(note('n', 'new', B, 1)), 'unsent')
+})
+
+test('placeCandidate: a note of the side path on another blob; on the new side the path before a rename too', () => {
+  assert.equal(placeCandidate([note('n', 'new', C, 1)], file()), true)
+  assert.equal(placeCandidate([note('n', 'old', C, 1)], file()), true)
+  assert.equal(placeCandidate([note('n', 'new', B, 1), note('o', 'old', A, 1)], file()), false)
+  assert.equal(placeCandidate([note('n', 'new', C, 1, { path: 'src/y.ts' })], file()), false)
+  const renamed = file({ status: 'R', path: 'src/y.ts', oldPath: 'src/x.ts' })
+  assert.equal(placeCandidate([note('n', 'new', C, 1)], renamed), true)
+  assert.equal(placeCandidate([note('o', 'old', C, 1)], renamed), true)
+  assert.equal(placeCandidate([note('o', 'old', C, 1, { path: 'src/y.ts' })], renamed), false)
+})
+
+test('placeTarget: the blob of the note side it is carried to, for the worker and the frames alike', () => {
+  assert.equal(placeTarget(note('n', 'new', C, 1), file()), B)
+  assert.equal(placeTarget(note('o', 'old', C, 1), file()), A)
+  assert.equal(placeTarget(note('n', 'new', B, 1), file()), undefined)
+  assert.equal(placeTarget(note('n', 'new', C, 1, { path: 'src/y.ts' }), file()), undefined)
+  assert.equal(placeTarget(note('n', 'new', C, 1), file({ status: 'T' })), undefined)
+})
+
+test('placeCandidate: none on a file whose side has no blob of notes', () => {
+  assert.equal(placeCandidate([note('n', 'new', C, 1)], file({ status: 'T' })), false)
+  assert.equal(placeCandidate([note('n', 'new', C, 1)], file({ newBlob: A })), false)
+})
+
+test('carriedNotes: copies of the carried notes at their lines there; outdated ones and notes gone left out', () => {
+  const kept = note('n', 'new', C, 3, { start: { line: 3, col: 2 }, end: { line: 4, col: 5 } })
+  const carried = carriedNotes([kept, note('o', 'new', C, 9)], [
+    { id: 'n', start: { line: 5, col: 2 }, end: { line: 6, col: 5 } },
+    { id: 'o', outdated: true },
+    { id: 'gone', start: { line: 1, col: 0 }, end: { line: 1, col: 1 } }
+  ])
+  assert.deepEqual(carried, [{ ...kept, start: { line: 5, col: 2 }, end: { line: 6, col: 5 } }])
+  assert.deepEqual(kept.start, { line: 3, col: 2 })
+})
+
+test('notesUnder: own and carried notes at their lines on the file, outdated ones at their own lines and marked; open ones by line, then resolved ones', () => {
+  // `outdated` of the Notes list is as of HEAD: on this file the note is own, so it is not outdated here.
+  const own = note('own', 'new', B, 9, { outdated: true })
+  const carried = note('carried', 'new', C, 4, { outdated: true })
+  const changed = note('changed', 'new', C, 2)
+  const done = note('done', 'new', C, 1, { resolvedAt: 5 })
+  const under = notesUnder([own, carried, changed, done, note('other', 'new', A, 3, { path: 'src/y.ts' })], file(), [
+    { id: 'carried', start: { line: 6, col: 0 }, end: { line: 6, col: 1 } },
+    { id: 'changed', outdated: true },
+    { id: 'done', outdated: true },
+    { id: 'gone', outdated: true }
+  ])
+  assert.deepEqual(under.map((n) => [n.id, n.start.line, n.outdated]), [['changed', 2, true], ['carried', 6, undefined], ['own', 9, undefined], ['done', 1, true]])
+  assert.deepEqual(notesUnder([own], file(), []).map((n) => 'outdated' in n), [false])
 })
