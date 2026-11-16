@@ -3,8 +3,9 @@ import { appendFileSync, closeSync, constants, existsSync, fstatSync, mkdirSync,
 import { dirname, join, resolve } from 'node:path'
 import type { OrcaWorkerApi, PanelRequestContext } from 'orca/worker'
 import { pickLocale, setLocale, t } from '../shared/i18n.ts'
-import type { ActionResult, DiffTabState, NoteResult, RepoResult, ReviewNote } from '../shared/protocol.ts'
+import type { ActionResult, DiffTabState, NoteImage, NoteResult, RepoResult, ReviewNote } from '../shared/protocol.ts'
 import { stateOf, unsentOf, waitingFor } from '../shared/notes.ts'
+import { answerImages, attachImage, checkImages, dropImages, putImage, readImage } from './images.ts'
 import { checkRewrite, runAction } from './actions.ts'
 import { checkBackup, checkReset, deleteBackup, runGuarded } from './backup.ts'
 import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
@@ -16,8 +17,8 @@ import { resolveRepo, toplevel } from './repo.ts'
 import { readFileDiff } from './diff.ts'
 import { readRangeDiff, readSelectionFiles } from './selection.ts'
 import { addNote, agentKey, deleteNotes, editMessage, fitList, listNotes, markSent, markUnsent, pendingRoots, removeMessage, replyNote, resendNote, resolveNote, setAnswers, setNotesLog } from './notes.ts'
-import { promptRefusal, readAnswers, removeReview, reviewPrompt, writeReview } from './review.ts'
-import { browseSkills, checkSkills, listSkills, saveSkills, skillsForReview } from './skills.ts'
+import { promptRefusal, readAnswers, removeReview, reviewPaths, reviewPrompt, writeReview } from './review.ts'
+import { browseSkills, checkSkills, listSkills, saveSkills, skillPathAbs, skillsForReview } from './skills.ts'
 import { createPatch } from './patch.ts'
 import { checkPush, runPush } from './push.ts'
 import { gitTooOld } from './rebase.ts'
@@ -351,6 +352,11 @@ export default function activate(orca: OrcaWorkerApi): void {
   const ingest = async (root: string): Promise<void> => {
     const found = readAnswers(root, await listNotes(orca.storage, root))
     if (!found.size) return
+    // The pictures an answer shows go in as files of their own; the same ones again give the same ids.
+    for (const [id, answer] of found) {
+      const images = answerImages(root, reviewPaths(root, answer.review).answers, answer.body)
+      if (images.length) found.set(id, { ...answer, images })
+    }
     const { changed, refused } = await setAnswers(orca.storage, root, found)
     if (changed) orca.panels.post('notes.changed', { root })
     // The ones stored stay stored; the caller tells the user about the rest.
@@ -392,14 +398,27 @@ export default function activate(orca: OrcaWorkerApi): void {
     return result
   }
 
+  /** The images of a new message, checked against the files; or why not. */
+  const withImages = async (git: Git, images: unknown): Promise<{ ok: true; images: NoteImage[] } | { ok: false; reason: string }> => {
+    const checked = checkImages(git.root, images)
+    if (checked.ok && checked.images.length) await exclude(git, git.root, '.orca-git-log/')
+    return checked
+  }
+
   handle('notes.add', async ({ root, draft }) => {
-    const key = (await gitFor(root)).root
-    return told(key, await addNote(orca.storage, key, draft))
+    const git = await gitFor(root)
+    const key = git.root
+    const checked = await withImages(git, draft?.images)
+    if (!checked.ok) return checked
+    return told(key, await addNote(orca.storage, key, { ...draft, images: checked.images }))
   })
 
   handle('notes.reply', async ({ root, id, body, images }) => {
-    const key = (await gitFor(root)).root
-    return told(key, await replyNote(orca.storage, key, id, body, images))
+    const git = await gitFor(root)
+    const key = git.root
+    const checked = await withImages(git, images)
+    if (!checked.ok) return checked
+    return told(key, await replyNote(orca.storage, key, id, body, checked.images))
   })
 
   handle('notes.edit', async ({ root, id, message, body }) => {
@@ -428,11 +447,23 @@ export default function activate(orca: OrcaWorkerApi): void {
     return told(key, result)
   })
 
+  /** Removes the files of `images` that no message of a note of `root` uses any more. Best effort: never throws. */
+  const dropFiles = async (root: string, images: (NoteImage[] | undefined)[]): Promise<void> => {
+    try {
+      dropImages(root, images.flatMap((list) => (list ?? []).map((i) => i.id)), await listNotes(orca.storage, root))
+    } catch (error) {
+      orca.log(`images not removed for ${root}: ${errorText(error)}`)
+    }
+  }
+
   handle('notes.remove', async ({ root, id, message }) => {
     const key = (await gitFor(root)).root
-    const before = (await listNotes(orca.storage, key)).find((n) => n.id === id)?.messages.find((m) => m.id === message)?.review
+    const gone = (await listNotes(orca.storage, key)).find((n) => n.id === id)?.messages.find((m) => m.id === message)
     const result = await removeMessage(orca.storage, key, id, message)
-    if (result.ok) await dropReviews(key, [before])
+    if (result.ok) {
+      await dropReviews(key, [gone?.review])
+      await dropFiles(key, [gone?.images])
+    }
     return told(key, result)
   })
 
@@ -447,6 +478,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     }
     if (gone.length) {
       await dropReviews(key, gone.flatMap((n) => n.messages.map((m) => m.review)))
+      await dropFiles(key, gone.flatMap((n) => n.messages.map((m) => m.images)))
       orca.panels.post('notes.changed', { root: key })
     }
     return { ok: true }
@@ -579,6 +611,27 @@ export default function activate(orca: OrcaWorkerApi): void {
   })
 
   handle('skills.browse', async ({ root, dir }) => browseSkills(typeof dir === 'string' ? dir : '', (await gitFor(root)).root))
+
+  handle('images.put', async ({ root, upload, index, last, data, name }) => {
+    const git = await gitFor(root)
+    // Before the file exists, so it never shows in git status.
+    if (last === true) await exclude(git, git.root, '.orca-git-log/')
+    return putImage(git.root, { upload, index, last, data, name })
+  })
+
+  handle('images.attach', async ({ root, path }) => {
+    const git = await gitFor(root)
+    if (typeof path !== 'string' || !path.trim() || /[\x00-\x1f\x7f]/.test(path)) return { ok: false, reason: t('imageMissing', { path: String(path).slice(0, 200) }) }
+    await exclude(git, git.root, '.orca-git-log/')
+    return attachImage(git.root, skillPathAbs(path.trim(), git.root))
+  })
+
+  handle('images.browse', async ({ root, dir }) => browseSkills(typeof dir === 'string' ? dir : '', (await gitFor(root)).root, (name) => /\.(png|jpe?g|gif|webp)$/i.test(name)))
+
+  handle('images.get', async ({ root, id, offset }) => {
+    const part = readImage((await gitFor(root)).root, id, offset, 600000)
+    return part ? { data: Buffer.from(part.data).toString('base64'), total: part.total } : { data: '', total: 0 }
+  })
 }
 
 export function deactivate(): void {

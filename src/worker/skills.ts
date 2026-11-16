@@ -38,7 +38,7 @@ const exists = (path: string): boolean => {
 }
 
 // shortcut: a folder of tens of thousands of entries is listed whole and its answer may pass Orca's 1 MiB; filter by the typed name here if that matters.
-export function browseSkills(dir: string, root: string): { dirs: string[]; files: string[] } {
+export function browseSkills(dir: string, root: string, wanted: (name: string) => boolean = (name) => /\.md$/i.test(name)): { dirs: string[]; files: string[] } {
   const abs = skillPathAbs(dir, root)
   let names: string[]
   try {
@@ -51,7 +51,7 @@ export function browseSkills(dir: string, root: string): { dirs: string[]; files
   for (const name of names) {
     const stat = kind(join(abs, name))
     if (stat?.isDirectory()) dirs.push(name)
-    else if (stat?.isFile() && /\.md$/i.test(name)) files.push(name)
+    else if (stat?.isFile() && wanted(name)) files.push(name)
   }
   return { dirs, files }
 }

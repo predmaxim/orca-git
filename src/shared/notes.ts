@@ -34,3 +34,8 @@ export function stateOf(note: ReviewNote): NoteState {
 export function lastAnswer(note: ReviewNote): NoteMessage | undefined {
   return note.messages.filter((m) => m.author === 'agent').pop()
 }
+
+/** Images of review messages: at most 5 MiB each, 5 per message; an id is 12 hex of the sha256 of the content and the kind's extension. */
+export const MAX_IMAGE_BYTES = 5242880
+export const MAX_IMAGES = 5
+export const IMAGE_ID = /^[0-9a-f]{12}\.(png|jpg|gif|webp)$/

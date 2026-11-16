@@ -1,7 +1,7 @@
 import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readSync, rmdirSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { t } from '../shared/i18n.ts'
-import { lastAnswer, MAX_REPLY, unsentOf, waitingFor } from '../shared/notes.ts'
+import { IMAGE_ID, lastAnswer, MAX_REPLY, unsentOf, waitingFor } from '../shared/notes.ts'
 import type { NoteMessage, NoteReply, NoteVerdict, ReviewNote } from '../shared/protocol.ts'
 import { REVIEW_GUIDE } from './reviewGuide.ts'
 
@@ -37,7 +37,8 @@ export function notesFile(notes: ReviewNote[], paths: ReviewPaths, skills: strin
       ...n.messages.flatMap((m, i) => {
         const time = new Date(m.at).toISOString()
         const who = m.author === 'agent' ? `agent (${m.verdict ?? 'unclear'}, fixed: ${m.fixed ? 'yes' : 'no'}), ${time}` : `user, ${time}${fresh.has(m) ? ' — NEW, answer this' : ''}`
-        return [`[${i + 1}] ${who}:`, indent(m.body)]
+        const files = (m.images ?? []).filter((image) => IMAGE_ID.test(image.id)).map((image) => join(dirname(paths.dir), 'images', image.id))
+        return [`[${i + 1}] ${who}:`, indent(m.body), ...(files.length ? [indent(`Images: ${files.join(', ')}`)] : [])]
       })
     ].join('\n')
   })
@@ -61,7 +62,7 @@ export function promptRefusal(prompt: string): string | null {
 }
 
 /** Whether `path` is a real folder: a link or a file in its place is not. */
-function isFolder(path: string): boolean {
+export function isFolder(path: string): boolean {
   try {
     return lstatSync(path).isDirectory()
   } catch {

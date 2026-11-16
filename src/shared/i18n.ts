@@ -518,7 +518,13 @@ export const en = {
   notesLoadFailed: 'The notes could not be loaded: {error}',
   skillMissing: 'No such skill file or folder: {path}',
   skillInvalid: 'This skill path cannot be used.',
-  skillsFull: 'At most 10 review skills.'
+  skillsFull: 'At most 10 review skills.',
+  imageKind: 'Only PNG, JPEG, GIF and WebP images can be attached.',
+  imageBig: 'The image is larger than 5 MiB.',
+  imageMany: 'At most 5 images per message.',
+  imageMissing: 'No such image file: {path}',
+  imageFailed: 'The image could not be saved: {error}',
+  imageUpload: 'The image upload was interrupted.'
 } satisfies Record<string, Message>
 
 export const ru: Record<keyof typeof en, Message> = {
@@ -1039,7 +1045,13 @@ export const ru: Record<keyof typeof en, Message> = {
   notesLoadFailed: 'Не удалось загрузить заметки: {error}',
   skillMissing: 'Нет такого файла или папки скила: {path}',
   skillInvalid: 'Этот путь скила использовать нельзя.',
-  skillsFull: 'Не больше 10 скилов ревью.'
+  skillsFull: 'Не больше 10 скилов ревью.',
+  imageKind: 'Приложить можно только PNG, JPEG, GIF и WebP.',
+  imageBig: 'Картинка больше 5 МиБ.',
+  imageMany: 'Не больше 5 картинок на сообщение.',
+  imageMissing: 'Нет такого файла картинки: {path}',
+  imageFailed: 'Не удалось сохранить картинку: {error}',
+  imageUpload: 'Загрузка картинки прервана.'
 }
 
 export type MessageKey = keyof typeof en

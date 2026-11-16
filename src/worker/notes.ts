@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { MAX_BODY, MAX_MESSAGES, MAX_NOTES, MAX_QUOTE, waitingFor } from '../shared/notes.ts'
+import { IMAGE_ID, MAX_BODY, MAX_IMAGES, MAX_MESSAGES, MAX_NOTES, MAX_QUOTE, waitingFor } from '../shared/notes.ts'
 import { t } from '../shared/i18n.ts'
-import type { NoteDraft, NoteMessage, NotePoint, NoteResult, ReviewNote } from '../shared/protocol.ts'
+import type { NoteDraft, NoteImage, NoteMessage, NotePoint, NoteResult, ReviewNote } from '../shared/protocol.ts'
 
 /** What `orca.storage` offers. */
 export interface NoteStore { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void>; delete(key: string): Promise<void> }
@@ -35,7 +35,11 @@ const checkBody = (body: unknown): string | null => {
   return text.length >= 1 && text.length <= MAX_BODY ? text : null
 }
 
-/** The draft as stored, or null; its images are not stored yet. */
+/** The images of a draft or a reply as they may be stored: of the right shape, at most MAX_IMAGES. The files are checked by the caller. */
+const keepImages = (input: unknown): NoteImage[] =>
+  Array.isArray(input) ? input.filter((i) => typeof i?.id === 'string' && IMAGE_ID.test(i.id) && typeof i.name === 'string' && Number.isInteger(i.bytes)).slice(0, MAX_IMAGES).map(({ id, name, bytes }) => ({ id, name, bytes })) : []
+
+/** The draft as stored, or null. */
 export function checkDraft(input: unknown): NoteDraft | null {
   const d = input as any
   if (!d || typeof d !== 'object') return null
@@ -50,7 +54,8 @@ export function checkDraft(input: unknown): NoteDraft | null {
   if (typeof d.quote !== 'string') return null
   const body = checkBody(d.body)
   if (body === null) return null
-  return { path: d.path, side: d.side, blob: d.blob, rev: d.rev, start, end, quote: d.quote.slice(0, MAX_QUOTE), body }
+  const images = keepImages(d.images)
+  return { path: d.path, side: d.side, blob: d.blob, rev: d.rev, start, end, quote: d.quote.slice(0, MAX_QUOTE), body, ...(images.length ? { images } : {}) }
 }
 
 /** The notes the list names, in its order; a list of another shape (the unreleased one) is empty, and so is a value no note is in. */
@@ -91,8 +96,8 @@ export function addNote(store: NoteStore, root: string, draft: unknown, now = Da
     if (notes.length >= MAX_NOTES) return { ok: false, reason: t('notesFull') }
     const checked = checkDraft(draft)
     if (!checked) return { ok: false, reason: t('noteInvalid') }
-    const { body, ...anchor } = checked
-    const note: ReviewNote = { ...anchor, id: newId(), createdAt: now, messages: [{ id: newId(), author: 'user', body, at: now }] }
+    const { body, images, ...anchor } = checked
+    const note: ReviewNote = { ...anchor, id: newId(), createdAt: now, messages: [{ id: newId(), author: 'user', body, at: now, ...(images ? { images } : {}) }] }
     try {
       await store.set(noteKey(root, note.id), note)
     } catch (error) {
@@ -133,14 +138,15 @@ function changeNote(store: NoteStore, root: string, id: unknown, change: (note: 
   })
 }
 
-/** A new message of the user at the end of the thread; it opens a resolved thread again. Its images are not stored yet. */
-export function replyNote(store: NoteStore, root: string, id: unknown, body: unknown, _images: unknown, now = Date.now()): Promise<NoteResult> {
+/** A new message of the user at the end of the thread; it opens a resolved thread again. */
+export function replyNote(store: NoteStore, root: string, id: unknown, body: unknown, images: unknown, now = Date.now()): Promise<NoteResult> {
   return changeNote(store, root, id, (note) => {
     if (note.messages.length >= MAX_MESSAGES) return t('noteFull', { count: MAX_MESSAGES })
     const text = checkBody(body)
     if (text === null) return t('noteInvalid')
     const { resolvedAt, ...rest } = note
-    return { ...rest, messages: [...note.messages, { id: newId(), author: 'user', body: text, at: now }] }
+    const kept = keepImages(images)
+    return { ...rest, messages: [...note.messages, { id: newId(), author: 'user', body: text, at: now, ...(kept.length ? { images: kept } : {}) }] }
   })
 }
 
