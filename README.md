@@ -109,13 +109,13 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   is unsent) opens a menu of agent kinds (the ones Orca lists, plus claude and codex; the last one used
   first): all unsent notes, or only those of the file shown. The plugin writes a folder
   `.orca-git-log/review-<id>/` in the workspace with `notes.md` (every note: file, lines, the commit it
-  was written on, the selected text, the whole thread of messages oldest first with the new ones marked NEW, and how to answer; the agent writes one answer file per thread, stored as the agent's message of that send), `SKILL.md` (a short guide for an
+  was written on, the selected text, the whole thread of messages oldest first with the new ones marked NEW and each answer of the agent naming the messages it answers, and how to answer; the agent writes one answer file per thread, stored as the agent's message of that send), `SKILL.md` (a short guide for an
   independent reviewer) and an empty `answers/`, adds `.orca-git-log/` to the repository's
   `.git/info/exclude`, marks the notes sent and starts a new agent in that workspace whose prompt names
   the three paths. If the agent does not start, the folder is removed and the notes go back to unsent;
-  the reason shows under the button. The next send goes to that same agent, typed into its terminal, while the terminal is open in the focused workspace and the agent is `done`; the menu then offers "to the same agent" instead of the kinds. A busy or closed agent means a new one: pick a kind. If the terminal does not take the text, the send is undone and the next one starts a new agent. One send per repository runs at a time, and a note waits for one
+  the reason shows under the button. The next send goes to that same agent, typed into its terminal, while the terminal is open in the focused workspace, the agent is `done` and the repository's path holds no character a shell reads specially; the menu then offers "to the same agent" instead of the kinds. A busy or closed agent means a new one: pick a kind. If the terminal does not take the text, the send is undone and the next one starts a new agent. One send per repository runs at a time, and a note waits for one
   answer at a time: while its last send has no answer it shows "Sent, no answer yet" and is not sent again.
-  A message may carry up to 5 images (PNG, JPEG, GIF or WebP, 5 MiB each). The worker keeps each as a file `.orca-git-log/images/<12 hex of its sha256>.<kind>` (the same bytes make one file; a file goes when no message uses it any more, and an upload never attached to a message goes a day later), `notes.md` lists their full paths under the message in an `Images:` line, and an answer file that shows `![caption](file.png)` of a file right inside its `answers/` folder brings that image into the agent's message.
+  A message may carry up to 5 images (PNG, JPEG, GIF or WebP, 5 MiB each). The worker keeps each as a file `.orca-git-log/images/<12 hex of its sha256>.<kind>` (the same bytes make one file; a file goes when no message uses it any more, and an upload never attached to a message goes a day later), `notes.md` lists their full paths in an `Images:` line right under the message's header line (the message's text is indented, so a line of text never passes for it) and tells the agent to open them, and an answer file that shows `![caption](file.png)` of a file right inside its `answers/` folder (the bare file name, as `notes.md` tells the agent) brings that image into the agent's message.
 - **Review skills** of a repository: under the notes in the Notes list, set up to 10 skills the agent
   takes first, in their order, before the project's own rules and skills and the plugin's guide. A skill
   is an `.md` file or a skill folder, as a full path, `~/…` or from the repository root (a trailing `/`
@@ -420,7 +420,10 @@ keeps them all.
   terminals are listed, Orca refuses a terminal outside the active worktree, and nobody checks that the
   agent read it. Otherwise notes go to a new agent in a terminal of the workspace. The model and how the agent
   starts are Orca's choice. "Sent" means Orca started the agent, not that it read the notes. A
-  repository whose path holds a control character or a backtick cannot send notes.
+  repository whose path holds a control character or a backtick cannot send notes. One whose path holds
+  a character a shell reads specially (`' " $ ; & | < > ( ) \ * ? ! # ~ { } [ ]`) always gets a new agent:
+  the prompt is never typed into a terminal, so a line that reaches a shell instead of an agent holds no
+  substitution, redirection, glob or second command.
 - An answer appears when the agent has written its file in that form (a known `verdict:`, at most 64 KiB,
   a regular file); anything else is ignored. `fixed` is the agent's word: the plugin does not check it.
 - Review notes: up to 200 per repository, each with up to 100 messages. Orca limits a stored value to

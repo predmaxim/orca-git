@@ -22,7 +22,7 @@ const indent = (text: string): string => text.split(/\r\n|[\n\r\v\f\x85\u2028\u2
 export function notesFile(notes: ReviewNote[], paths: ReviewPaths, skills: string[] = []): string {
   const head = [
     '# Review notes',
-    `Write one answer file per thread to \`${join(paths.answers, '<thread id>.md')}\`. The first line is \`verdict: answered | confirmed | refuted | unclear\` (\`answered\` — the note was a question and you answered it), the second \`fixed: yes | no\`, then a blank line, then the answer in markdown, very short and with no filler: the answer itself (to a question — what the user asked; to a request or a claim — what you did or why you did not), with the facts (a code snippet, a file:line reference, or a screenshot of the design mockup saved next to the answer file, with its full path). Write each answer file once, when you are done with that note — after the fix, if you make one. A thread can hold earlier messages: read them all, answer the messages marked NEW, and do not repeat what was already answered.`,
+    `Write one answer file per thread to \`${join(paths.answers, '<thread id>.md')}\`. The first line is \`verdict: answered | confirmed | refuted | unclear\` (\`answered\` — the note was a question and you answered it), the second \`fixed: yes | no\`, then a blank line, then the answer in markdown, very short and with no filler: the answer itself (to a question — what the user asked; to a request or a claim — what you did or why you did not), with the facts (a code snippet, a file:line reference, or a screenshot of the design mockup, saved next to the answer file and shown as \`![caption](file-name.png)\` with the file's bare name). Write each answer file once, when you are done with that note — after the fix, if you make one. A thread can hold earlier messages: read them all, answer the messages marked NEW, and do not repeat what was already answered. A line starting with "Images:" under a message lists files the user attached to it: open them.`,
     ...(skills.length ? [['Review skills to use first, in this order (each is a file, or a folder with a SKILL.md):', ...skills.map((path, i) => `${i + 1}. ${path}`)].join('\n')] : [])
   ].join('\n\n')
   const each = notes.map((n) => {
@@ -36,28 +36,38 @@ export function notesFile(notes: ReviewNote[], paths: ReviewPaths, skills: strin
       'Messages, oldest first:',
       ...n.messages.flatMap((m, i) => {
         const time = new Date(m.at).toISOString()
-        const who = m.author === 'agent' ? `agent (${m.verdict ?? 'unclear'}, fixed: ${m.fixed ? 'yes' : 'no'}), ${time}` : `user, ${time}${fresh.has(m) ? ' — NEW, answer this' : ''}`
+        // An agent's message names the user's messages of the send it answers: a reply written meanwhile may stand between.
+        const asked = m.author === 'agent' && m.review !== undefined ? n.messages.flatMap((u, j) => (u.author === 'user' && u.review === m.review ? [`[${j + 1}]`] : [])) : []
+        const who = m.author === 'agent' ? `agent (${m.verdict ?? 'unclear'}, fixed: ${m.fixed ? 'yes' : 'no'}), ${time}${asked.length ? `, answers ${asked.join(', ')}` : ''}` : `user, ${time}${fresh.has(m) ? ' — NEW, answer this' : ''}`
         const files = (m.images ?? []).filter((image) => IMAGE_ID.test(image.id)).map((image) => join(dirname(paths.dir), 'images', image.id))
-        return [`[${i + 1}] ${who}:`, indent(m.body), ...(files.length ? [indent(`Images: ${files.join(', ')}`)] : [])]
+        // Structure at column 0, the body indented: a body line `Images: …` never passes for an attachment.
+        return [`[${i + 1}] ${who}:`, ...(files.length ? [`Images: ${files.join(', ')}`] : []), indent(m.body)]
       })
     ].join('\n')
   })
   return `${[head, ...each].join('\n\n')}\n`
 }
 
-/** With `withSkills`, the review skills `notesFile` lists come first; their paths stay out of the prompt. */
+/**
+ * With `withSkills`, the review skills `notesFile` lists come first; their paths stay out of the prompt. The fixed words
+ * hold no shell metacharacter, so only a path can bring one (`promptRefusal` with `typed`).
+ */
 export function reviewPrompt(paths: ReviewPaths, withSkills = false): string {
   const rules = withSkills
-    ? `The review skills listed at the top of ${paths.notes} come first, then this project's own review skills and rules (.claude/skills, .agents/skills, AGENTS.md, CLAUDE.md)`
-    : "This project's own review skills and rules come first (.claude/skills, .agents/skills, AGENTS.md, CLAUDE.md)"
+    ? `The review skills listed at the top of ${paths.notes} come first, then the review skills and rules of this project - .claude/skills, .agents/skills, AGENTS.md, CLAUDE.md.`
+    : 'The review skills and rules of this project come first - .claude/skills, .agents/skills, AGENTS.md, CLAUDE.md.'
   // The user's skills and the project's rules win over the plugin's guide; what they do not contradict of it still applies.
-  return `Review notes from the user are in ${paths.notes}. Work through every note: a question — answer it; a request — make the change, or say why it should not be made; a claim — check it against the code and fix the code when it holds. Answer each note (answered, confirmed, refuted or unclear) with your evidence. ${rules}; a rule of ${paths.guide} that contradicts them does not apply, the rest of ${paths.guide} applies with them. Write one answer file per note into ${paths.answers}, in the form the notes file describes.`
+  return `Review notes from the user are in ${paths.notes}. Work through every note: answer a question, make a requested change or say why it should not be made, check a claim against the code and fix the code when it holds. Answer each note as answered, confirmed, refuted or unclear, with your evidence. ${rules} A rule of ${paths.guide} that contradicts them does not apply, the rest of ${paths.guide} applies with them. Write one answer file per note into ${paths.answers}, in the form the notes file describes.`
 }
 
-/** Why `prompt` cannot go to `agent.launch`, or null: Orca takes at most 4096 characters, and the prompt must stay one line with no backtick whatever the repository path holds. */
-export function promptRefusal(prompt: string): string | null {
+/**
+ * Why `prompt` cannot be delivered, or null: Orca takes at most 4096 characters, and the prompt must stay one line with no
+ * backtick whatever the repository path holds. One `typed` into a terminal also holds no shell metacharacter: a line that
+ * reaches a shell instead of an agent must hold no substitution, redirection, glob or second command.
+ */
+export function promptRefusal(prompt: string, typed = false): string | null {
   if (prompt.length > 4096) return t('reviewPromptTooLong')
-  if (/[\x00-\x1f\x7f`]/.test(prompt)) return t('reviewPathUnusable')
+  if (/[\x00-\x1f\x7f`]/.test(prompt) || (typed && /['"$;&|<>()\\*?!#~{}[\]]/.test(prompt))) return t('reviewPathUnusable')
   return null
 }
 

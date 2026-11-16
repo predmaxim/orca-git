@@ -123,9 +123,9 @@ CSP десктопного фрейма web worker'ы разрешает (`worke
 
 Запись в worktree защищена, как якорь и патч: `.orca-git-log` должна быть настоящей папкой, не ссылкой и не файлом; файлы создаются с `wx`. Иначе отправка отклоняется.
 
-**Промпт** (лимит `agent.launch` — 4096 символов; длиннее — отправка отклоняется до запуска; промпт с управляющим символом или обратной кавычкой, которые может принести путь репозитория, тоже отклоняется):
+**Промпт** (лимит `agent.launch` — 4096 символов; длиннее — отправка отклоняется до запуска; промпт с управляющим символом или обратной кавычкой, которые может принести путь репозитория, тоже отклоняется; в постоянных словах нет метасимволов оболочки — печать в терминал, `2026-11-16-review-threads-design.md`, отклоняет и их):
 
-> Review notes from the user are in `<notes.md>`. Work through every note: a question — answer it; a request — make the change, or say why it should not be made; a claim — check it against the code and fix the code when it holds. Answer each note (answered, confirmed, refuted or unclear) with your evidence. This project's own review skills and rules come first (.claude/skills, .agents/skills, AGENTS.md, CLAUDE.md); a rule of `<SKILL.md>` that contradicts them does not apply, the rest of `<SKILL.md>` applies with them. Write one answer file per note into `<answers/>`, in the form the notes file describes.
+> Review notes from the user are in `<notes.md>`. Work through every note: answer a question, make a requested change or say why it should not be made, check a claim against the code and fix the code when it holds. Answer each note as answered, confirmed, refuted or unclear, with your evidence. The review skills and rules of this project come first - .claude/skills, .agents/skills, AGENTS.md, CLAUDE.md. A rule of `<SKILL.md>` that contradicts them does not apply, the rest of `<SKILL.md>` applies with them. Write one answer file per note into `<answers/>`, in the form the notes file describes.
 
 **Руководство плагина** (`SKILL.md`, английский; текст — константа worker'а). Правила независимости взяты из скиллов ревью пользователя (агенты `reviewer` и `plan-reviewer`, скиллы `code-review` и `review-pr` другого его проекта), без привязки к тому проекту:
 
@@ -140,7 +140,7 @@ CSP десктопного фрейма web worker'ы разрешает (`worke
 - Подтверждённое исправлять наименьшей правкой, не расширяя её на код вне заметки.
 - Не переключать ветки, не делать reset, stash и commit, если правила проекта не требуют.
 - Если код под заметкой уже изменён в рабочем дереве — сказать об этом.
-- **Ответ — очень короткий, без воды** (решение пользователя 2026-11-16): только факты (кусок кода, `файл:строка` или скриншот макета — картинка рядом с файлом ответа, в ответе её полный путь) и вывод или мнение в одном-двух предложениях. Изменённый код — файлы и строки; непроверенное — в нескольких словах.
+- **Ответ — очень короткий, без воды** (решение пользователя 2026-11-16): только факты (кусок кода, `файл:строка` или скриншот макета — картинка рядом с файлом ответа, в ответе `![подпись](имя-файла.png)` с голым именем файла) и вывод или мнение в одном-двух предложениях. Изменённый код — файлы и строки; непроверенное — в нескольких словах.
 - В конце — короткий отчёт в чате.
 
 **Скилы ревью — настройка репозитория** (решение пользователя 2026-11-16). Пользователь указывает свои скилы ревью: они главнее правил проекта и встроенного руководства.
@@ -148,7 +148,7 @@ CSP десктопного фрейма web worker'ы разрешает (`worke
 - До 10 путей на репозиторий, порядок — приоритет. Путь — файл `.md` или папка скила; полный, `~/…` или от корня репозитория. Путь должен существовать, когда его добавляют.
 - Интерфейс — в списке «Заметки», под заметками: раздел «Скилы ревью» со списком путей (у каждого «убрать») и кнопкой «Добавить скил». Кнопка открывает одно поле с подсказками пути, как поле скила в плагине workflow: под полем — файлы `.md` и подпапки набранной папки; ↑/↓ выбирают, Enter или Tab берут подсказку (папка раскрывается, файл добавляется), «Готово» или Enter без подсказок берут набранный путь. На десяти скилах кнопки нет.
 - Хранение — в хранилище плагина, ключ `skills:<sha256 корня>`. Настройки Orca (`contributes.settings`) не годятся: в них нет списка, подсказок и привязки к репозиторию.
-- При отправке `notes.md` перечисляет существующие скилы полными путями, по порядку, а промпт велит сначала взять их: «The review skills listed at the top of `<notes.md>` come first, then this project's own review skills and rules (…); a rule of `<SKILL.md>` that contradicts them does not apply, the rest of `<SKILL.md>` applies with them». Без скилов промпт прежний. Сами пути в промпт не попадают.
+- При отправке `notes.md` перечисляет существующие скилы полными путями, по порядку, а промпт велит сначала взять их: «The review skills listed at the top of `<notes.md>` come first, then the review skills and rules of this project - …. A rule of `<SKILL.md>` that contradicts them does not apply, the rest of `<SKILL.md>` applies with them». Без скилов промпт прежний. Сами пути в промпт не попадают.
 
 ### Ответы
 

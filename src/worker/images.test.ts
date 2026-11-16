@@ -7,6 +7,7 @@ import { t } from '../shared/i18n.ts'
 import type { NoteMessage } from '../shared/protocol.ts'
 import { answerImages, imageKind, probes, putImage, readImage, storeImage, sweepImages } from './images.ts'
 import * as main from './main.ts'
+import { noteKey, notesKey } from './notes.ts'
 import { notesFile, readAnswers, reviewPaths } from './review.ts'
 import { draft, fixture, host } from './testkit.ts'
 
@@ -228,10 +229,10 @@ test('a message names only images that are stored, and the thread keeps their fi
     const second = (await worker.request('notes.add', { root, draft: draft({ images: [lie] }) })) as any
     const reply = (await worker.request('notes.reply', { root, id: second.note.id, body: 'more', images: [lie] })) as any
     assert.deepEqual(reply.note.messages[1].images, [{ id: image.id, name: 'b.png', bytes: PNG.length }])
-    // The notes file lists the full path of each image under its message.
+    // The notes file lists the full path of each image under its message's header, at column 0.
     const paths = reviewPaths(root, 'bbbbbbbbbbbb')
     const text = notesFile([second.note, reply.note], paths)
-    assert.ok(text.includes(`    Images: ${file}\n`))
+    assert.ok(text.includes(`:\nImages: ${file}\n`))
     assert.equal(existsSync(file), true)
     assert.equal(((await worker.request('notes.remove', { root, id: first.note.id, message: first.note.messages[0].id })) as any).ok, true)
     assert.equal(existsSync(file), true)
@@ -282,13 +283,15 @@ test('the images of an answer go into the thread, and the same answer read again
     const worker = await mountWorker(main, { host: host(root, { 'agent.launch': { terminalId: 't-1' } }) })
     const added = (await worker.request('notes.add', { root, draft: draft() })) as any
     const sent = (await worker.request('notes.send', { root, ids: [added.note.id], agent: 'claude' })) as any
-    const { answers } = reviewPaths(root, sent.review)
-    writeFileSync(join(answers, 'shot.png'), PNG)
-    writeFileSync(join(answers, `${added.note.id}.md`), 'verdict: answered\nfixed: no\n\nLook: ![shot](shot.png)')
+    const { answers, notes } = reviewPaths(root, sent.review)
+    // An answer written as the notes file tells: the picture next to the answer file, shown by its bare name.
+    assert.ok(readFileSync(notes, 'utf8').includes('saved next to the answer file and shown as `![caption](file-name.png)` with the file\'s bare name'))
+    writeFileSync(join(answers, 'a.png'), PNG)
+    writeFileSync(join(answers, `${added.note.id}.md`), 'verdict: answered\nfixed: no\n\nLook: ![shot](a.png)')
     const read = async (): Promise<NoteMessage[]> => (((await worker.request('notes.list', { root })) as any).notes[0].messages as NoteMessage[])
     const [, reply] = await read()
     assert.equal(reply.images?.length, 1)
-    assert.equal(reply.images?.[0].name, 'shot.png')
+    assert.equal(reply.images?.[0].name, 'a.png')
     const posts = worker.posts.length
     assert.deepEqual((await read())[1], reply)
     assert.equal(worker.posts.length, posts)
@@ -315,6 +318,69 @@ test('an answer repeating one image reads its file once, and one naming many fil
     assert.equal(probes.files, 5)
   } finally {
     gone(root)
+  }
+})
+
+test('an answer body that would make the image search backtrack is read in linear time; a normal one gives the same images', () => {
+  const root = scratch()
+  try {
+    const answers = join(root, '.orca-git-log', 'review-bbbbbbbbbbbb', 'answers')
+    mkdirSync(answers, { recursive: true })
+    for (const unit of ['![a](', '![a](<']) {
+      const body = unit.repeat(Math.ceil(8000 / unit.length)).slice(0, 8000)
+      const start = Date.now()
+      assert.deepEqual(answerImages(root, answers, body), [])
+      assert.ok(Date.now() - start < 500, `${unit}: ${Date.now() - start} ms`)
+    }
+    writeFileSync(join(answers, 'a.png'), PNG)
+    for (const body of ['![shot](a.png)', '![shot](<a.png>)', '![shot]( a.png "title")']) assert.deepEqual(answerImages(root, answers, body).map((i) => i.name), ['a.png'], body)
+  } finally {
+    gone(root)
+  }
+})
+
+test('storing bytes again makes their file new, so the sweep leaves it until its message is saved', () => {
+  const root = scratch()
+  try {
+    const first = storeImage(root, PNG, 'a.png')
+    assert.ok(first.ok)
+    const file = join(root, '.orca-git-log', 'images', first.image.id)
+    const longAgo = new Date(Date.now() - 25 * 3600 * 1000)
+    utimesSync(file, longAgo, longAgo)
+    assert.equal(storeImage(root, PNG, 'again.png').ok, true)
+    sweepImages(root, [], Date.now())
+    assert.equal(existsSync(file), true)
+  } finally {
+    gone(root)
+  }
+})
+
+test('a pending root that is not the top level of a repository is skipped, and nothing under it is read, stored or removed', async () => {
+  const root = fixture()
+  const bad = scratch()
+  try {
+    const { body, ...anchor } = draft()
+    const waiting = { ...anchor, id: 'aaaaaaaaaaaa', createdAt: 1, messages: [{ id: 'mmmmmmmmmmmm', author: 'user', body, at: 1, review: 'bbbbbbbbbbbb', sentAt: 1 }] }
+    const { answers } = reviewPaths(bad, 'bbbbbbbbbbbb')
+    mkdirSync(answers, { recursive: true })
+    writeFileSync(join(answers, 'a.png'), PNG)
+    writeFileSync(join(answers, 'aaaaaaaaaaaa.md'), 'verdict: answered\nfixed: no\n\n![a](a.png)')
+    // An unused image a day old: a sweep would remove it.
+    const images = join(bad, '.orca-git-log', 'images')
+    mkdirSync(images)
+    const old = join(images, 'cccccccccccc.png')
+    writeFileSync(old, PNG)
+    const longAgo = new Date(Date.now() - 48 * 3600 * 1000)
+    utimesSync(old, longAgo, longAgo)
+    const h = host(root, {}, { [notesKey(bad)]: { root: bad, ids: [waiting.id] }, [noteKey(bad, waiting.id)]: waiting, pending: [bad] } as any)
+    const worker = await mountWorker(main, { host: h, events: ['agent.status.changed'] })
+    await worker.emit('agent.status.changed', { workspaceId: null, paneKey: 'p', state: 'done', receivedAt: 1 })
+    assert.deepEqual(readdirSync(images), ['cccccccccccc.png'])
+    assert.equal((h.data().storage[noteKey(bad, waiting.id)] as any).messages.length, 1)
+    assert.ok(worker.logs.some((line) => line.includes(`answers not read for ${bad}`)))
+    await worker.deactivate()
+  } finally {
+    gone(root, bad)
   }
 })
 

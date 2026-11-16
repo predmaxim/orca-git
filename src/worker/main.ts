@@ -381,7 +381,8 @@ export default function activate(orca: OrcaWorkerApi): void {
     try {
       for (const root of await pendingRoots(orca.storage)) {
         try {
-          await ingest(root)
+          // Frames share the storage: only the top level of a repository is read in, and one that is not is skipped.
+          await ingest((await gitFor(root)).root)
         } catch (error) {
           orca.log(`${error instanceof AnswersRefused ? 'answers not stored' : 'answers not read'} for ${root}: ${errorText(error)}`)
         }
@@ -513,20 +514,25 @@ export default function activate(orca: OrcaWorkerApi): void {
     }
   }
 
+  /** Whether the prompt of `key` may be typed into a terminal: the review id (12 hex) and the skills add no character the check refuses, so any id stands in. */
+  const typable = (key: string): boolean => promptRefusal(reviewPrompt(reviewPaths(key, '000000000000')), true) === null
+
   handle('notes.agent', async ({ root }) => {
-    const record = await agentRecord((await gitFor(root)).root)
+    const key = (await gitFor(root)).root
+    const record = typable(key) ? await agentRecord(key) : null
     return { agent: record && (await isFree(record)) ? record.agent : null }
   })
 
   /** Writes the review folder, marks the notes sent, then starts a new agent of the kind `agent` names, or, without one, types the prompt into the earlier agent's terminal when it is free; a failed delivery takes the mark off again. */
   const sendNotes = async (git: Git, key: string, ids: unknown, agent: unknown): Promise<{ ok: true; review: string; to: 'same' | 'new' } | { ok: false; reason: string }> => {
     // Not resolved, not waiting for an answer (one send at a time per thread), with text not sent.
-    const notes = (await listNotes(orca.storage, key)).filter((n) => Array.isArray(ids) && ids.includes(n.id) && stateOf(n) === 'unsent')
-    if (!notes.length) return { ok: false, reason: t('reviewNothing') }
-    // A named kind always starts a new agent; none means the earlier one.
-    const same = agent === undefined ? await agentRecord(key) : null
-    if (agent === undefined && !same) return { ok: false, reason: t('reviewPickAgent') }
-    if (agent !== undefined && (typeof agent !== 'string' || !KIND.test(agent))) return { ok: false, reason: t('reviewBadAgent', { agent: String(agent).slice(0, 64) }) }
+    const unsentNotes = async () => (await listNotes(orca.storage, key)).filter((n) => Array.isArray(ids) && ids.includes(n.id) && stateOf(n) === 'unsent')
+    if (!(await unsentNotes()).length) return { ok: false, reason: t('reviewNothing') }
+    // A named kind always starts a new agent; none (absent or null) means the earlier one, whose terminal takes only a prompt that can be typed.
+    const named = agent !== undefined && agent !== null
+    const same = named || !typable(key) ? null : await agentRecord(key)
+    if (!named && !same) return { ok: false, reason: t('reviewPickAgent') }
+    if (named && (typeof agent !== 'string' || !KIND.test(agent))) return { ok: false, reason: t('reviewBadAgent', { agent: String(agent).slice(0, 64) }) }
     const workspace = same ? null : await workspaceFor(orca, key, await gitPath())
     if (!same && !workspace) return { ok: false, reason: t('reviewNoWorkspace') }
     await exclude(git, key, '.orca-git-log/')
@@ -537,11 +543,14 @@ export default function activate(orca: OrcaWorkerApi): void {
       // The notes still go, without the skills.
       orca.log(`review skills not read for ${key}: ${errorText(error)}`)
     }
+    // The threads and their NEW messages as they are now, after the waits above: what the notes file says is what gets marked.
+    const notes = await unsentNotes()
+    if (!notes.length) return { ok: false, reason: t('reviewNothing') }
     const review = randomBytes(6).toString('hex')
     const made = writeReview(key, review, notes, skills)
     if (!made.ok) return { ok: false, reason: made.reason }
     const prompt = reviewPrompt(made.paths, skills.length > 0)
-    const refusal = promptRefusal(prompt)
+    const refusal = promptRefusal(prompt, same !== null)
     if (refusal) {
       removeReview(key, review)
       return { ok: false, reason: refusal }

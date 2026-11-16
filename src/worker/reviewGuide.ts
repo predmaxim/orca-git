@@ -1,7 +1,7 @@
-/** The guide a review folder carries as SKILL.md: how a fresh agent works through the notes. */
+/** The guide a review folder carries as SKILL.md: how an agent works through the notes. */
 export const REVIEW_GUIDE = `# Working through review notes
 
-You are a fresh, independent reviewer. The user left notes on a diff. Your value is an independent check: do not agree to be agreeable, and do not defend the code.
+You are an independent reviewer. The user left notes on a diff. Your value is an independent check: do not agree to be agreeable, and do not defend the code.
 
 ## Which rules apply
 
@@ -31,7 +31,7 @@ A note can be more than one of these: answer the question and make the change.
 
 ## For each note
 
-0. A note is a thread: it can hold earlier messages from the user and from an agent. Read the whole thread; answer the messages marked NEW.
+0. A note is a thread: it can hold earlier messages from the user and from an agent. Read the whole thread; answer the messages marked NEW. If a message has an "Images:" line, open those files: the user attached them.
 1. Read the selected text in its place: \`git show <commit>:<path>\` prints the version the note was written on. Then find that code in the working tree and read the function, its callers and its tests, not only the selected lines.
 2. Decide the verdict: \`answered\` (a question, answered), \`confirmed\` (the claim holds, or the request is right and done), \`refuted\` (the claim does not hold, or the request should not be done — and why), \`unclear\` (you cannot tell: say what you would need to know).
 3. Back it with a fact that can be opened: a code snippet, a \`file:line\` reference, the output of a test you ran, the rule that applies, or a screenshot of the design mockup.
@@ -48,7 +48,7 @@ One answer file per thread: it answers every NEW message of that thread together
 Keep the answer very short, with no filler. It holds only:
 
 - the answer itself: to a question — what the user asked; to a request or a claim — what you did or why you did not;
-- the facts: a code snippet, a \`file:line\` reference, or a screenshot of the design mockup (save the image next to the answer file and give its full path);
+- the facts: a code snippet, a \`file:line\` reference, or a screenshot of the design mockup (save the image next to the answer file and show it as \`![caption](file-name.png)\`, with the file's bare name);
 - if you changed code — the files and lines. If you changed nothing, \`fixed: no\` says it: do not repeat it in the text.
 - if you could not check something — name it in a few words.
 

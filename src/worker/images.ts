@@ -1,6 +1,6 @@
 // The images of review messages: files in <root>/.orca-git-log/images/, named by the hash of their content.
 import { createHash, randomBytes } from 'node:crypto'
-import { closeSync, constants, fstatSync, linkSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, unlinkSync, writeFileSync } from 'node:fs'
+import { closeSync, constants, fstatSync, futimesSync, linkSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { t } from '../shared/i18n.ts'
 import { IMAGE_ID, MAX_IMAGE_BYTES, MAX_IMAGES } from '../shared/notes.ts'
@@ -66,8 +66,14 @@ export function storeImage(root: string, bytes: Uint8Array, name: string): { ok:
         linkSync(tmp, file)
       } catch (error: any) {
         if (error?.code !== 'EEXIST') throw error
-        const stored = withFile(file, false, (open, size) => (size === bytes.length ? readBytes(open, 0, size) : null))
-        if (!stored || !Buffer.from(stored).equals(bytes)) return failure(t('imageFailed', { error: 'EEXIST' }))
+        const same = withFile(file, false, (open, size) => {
+          if (size !== bytes.length || !Buffer.from(readBytes(open, 0, size)).equals(bytes)) return false
+          // Reused as if made now: the sweep of unused files older than a day must leave it until its message is saved.
+          const now = new Date()
+          futimesSync(open, now, now)
+          return true
+        })
+        if (!same) return failure(t('imageFailed', { error: 'EEXIST' }))
       }
     } finally {
       try {
@@ -162,7 +168,8 @@ export function answerImages(root: string, answers: string, body: string): NoteI
   // The folders above the files are real ones, never a link to somewhere else.
   if (!isFolder(join(root, FOLDER)) || !isFolder(dirname(folder)) || !isFolder(folder)) return []
   const candidates = new Set<string>()
-  for (const [, address] of body.matchAll(/!\[[^\]]*\]\(\s*<?([^)\s>]+)>?[^)]*\)/g)) {
+  // Every repetition is bounded: an answer of unclosed `![a](` must not make the search backtrack for seconds.
+  for (const [, address] of body.matchAll(/!\[[^\]]{0,300}\]\(\s*<?([^)\s>]{1,1024})/g)) {
     const file = resolve(folder, address)
     if (dirname(file) === folder) candidates.add(file)
   }

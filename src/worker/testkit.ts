@@ -9,9 +9,9 @@ import type { NoteStore } from './notes.ts'
 
 const sh = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
 
-/** A temporary repository with three commits. */
-export function fixture(): string {
-  const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'git-log-worker-')))
+/** A temporary repository with three commits, in a folder whose name starts with `prefix`. */
+export function fixture(prefix = 'git-log-worker-'): string {
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), prefix)))
   sh(root, 'init', '-q', '-b', 'main')
   sh(root, 'config', 'user.name', 'Tester')
   sh(root, 'config', 'user.email', 'tester@example.com')

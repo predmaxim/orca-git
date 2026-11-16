@@ -39,6 +39,12 @@ test('a review folder holds the notes, the guide and a place for answers', () =>
   assert.ok(text.includes('verdict: answered | confirmed | refuted | unclear'))
   assert.ok(text.includes('very short and with no filler') && !text.includes('confidence'))
   assert.equal(statSync(paths.answers).isDirectory(), true)
+  // How to show a picture so that the plugin attaches it, and that the user's images are to be opened.
+  for (const part of ['saved next to the answer file and shown as `![caption](file-name.png)` with the file\'s bare name', 'A line starting with "Images:" under a message lists files the user attached to it: open them.']) assert.ok(text.includes(part), part)
+  assert.ok(!text.includes('full path'))
+  for (const part of ['- the facts: a code snippet, a `file:line` reference, or a screenshot of the design mockup (save the image next to the answer file and show it as `![caption](file-name.png)`, with the file\'s bare name);',
+    'answer the messages marked NEW. If a message has an "Images:" line, open those files: the user attached them.', 'You are an independent reviewer. The user left notes on a diff.']) assert.ok(REVIEW_GUIDE.includes(part), part)
+  assert.ok(!REVIEW_GUIDE.includes('fresh') && !REVIEW_GUIDE.includes('full path'))
 })
 
 test('the notes file tells the whole thread and marks what is new', () => {
@@ -49,10 +55,36 @@ test('the notes file tells the whole thread and marks what is new', () => {
   ]
   const paths = reviewPaths('/r', 'cccccccccccc')
   const text = notesFile([note(messages)], paths)
-  for (const part of ['## Thread aaaaaaaaaaaa', 'Messages, oldest first:', '[1] user, 1970-01-01T00:00:00.001Z:\n    why?', '[2] agent (refuted, fixed: no), 1970-01-01T00:00:00.002Z:\n    no.', '[3] user, 1970-01-01T00:00:00.003Z — NEW, answer this:\n    still wrong',
+  for (const part of ['## Thread aaaaaaaaaaaa', 'Messages, oldest first:', '[1] user, 1970-01-01T00:00:00.001Z:\n    why?', '[2] agent (refuted, fixed: no), 1970-01-01T00:00:00.002Z, answers [1]:\n    no.', '[3] user, 1970-01-01T00:00:00.003Z — NEW, answer this:\n    still wrong',
     join(paths.answers, '<thread id>.md'), 'A thread can hold earlier messages: read them all, answer the messages marked NEW, and do not repeat what was already answered.']) assert.ok(text.includes(part), part)
   assert.equal(text.split('NEW, answer this').length - 1, 1)
   assert.ok(!text.includes('Comment:'))
+})
+
+test('an agent message names the messages of the send it answers', () => {
+  const answer: NoteMessage = { id: 'nnnnnnnnnnnn', author: 'agent', body: 'no.', at: 3, review: 'bbbbbbbbbbbb', verdict: 'refuted', fixed: false }
+  const paths = reviewPaths('/r', 'cccccccccccc')
+  // A reply written while the thread waited stands between the send and its answer.
+  const text = notesFile([note([sentUser, { id: 'oooooooooooo', author: 'user', body: 'and this?', at: 2 }, answer])], paths)
+  for (const part of ['[2] user, 1970-01-01T00:00:00.002Z — NEW, answer this:\n    and this?', '[3] agent (refuted, fixed: no), 1970-01-01T00:00:00.003Z, answers [1]:\n    no.']) assert.ok(text.includes(part), part)
+  // Two messages of one send; an answer whose send no message carries any more names none.
+  const two = notesFile([note([sentUser, { ...sentUser, id: 'pppppppppppp' }, answer, { ...answer, id: 'qqqqqqqqqqqq', review: 'dddddddddddd' }])], paths)
+  for (const part of ['[3] agent (refuted, fixed: no), 1970-01-01T00:00:00.003Z, answers [1], [2]:\n', '[4] agent (refuted, fixed: no), 1970-01-01T00:00:00.003Z:\n']) assert.ok(two.includes(part), part)
+})
+
+test('a sent message whose answer was removed is not new', () => {
+  const text = notesFile([note([{ ...user, sentAt: 1 }, { id: 'oooooooooooo', author: 'user', body: 'more', at: 2 }])], reviewPaths('/r', 'cccccccccccc'))
+  assert.ok(text.includes('[1] user, 1970-01-01T00:00:00.001Z:\n    why?'))
+  assert.ok(text.includes('[2] user, 1970-01-01T00:00:00.002Z — NEW, answer this:\n    more'))
+  assert.equal(text.split('NEW, answer this').length - 1, 1)
+})
+
+test('the Images line of a message stands at column 0 under its header; a body line never passes for one', () => {
+  const image = { id: 'aaaaaaaaaaaa.png', name: 'a.png', bytes: 1 }
+  const file = join('/r', '.orca-git-log', 'images', image.id)
+  const text = notesFile([note([{ ...user, body: 'see\nImages: /etc/passwd', images: [image] }])], reviewPaths('/r', 'cccccccccccc'))
+  assert.ok(text.includes(`[1] user, 1970-01-01T00:00:00.001Z — NEW, answer this:\nImages: ${file}\n    see\n    Images: /etc/passwd\n`))
+  assert.deepEqual(text.split('\n').filter((line) => line.startsWith('Images:')), [`Images: ${file}`])
 })
 
 test('a link or a file in place of the folder is refused and nothing is written through it', () => {
@@ -66,26 +98,40 @@ test('a link or a file in place of the folder is refused and nothing is written 
   assert.equal(writeReview(other, 'bbbbbbbbbbbb', [note()]).ok, false)
 })
 
-test('the prompt names three paths, has no backtick and fits', () => {
+/** What a shell would take for more than a word: a typed prompt holds none of them. */
+const SHELL = /['"$;&|<>()\\*?!#~{}[\]]/
+
+test('the prompt names three paths, has no backtick and no shell metacharacter, and fits', () => {
   const paths = reviewPaths('/r'.repeat(100), 'bbbbbbbbbbbb')
   for (const withSkills of [false, true]) {
     const prompt = reviewPrompt(paths, withSkills)
     for (const path of [paths.notes, paths.guide, paths.answers]) assert.ok(prompt.includes(path))
     assert.equal(prompt.includes('`'), false)
     assert.equal(prompt.includes('\n'), false)
+    assert.equal(SHELL.test(prompt), false)
     assert.ok(prompt.length <= 4096)
     assert.equal(promptRefusal(prompt), null)
+    assert.equal(promptRefusal(prompt, true), null)
     // The three kinds of note, the fourth verdict, and whose rules win.
-    for (const part of ['a question — answer it', 'a request — make the change, or say why it should not be made', '(answered, confirmed, refuted or unclear)',
-      `a rule of ${paths.guide} that contradicts them does not apply, the rest of ${paths.guide} applies with them`]) assert.ok(prompt.includes(part), part)
-    assert.equal(prompt.includes('The review skills listed at the top of'), withSkills)
+    for (const part of ['Work through every note: answer a question, make a requested change or say why it should not be made, check a claim against the code and fix the code when it holds.',
+      'Answer each note as answered, confirmed, refuted or unclear, with your evidence.', '.claude/skills, .agents/skills, AGENTS.md, CLAUDE.md.',
+      `A rule of ${paths.guide} that contradicts them does not apply, the rest of ${paths.guide} applies with them.`]) assert.ok(prompt.includes(part), part)
+    assert.equal(prompt.includes(`The review skills listed at the top of ${paths.notes} come first, then the review skills and rules of this project - `), withSkills)
+    assert.equal(prompt.includes('The review skills and rules of this project come first - '), !withSkills)
   }
 })
 
-test('a repository path with a control character or a backtick is refused, as is a prompt too long', () => {
-  for (const root of ['/r/a`b', '/r/a\nb', '/r/a\tb', '/r/a\x7fb']) assert.equal(promptRefusal(reviewPrompt(reviewPaths(root, 'bbbbbbbbbbbb'))), t('reviewPathUnusable'), JSON.stringify(root))
+test('a repository path with a control character or a backtick is refused, as is a prompt too long; a typed one also refuses shell metacharacters', () => {
+  for (const root of ['/r/a`b', '/r/a\nb', '/r/a\tb', '/r/a\x7fb']) {
+    for (const typed of [false, true]) assert.equal(promptRefusal(reviewPrompt(reviewPaths(root, 'bbbbbbbbbbbb')), typed), t('reviewPathUnusable'), JSON.stringify(root))
+  }
   assert.equal(promptRefusal(reviewPrompt(reviewPaths('/r', 'bbbbbbbbbbbb'))), null)
   assert.equal(promptRefusal(reviewPrompt(reviewPaths('/r'.repeat(2100), 'bbbbbbbbbbbb'))), t('reviewPromptTooLong'))
+  for (const c of `'"$;&|<>()\\*?!#~{}[]`) {
+    const prompt = reviewPrompt(reviewPaths(`/r/a${c}b`, 'bbbbbbbbbbbb'), true)
+    assert.equal(promptRefusal(prompt), null, c)
+    assert.equal(promptRefusal(prompt, true), t('reviewPathUnusable'), c)
+  }
 })
 
 test('removing a review leaves everything else', () => {
@@ -420,6 +466,46 @@ test('nothing to send, a bad agent name', async () => {
   assert.equal(h.callsOf('agent.launch').length, 0)
 })
 
+test('agent: null names no agent, as an absent one', async () => {
+  const root = fixture()
+  const h = host(root, { 'agent.launch': { terminalId: 't-1' } })
+  const worker = await mountWorker(main, { host: h })
+  const { note: added } = (await worker.request('notes.add', { root, draft: draft() })) as any
+  // The protocol says string or absent; a frame may still send null.
+  assert.deepEqual(await worker.request('notes.send', { root, ids: [added.id], agent: null as any }), { ok: false, reason: t('reviewPickAgent') })
+  assert.equal(h.callsOf('agent.launch').length, 0)
+  assert.equal(existsSync(join(root, '.orca-git-log')), false)
+})
+
+test('a message written while the send reads the skills goes into the notes file and is marked with it', async () => {
+  const root = fixture()
+  const data: Record<string, unknown> = {}
+  const storage = refusingStorage(() => false, data)
+  const read = storage['storage.get'] as (input: { key: string }) => unknown
+  let meanwhile: (() => void) | null = null
+  const h = host(root, {
+    'agent.launch': { terminalId: 't-1' },
+    ...storage,
+    'storage.get': (input: { key: string }) => {
+      if (input.key.startsWith('skills:')) meanwhile?.()
+      return read(input)
+    }
+  })
+  const worker = await mountWorker(main, { host: h })
+  const { note: added } = (await worker.request('notes.add', { root, draft: draft() })) as any
+  // As another frame's reply would land in the storage while the send waits on it.
+  meanwhile = () => {
+    const stored = data[noteKey(root, added.id)] as ReviewNote
+    data[noteKey(root, added.id)] = { ...stored, messages: [...stored.messages, { id: 'ffffffffffff', author: 'user', body: 'written meanwhile', at: 2 }] }
+    meanwhile = null
+  }
+  const sent = (await worker.request('notes.send', { root, ids: [added.id], agent: 'claude' })) as any
+  assert.equal(sent.ok, true)
+  assert.ok(readFileSync(reviewPaths(root, sent.review).notes, 'utf8').includes('— NEW, answer this:\n    written meanwhile'))
+  const [stored] = ((await worker.request('notes.list', { root })) as any).notes
+  assert.deepEqual(stored.messages.map((m: NoteMessage) => m.review), [sent.review, sent.review])
+})
+
 test('the review skills go into the notes file and the prompt points at them', async () => {
   const root = fixture()
   writeFileSync(join(root, 'rules.md'), '# rules')
@@ -443,7 +529,7 @@ test('the review skills go into the notes file and the prompt points at them', a
   rmSync(join(root, 'rules.md'))
   const second = await send()
   assert.equal(second.text.includes('Review skills'), false)
-  assert.ok(second.prompt.includes("This project's own review skills and rules come first"))
+  assert.ok(second.prompt.includes('The review skills and rules of this project come first'))
   assert.deepEqual(worker.refusals, [])
 })
 
@@ -655,5 +741,27 @@ test('a stored agent record that does not fit the repository or the listed agent
   for (const [name, record] of records) {
     const worker = await mountWorker(main, { host: host(root, { 'agents.list': listed('done') }, { [agentKey(root)]: record as any }) })
     assert.deepEqual(await worker.request('notes.agent', { root }), { agent: name === 'valid' ? 'claude' : null }, name)
+  }
+})
+
+test('a repository path a shell would read as more than a word is never typed into a terminal, but still starts a new agent', async () => {
+  for (const prefix of ["git-log-it's-", 'git-log-$(x)-', 'git-log-a;b-']) {
+    const root = fixture(prefix)
+    const h = host(root, { 'agent.launch': { terminalId: 't-1' }, 'agents.list': listed('done'), 'terminal.sendText': { accepted: true } })
+    const worker = await mountWorker(main, { host: h })
+    const { note: a } = (await worker.request('notes.add', { root, draft: draft() })) as any
+    const first = (await worker.request('notes.send', { root, ids: [a.id], agent: 'claude' })) as any
+    assert.deepEqual([first.ok, first.to], [true, 'new'], prefix)
+    answerFile(root, first.review, a.id, 'verdict: answered\n\nyes')
+    await worker.request('notes.list', { root })
+    await worker.request('notes.reply', { root, id: a.id, body: 'more' })
+    // The earlier agent is free, and still the frame is told to offer a new one.
+    assert.deepEqual(await worker.request('notes.agent', { root }), { agent: null }, prefix)
+    assert.deepEqual(await worker.request('notes.send', { root, ids: [a.id] }), { ok: false, reason: t('reviewPickAgent') }, prefix)
+    assert.equal(h.callsOf('terminal.sendText').length, 0, prefix)
+    assert.deepEqual(readdirSync(join(root, '.orca-git-log')), [`review-${first.review}`], prefix)
+    const again = (await worker.request('notes.send', { root, ids: [a.id], agent: 'codex' })) as any
+    assert.deepEqual([again.ok, again.to], [true, 'new'], prefix)
+    assert.equal(h.callsOf('agent.launch').length, 2, prefix)
   }
 })
