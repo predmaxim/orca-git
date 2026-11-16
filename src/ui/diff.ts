@@ -24,6 +24,8 @@ export interface DiffOptions {
   onNoteAgent(agent: string): void
   /** Called when the user moves to another file with the arrows. */
   onIndex(index: number): void
+  /** The id of a note to scroll to once, when the notes and the file are loaded. */
+  reveal?: string
 }
 
 /** Highlight ranges for lines paired with a counterpart: only the changed middle is emphasised. */
@@ -129,7 +131,7 @@ export function showDiffPlaceholder(container: HTMLElement): void {
   container.replaceChildren(h('div', { class: 'diff-view' }, h('div', { class: 'diff-note muted' }, t('diffSelectFile'))))
 }
 
-/** Shows `files[index]` in the container; Alt+↑/↓ moves between files, F7 between changes, Ctrl+Shift+A notes the selection. */
+/** Shows `files[index]` in the container and loads the notes; Alt+↑/↓ moves between files, F7 between changes, Ctrl+Shift+A notes the selection. */
 export function mountDiff(container: HTMLElement, options: DiffOptions): { notes: NotesView; dispose(): void } {
   const { root, files, onPrefs, onIndex, onNoteAgent } = options
   let index = Math.max(0, Math.min(options.index, files.length - 1))
@@ -315,7 +317,14 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { notes
 
   document.addEventListener('keydown', onKey)
   container.replaceChildren(view)
-  void load()
+  const shown = load()
+  const loaded = notes.load()
+  // The note's card is in the rows only once both are in; then reveal finds the file loaded and does not load it again.
+  const id = options.reveal
+  if (id)
+    void Promise.all([loaded, shown]).then(([, ok]) => {
+      if (ok) notes.reveal(id)
+    })
   return {
     notes,
     dispose() {

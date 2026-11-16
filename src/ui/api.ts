@@ -93,12 +93,15 @@ export const api = {
   fetch: (root: string, id: string): Promise<ActionResult> => call('repo.fetch', { root, id }, LONG),
   pushCheck: (root: string): Promise<{ ok: true; plan: PushPlan } | { ok: false; reason: string }> => call('push.check', { root }, LONG),
   push: (root: string, push: PushRequest, id: string): Promise<PushResult> => call('push.run', { root, push, id }, LONG),
-  openDiff: (root: string, hashes: string[], file: SelectionFile): Promise<{ ok: boolean; reason?: string }> =>
-    call('diff.open', { root, hashes, path: file.path, to: file.to }),
+  /** `note`: the id of a note the tab scrolls to once it shows the file. */
+  openDiff: (root: string, hashes: string[], file: SelectionFile, note?: string): Promise<{ ok: boolean; reason?: string }> =>
+    call('diff.open', { root, hashes, path: file.path, to: file.to, note }),
   focusDiff: (root: string): Promise<{ ok: boolean; reason?: string }> => call('diff.focus', { root }),
   diffState: (root: string): Promise<DiffTabState | null> => call('diff.state', { root }),
   diffIndex: (root: string, index: number): Promise<{ ok: boolean }> => call('diff.index', { root, index }),
   notes: (root: string): Promise<{ notes: ReviewNote[]; warning?: string }> => call('notes.list', { root }),
+  /** Opens the Diff tab on the commit whose own diff shows the note `id`; git searches the history for it. */
+  notesOpen: (root: string, id: string): Promise<{ ok: boolean; reason?: string }> => call('notes.open', { root, id }, LONG),
   noteAdd: (root: string, draft: NoteDraft): Promise<NoteResult> => call('notes.add', { root, draft }),
   noteReply: (root: string, id: string, body: string, images?: NoteImage[]): Promise<NoteResult> => call('notes.reply', { root, id, body, images }),
   noteEdit: (root: string, id: string, message: string, body: string): Promise<NoteResult> => call('notes.edit', { root, id, message, body }),

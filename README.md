@@ -104,11 +104,14 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   in the browser. **Notes (N)** in the tab's header counts the threads not resolved and lists every
   thread of the repository with its file, lines, side, state, count of messages and the start of the
   quote and of the first message, resolved ones last and dimmed; Copy all copies them as markdown with
-  every message under its author, Delete all asks once more and deletes every thread of the repository. A click on a note opens its file and scrolls to it, with Whole file when
-  the note is of the diff shown but its lines are outside the changed regions. Opening the list loads
+  every message under its author, Delete all asks once more and deletes every thread of the repository.
+  A click on a note opens it where it shows: in a file of the tab, scrolled to, with Whole file when its
+  lines are outside the changed regions; else the tab opens the commit whose own diff writes the note's
+  content, scrolls to it there, and the panel selects that commit. Opening the list loads
   the notes again, so the agent's answers are read then too. Notes are kept in the plugin's storage, up
   to 200 per repository (see Limitations). When the notes cannot be loaded, the answers cannot be saved,
-  or a delete, Send again, Resolved or Open again is refused, the Notes button turns yellow, its tooltip says why, and so does
+  or a delete, Send again, Resolved, Open again or the opening of a note's commit is refused, the Notes
+  button turns yellow, its tooltip says why, and so does
   a line at the top of the list.
 - **Send notes to an agent**: **Send to an agent (N)** in the Diff tab's header (shown while a note
   is unsent) opens a menu of agent kinds (the ones Orca lists, plus claude and codex; the last one used

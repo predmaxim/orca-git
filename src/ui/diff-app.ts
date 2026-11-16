@@ -89,9 +89,9 @@ async function show(): Promise<void> {
         localStorage.setItem(PREFS_KEY, JSON.stringify(prefs))
       },
       // The worker keeps the index (a recreated tab opens on this file) and tells the sidebar.
-      onIndex: (index) => void api.diffIndex(state.root, index).catch(() => undefined)
+      onIndex: (index) => void api.diffIndex(state.root, index).catch(() => undefined),
+      reveal: state.reveal
     })
-    void view.notes.load()
   }
 }
 

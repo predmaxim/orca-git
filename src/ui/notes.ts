@@ -1,7 +1,7 @@
 // Review notes in the Diff tab: the selection and its button, the editor, the threads under their lines and the list of all notes.
 import type { FileDiff, NoteDraft, NoteImage, NoteMessage, NotePoint, NoteResult, NoteSide, NoteVerdict, ReviewNote, SelectionFile } from '../shared/protocol.ts'
 import { t, type MessageKey } from '../shared/i18n.ts'
-import { lastAnswer, MAX_BODY, MAX_IMAGES, MAX_QUOTE, MAX_REVIEW_SKILLS, stateOf, unsentOf } from '../shared/notes.ts'
+import { lastAnswer, MAX_BODY, MAX_IMAGES, MAX_QUOTE, MAX_REVIEW_SKILLS, noteFileIndex, stateOf, unsentOf } from '../shared/notes.ts'
 import { api, copyText, errorMessage, orca } from './api.ts'
 import type { DiffMode } from './diff.ts'
 import { h, icon, ICONS } from './dom.ts'
@@ -24,6 +24,8 @@ export interface NotesView {
   attach(lines: HTMLElement, diff: FileDiff, file: SelectionFile, mode: DiffMode): void
   /** Loads the notes of the repository, and with them the answers the worker reads; a failure or a warning shows in the Notes list. */
   load(): Promise<void>
+  /** Shows the file of this tab the note `id` shows in and scrolls to its card, as a click on it in the list does; call it once the notes and the file are loaded. */
+  reveal(id: string): void
   /** Ctrl+Shift+A: opens the editor on the current selection; false when there is none to note. */
   addFromSelection(): boolean
   dispose(): void
@@ -837,15 +839,17 @@ export function mountNotes(options: {
     ], sendButton)
   }
 
+  /** The file of this tab the note shows in, the one shown first; -1: none. */
+  const fileOf = (n: ReviewNote) => noteFileIndex(files, n, file ? files.indexOf(file) : -1)
+
   function item(n: ReviewNote): HTMLElement {
-    const index = files.findIndex((f) => (n.side === 'new' ? f.path : (f.oldPath ?? f.path)) === n.path)
+    const index = fileOf(n)
     return h(
       'div',
       { class: `notes-item${n.resolvedAt !== undefined ? ' resolved' : ''}` },
-      // A note of a file this tab does not have stays in the list without a way to it.
       h(
         'button',
-        { class: 'notes-open', disabled: index < 0, onclick: () => reveal(index, n.id) },
+        { class: 'notes-open', onclick: () => (index >= 0 ? reveal(index, n.id) : void openCommit(n.id)) },
         h(
           'span',
           { class: 'notes-where' },
@@ -860,6 +864,17 @@ export function mountNotes(options: {
       // The list is narrow: its rows say it by the look and the label only.
       dropTool('noteDeleteThread', () => void remove([n.id]), false)
     )
+  }
+
+  /** A note this tab does not show: the worker opens the commit whose own diff shows it, in this tab; a refusal shows at the top of the list. */
+  async function openCommit(id: string): Promise<void> {
+    closeList?.()
+    try {
+      const result = await api.notesOpen(root, id)
+      if (!result.ok) notify(result.reason ?? '')
+    } catch (caught) {
+      notify(errorMessage(caught))
+    }
   }
 
   /** Shows the file of a note and scrolls to its card; the whole file when the note is of the diff shown but its lines are not in the changed regions. */
@@ -933,6 +948,11 @@ export function mountNotes(options: {
       })
     },
     load,
+    reveal(id) {
+      const note = notes.find((n) => n.id === id)
+      const index = note ? fileOf(note) : -1
+      if (index >= 0) reveal(index, id)
+    },
     addFromSelection: add,
     dispose() {
       loads++
