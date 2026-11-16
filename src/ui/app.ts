@@ -11,7 +11,7 @@ import { append, h, icon } from './dom.ts'
 import { createFilterBar } from './filters.ts'
 import { KEYS, withKey, type KeyScope } from './keys.ts'
 import { reachableFrom, refLabels, relativeDate, fullDate, shortHash } from './format.ts'
-import { computeGraph, graphSvg, ROW_HEIGHT, TWO_LINE_NODE_Y, TWO_LINE_ROW_HEIGHT, type GraphRow } from './graph.ts'
+import { computeGraph, graphSvg, NARROW_LANE_WIDTH, ROW_HEIGHT, TWO_LINE_NODE_Y, TWO_LINE_ROW_HEIGHT, type GraphRow } from './graph.ts'
 import { showMenu, type MenuEntry } from './menu.ts'
 import { mountPanelKeys } from './panelkeys.ts'
 import { createColumn, normalizeSections, type SectionId, type SectionPrefs } from './sections.ts'
@@ -308,7 +308,13 @@ function rowElement(index: number): HTMLElement {
   const labels = refLabels(commit.refs, repo?.head.branch ?? null)
   const subject = h('div', { class: 'cell subject' })
   const twoLine = rowH === TWO_LINE_ROW_HEIGHT
-  subject.innerHTML = graphSvg(graph[index], { head: isHead, dim, merge: commit.parents.length > 1, height: rowH, nodeY: twoLine ? TWO_LINE_NODE_Y : undefined })
+  subject.innerHTML = graphSvg(graph[index], {
+    head: isHead,
+    dim,
+    merge: commit.parents.length > 1,
+    height: rowH,
+    ...(twoLine ? { nodeY: TWO_LINE_NODE_Y, laneWidth: NARROW_LANE_WIDTH } : {})
+  })
   const line = twoLine ? h('div', { class: 'line' }) : subject
   if (twoLine) subject.append(h('div', { class: 'stack' }, line, h('div', { class: 'meta' }, `${commit.author} \u00b7 ${relativeDate(commit.authorTime)}`)))
   line.append(h('span', { class: 'text' }, commit.subject))
