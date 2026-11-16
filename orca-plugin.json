@@ -89,6 +89,7 @@
     { "kind": "settings:own" },
     { "kind": "storage:own" },
     { "kind": "agent:launch" },
-    { "kind": "agent:read" }
+    { "kind": "agent:read" },
+    { "kind": "terminal:send" }
   ]
 }

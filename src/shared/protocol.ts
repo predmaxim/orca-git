@@ -397,7 +397,10 @@ declare module 'orca' {
     'notes.resolve': { input: { root: string; id: string; resolved: boolean }; output: NoteResult }
     /** `all`: every thread of the root, those a cut list did not show too. */
     'notes.delete': { input: { root: string; ids?: string[]; all?: boolean }; output: { ok: boolean; reason?: string } }
-    'notes.send': { input: { root: string; ids: string[]; agent: string }; output: { ok: true; review: string } | { ok: false; reason: string } }
+    /** The agent that got the repository's last send, when its terminal is open and it is free; null otherwise. */
+    'notes.agent': { input: { root: string }; output: { agent: string | null } }
+    /** Without `agent` the send goes to the earlier agent, when it is free. */
+    'notes.send': { input: { root: string; ids: string[]; agent?: string }; output: { ok: true; review: string; to: 'same' | 'new' } | { ok: false; reason: string } }
     'skills.list': { input: { root: string }; output: { skills: string[] } }
     'skills.set': { input: { root: string; skills: string[] }; output: { ok: true; skills: string[] } | { ok: false; reason: string } }
     /** What the skill path field offers in `dir` (full, `~/…`, or from the repository root; '' is the root): subfolders and `.md` files, names only. */

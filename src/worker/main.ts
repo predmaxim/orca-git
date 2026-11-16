@@ -15,7 +15,7 @@ import { readDetails, readLogPage, readRefs } from './log.ts'
 import { resolveRepo, toplevel } from './repo.ts'
 import { readFileDiff } from './diff.ts'
 import { readRangeDiff, readSelectionFiles } from './selection.ts'
-import { addNote, deleteNotes, editMessage, fitList, listNotes, markSent, markUnsent, pendingRoots, removeMessage, replyNote, resendNote, resolveNote, setAnswers, setNotesLog } from './notes.ts'
+import { addNote, agentKey, deleteNotes, editMessage, fitList, listNotes, markSent, markUnsent, pendingRoots, removeMessage, replyNote, resendNote, resolveNote, setAnswers, setNotesLog } from './notes.ts'
 import { promptRefusal, readAnswers, removeReview, reviewPrompt, writeReview } from './review.ts'
 import { browseSkills, checkSkills, listSkills, saveSkills, skillsForReview } from './skills.ts'
 import { createPatch } from './patch.ts'
@@ -344,14 +344,17 @@ export default function activate(orca: OrcaWorkerApi): void {
     return { ok: true }
   })
 
-  /** Stores the answers the agent has written for `root` and tells the panels. Throws when they cannot be read or stored. */
+  /** Some answers were read and could not be stored: the others are stored. */
+  class AnswersRefused extends Error {}
+
+  /** Stores the answers the agent has written for `root` and tells the panels. Throws when they cannot be read, or an `AnswersRefused` when some cannot be stored. */
   const ingest = async (root: string): Promise<void> => {
     const found = readAnswers(root, await listNotes(orca.storage, root))
     if (!found.size) return
     const { changed, refused } = await setAnswers(orca.storage, root, found)
     if (changed) orca.panels.post('notes.changed', { root })
     // The ones stored stay stored; the caller tells the user about the rest.
-    if (refused.length) throw new Error(`${refused.length} of ${found.size}: ${refused[0].error}`)
+    if (refused.length) throw new AnswersRefused(`${refused.length} of ${found.size}: ${refused[0].error}`)
   }
 
   orca.events.on('agent.status.changed', async () => {
@@ -360,7 +363,7 @@ export default function activate(orca: OrcaWorkerApi): void {
         try {
           await ingest(root)
         } catch (error) {
-          orca.log(`answers not read for ${root}: ${errorText(error)}`)
+          orca.log(`${error instanceof AnswersRefused ? 'answers not stored' : 'answers not read'} for ${root}: ${errorText(error)}`)
         }
       }
     } catch (error) {
@@ -374,7 +377,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     try {
       await ingest(key)
     } catch (error) {
-      orca.log(`answers not read: ${errorText(error)}`)
+      orca.log(`${error instanceof AnswersRefused ? 'answers not stored' : 'answers not read'}: ${errorText(error)}`)
       // Most likely the stored value would pass Orca's 262144 bytes: the user has to know, and can free space.
       warning = t('notesAnswersFailed', { error: errorText(error) })
     }
@@ -449,14 +452,33 @@ export default function activate(orca: OrcaWorkerApi): void {
     return { ok: true }
   })
 
-  /** Writes the review folder, marks the notes sent, then starts the agent; a refused launch takes the mark off again. */
-  const sendNotes = async (git: Git, key: string, ids: unknown, agent: unknown): Promise<{ ok: true; review: string } | { ok: false; reason: string }> => {
+  /** The agent the last send of `key` went to, when its terminal is open in the focused workspace and it is waiting or done; null otherwise, and when Orca cannot say. */
+  const earlierAgent = async (key: string): Promise<{ terminalId: string; agent: string } | null> => {
+    try {
+      const stored = (await orca.storage.get(agentKey(key))) as { terminalId?: unknown; agent?: unknown } | null
+      if (typeof stored?.terminalId !== 'string' || typeof stored.agent !== 'string') return null
+      const { agents } = (await orca.host.call('agents.list')) as { agents?: { terminalId: string | null; state: string }[] }
+      const found = Array.isArray(agents) && agents.find((a) => a?.terminalId === stored.terminalId)
+      return found && (found.state === 'waiting' || found.state === 'done') ? { terminalId: stored.terminalId, agent: stored.agent } : null
+    } catch {
+      return null
+    }
+  }
+
+  handle('notes.agent', async ({ root }) => ({ agent: (await earlierAgent((await gitFor(root)).root))?.agent ?? null }))
+
+  /** Writes the review folder, marks the notes sent, then types the prompt into the earlier agent's terminal or starts a new agent; a failed delivery takes the mark off again. */
+  const sendNotes = async (git: Git, key: string, ids: unknown, agent: unknown): Promise<{ ok: true; review: string; to: 'same' | 'new' } | { ok: false; reason: string }> => {
     // Not resolved, not waiting for an answer (one send at a time per thread), with text not sent.
     const notes = (await listNotes(orca.storage, key)).filter((n) => Array.isArray(ids) && ids.includes(n.id) && stateOf(n) === 'unsent')
     if (!notes.length) return { ok: false, reason: t('reviewNothing') }
-    if (typeof agent !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(agent)) return { ok: false, reason: t('reviewBadAgent', { agent: String(agent).slice(0, 64) }) }
-    const workspace = await workspaceFor(orca, key, await gitPath())
-    if (!workspace) return { ok: false, reason: t('reviewNoWorkspace') }
+    const same = await earlierAgent(key)
+    if (!same) {
+      if (agent === undefined) return { ok: false, reason: t('reviewPickAgent') }
+      if (typeof agent !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(agent)) return { ok: false, reason: t('reviewBadAgent', { agent: String(agent).slice(0, 64) }) }
+    }
+    const workspace = same ? null : await workspaceFor(orca, key, await gitPath())
+    if (!same && !workspace) return { ok: false, reason: t('reviewNoWorkspace') }
     await exclude(git, key, '.orca-git-log/')
     let skills: string[] = []
     try {
@@ -478,22 +500,36 @@ export default function activate(orca: OrcaWorkerApi): void {
     const sent = new Map(notes.map((n) => [n.id, unsentOf(n).map((m) => m.id)]))
     // Marked before the launch: a mark that failed after it would leave a running agent and unsent notes, which a second send would give to another agent.
     try {
-      await markSent(orca.storage, key, sent, review)
+      await markSent(orca.storage, key, sent, review, Date.now(), same?.agent ?? String(agent))
     } catch (error) {
       removeReview(key, review)
       return { ok: false, reason: t('notesSaveFailed', { error: errorText(error) }) }
     }
+    let terminalId = ''
     try {
-      await orca.host.call('agent.launch', { workspaceId: workspace.id, agent, prompt })
+      if (same) {
+        const { accepted } = (await orca.host.call('terminal.sendText', { terminalId: same.terminalId, text: prompt, enter: true })) as { accepted: boolean }
+        if (!accepted) throw new Error('not accepted')
+      } else {
+        const launched = (await orca.host.call('agent.launch', { workspaceId: workspace!.id, agent: agent as string, prompt })) as { terminalId?: unknown }
+        if (typeof launched?.terminalId === 'string') terminalId = launched.terminalId
+      }
     } catch (error) {
       // When the mark cannot be taken off either, the notes stay sent: Send again gives them to a new agent.
       await markUnsent(orca.storage, key, review).catch((cause) => orca.log(`notes left marked sent: ${errorText(cause)}`))
       removeReview(key, review)
+      // A terminal that did not take the text is not the one to try again.
+      if (same) await orca.storage.delete(agentKey(key)).catch((cause) => orca.log(`earlier agent not forgotten: ${errorText(cause)}`))
       orca.panels.post('notes.changed', { root: key })
-      return { ok: false, reason: t('reviewLaunchFailed', { error: errorText(error) }) }
+      return { ok: false, reason: same ? t('reviewSameFailed') : t('reviewLaunchFailed', { error: errorText(error) }) }
+    }
+    if (!same) {
+      // The agent runs already: without its terminal on record the next send asks which agent to use.
+      const record = terminalId ? orca.storage.set(agentKey(key), { root: key, terminalId, agent: agent as string }) : orca.storage.delete(agentKey(key))
+      await record.catch((cause) => orca.log(`agent not recorded for ${key}: ${errorText(cause)}`))
     }
     orca.panels.post('notes.changed', { root: key })
-    return { ok: true, review }
+    return { ok: true, review, to: same ? 'same' : 'new' }
   }
 
   handle('notes.send', async ({ root, ids, agent }) => {
@@ -522,6 +558,7 @@ export default function activate(orca: OrcaWorkerApi): void {
 }
 
 export function deactivate(): void {
+  setNotesLog(() => undefined)
   for (const watcher of watchers.values()) void watcher.then((w) => w?.close())
   watchers.clear()
   watchedBy.clear()

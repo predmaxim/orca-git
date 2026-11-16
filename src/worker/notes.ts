@@ -11,6 +11,8 @@ const HEX = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
 const hash = (root: string): string => createHash('sha256').update(root).digest('hex')
 /** The list of a root's notes, in the order they were made: `{ root, ids }`. */
 export const notesKey = (root: string): string => 'notes:' + hash(root)
+/** The agent the last send of a root went to: `{ root, terminalId, agent }`. */
+export const agentKey = (root: string): string => 'agent:' + hash(root)
 /** One note of a root, with all its messages. */
 export const noteKey = (root: string, id: string): string => 'note:' + hash(root) + ':' + id
 const newId = (): string => randomBytes(6).toString('hex')
@@ -229,11 +231,11 @@ async function changeAll(store: NoteStore, root: string, change: (note: ReviewNo
   return true
 }
 
-/** Marks the messages of the user `sent` names (note id → message ids: what went into the notes file) as gone out with `review`; one written since stays unsent. */
-export function markSent(store: NoteStore, root: string, sent: Map<string, string[]>, review: string, now = Date.now()): Promise<void> {
+/** Marks the messages of the user `sent` names (note id → message ids: what went into the notes file) as gone out with `review` to the agent of that kind; one written since stays unsent. */
+export function markSent(store: NoteStore, root: string, sent: Map<string, string[]>, review: string, now = Date.now(), agent?: string): Promise<void> {
   return serial(async () => {
     const ours = (n: ReviewNote, m: NoteMessage) => m.author === 'user' && m.sentAt === undefined && (sent.get(n.id) ?? []).includes(m.id)
-    await changeAll(store, root, (n) => (n.messages.some((m) => ours(n, m)) ? { ...n, messages: n.messages.map((m) => (ours(n, m) ? { ...m, review, sentAt: now } : m)) } : n))
+    await changeAll(store, root, (n) => (n.messages.some((m) => ours(n, m)) ? { ...n, messages: n.messages.map((m) => (ours(n, m) ? { ...m, review, sentAt: now, ...(agent ? { agent } : {}) } : m)) } : n))
   })
 }
 

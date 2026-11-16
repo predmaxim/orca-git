@@ -97,7 +97,7 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   independent reviewer) and an empty `answers/`, adds `.orca-git-log/` to the repository's
   `.git/info/exclude`, marks the notes sent and starts a new agent in that workspace whose prompt names
   the three paths. If the agent does not start, the folder is removed and the notes go back to unsent;
-  the reason shows under the button. One send per repository runs at a time, and a note waits for one
+  the reason shows under the button. The next send goes to that same agent, typed into its terminal, while the terminal is open in the focused workspace and the agent is waiting or done; the menu then offers "to the same agent" instead of the kinds. A busy or closed agent means a new one: pick a kind. If the terminal does not take the text, the send is undone and the next one starts a new agent. One send per repository runs at a time, and a note waits for one
   answer at a time: while its last send has no answer it shows "Sent, no answer yet" and is not sent again.
 - **Review skills** of a repository: under the notes in the Notes list, set up to 10 skills the agent
   takes first, in their order, before the project's own rules and skills and the plugin's guide. A skill
@@ -273,8 +273,9 @@ Variables such as `GIT_DIR` that would point git at another repository are remov
 environment, and its `PATH` keeps only absolute folders, so nothing git starts by name (`cp`, `ssh`,
 `gpg`) comes from the repository.
 
-Review notes need three more permissions: the plugin's own storage for the notes (`storage:own`),
-starting agents (`agent:launch`) and reading their status (`agent:read`): after an update that adds them
+Review notes need four more permissions: the plugin's own storage for the notes (`storage:own`),
+starting agents (`agent:launch`), reading their status (`agent:read`) and typing into an agent's
+terminal (`terminal:send`): after an update that adds them
 Orca asks for approval again.
 
 ### Develop
@@ -397,7 +398,9 @@ keeps them all.
   the panel matches the focused one through its terminal titles; if that is not enough it asks you to pick,
   and remembers the choice. It does not notice a switch between two such workspaces and can keep showing
   the other one's repository; a file opened from it then opens its Diff tab in that other, hidden workspace.
-- Notes can only be sent to a new agent in a terminal of the workspace. The model and how the agent
+- Sending to the same agent types the prompt into its terminal blind: only the focused workspace's
+  terminals are listed, Orca refuses a terminal outside the active worktree, and nobody checks that the
+  agent read it. Otherwise notes go to a new agent in a terminal of the workspace. The model and how the agent
   starts are Orca's choice. "Sent" means Orca started the agent, not that it read the notes. A
   repository whose path holds a control character or a backtick cannot send notes.
 - An answer appears when the agent has written its file in that form (a known `verdict:`, at most 64 KiB,

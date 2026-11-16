@@ -548,11 +548,13 @@ export function mountNotes(options: {
   }
 
   let sending = false
-  async function send(ids: string[], agent: string): Promise<void> {
+  async function send(ids: string[], agent?: string): Promise<void> {
     if (sending) return
     sending = true
-    lastAgent = agent
-    options.onAgent(agent)
+    if (agent) {
+      lastAgent = agent
+      options.onAgent(agent)
+    }
     let reason: string | null = null
     try {
       const result = await api.notesSend(root, ids, agent)
@@ -568,12 +570,16 @@ export function mountNotes(options: {
   async function openSend(): Promise<void> {
     const all = unsent(notes)
     if (!all.length) return
-    const kinds = await agents()
+    // The earlier agent, when its terminal is open and it is free, takes the next messages: no kind to pick.
+    const same = await api.notesAgent(root).then((r) => r.agent, () => null)
+    const kinds = same ? [] : await agents()
     const here = all.filter(ofFile)
-    const group = (label: string, list: ReviewNote[]): MenuEntry[] => [
-      { label, disabled: true, run: () => undefined },
-      ...kinds.map((agent): MenuEntry => ({ label: t('notesNewAgent', { agent }), run: () => void send(list.map((n) => n.id), agent) }))
-    ]
+    const group = (label: string, list: ReviewNote[]): MenuEntry[] => same
+      ? [{ label: t('notesSendSame', { scope: label, agent: same }), run: () => void send(list.map((n) => n.id)) }]
+      : [
+          { label, disabled: true, run: () => undefined },
+          ...kinds.map((agent): MenuEntry => ({ label: t('notesNewAgent', { agent }), run: () => void send(list.map((n) => n.id), agent) }))
+        ]
     const rect = sendButton.getBoundingClientRect()
     showMenu(rect.left, rect.bottom + 4, [
       ...group(t('notesSendAll', { count: all.length }), all),

@@ -36,7 +36,7 @@ export function notesFile(notes: ReviewNote[], paths: ReviewPaths, skills: strin
       ...n.messages.flatMap((m, i) => {
         const time = new Date(m.at).toISOString()
         const who = m.author === 'agent' ? `agent (${m.verdict ?? 'unclear'}, fixed: ${m.fixed ? 'yes' : 'no'}), ${time}` : `user, ${time}${fresh.has(m) ? ' — NEW, answer this' : ''}`
-        return [`[${i + 1}] ${who}:`, m.body]
+        return [`[${i + 1}] ${who}:`, indent(m.body)]
       })
     ].join('\n')
   })
@@ -194,7 +194,9 @@ export function readAnswers(root: string, notes: ReviewNote[], now = Date.now())
     if (!review || !ID.test(review) || !ID.test(note.id)) continue
     const text = readAnswerFile(join(reviewPaths(root, review).answers, `${note.id}.md`))
     const reply = text === null ? null : parseAnswer(text, now)
-    if (reply) found.set(note.id, { ...reply, review })
+    // The kind of agent is on the user's messages the send marked.
+    const agent = note.messages.find((m) => m.author === 'user' && m.review === review)?.agent
+    if (reply) found.set(note.id, { ...reply, review, ...(agent ? { agent } : {}) })
   }
   return found
 }

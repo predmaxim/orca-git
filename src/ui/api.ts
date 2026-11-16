@@ -105,7 +105,8 @@ export const api = {
   notesDelete: (root: string, ids: string[]): Promise<{ ok: boolean; reason?: string }> => call('notes.delete', { root, ids }),
   /** Every thread of the repository, those a cut list did not show too. */
   notesDeleteAll: (root: string): Promise<{ ok: boolean; reason?: string }> => call('notes.delete', { root, all: true }),
-  notesSend: (root: string, ids: string[], agent: string): Promise<{ ok: true; review: string } | { ok: false; reason: string }> =>
+  notesAgent: (root: string): Promise<{ agent: string | null }> => call('notes.agent', { root }),
+  notesSend: (root: string, ids: string[], agent?: string): Promise<{ ok: true; review: string; to: 'same' | 'new' } | { ok: false; reason: string }> =>
     call('notes.send', { root, ids, agent }),
   skills: (root: string): Promise<{ skills: string[] }> => call('skills.list', { root }),
   skillsSet: (root: string, skills: string[]): Promise<{ ok: true; skills: string[] } | { ok: false; reason: string }> => call('skills.set', { root, skills }),
