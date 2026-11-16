@@ -91,6 +91,28 @@ test('a merge that keeps its first parent\'s file is not the commit of a note', 
   assert.equal(await findNoteCommit(git, old), edit)
 })
 
+test('an old-side note opens the oldest descendant of its commit that changes it, not an edit on a branch that forked before', async () => {
+  const { git, run, commit, blob } = repo()
+  commit('add', { 'f.txt': 'x\n' })
+  run('checkout', '-q', '-b', 'side')
+  commit('side edit', { 'f.txt': 'z\n' })
+  run('checkout', '-q', 'main')
+  const p = commit('other file', { 'other.txt': 'o\n' })
+  const reviewed = commit('reviewed edit', { 'f.txt': 'y\n' })
+  run('merge', '-q', '--no-ff', '-s', 'ours', '--no-edit', 'side')
+  const old = note('old', blob(p, 'f.txt'), p)
+  // The side edit is on HEAD's history and not an ancestor of p, and git lists it after the reviewed edit: same second, second parent.
+  assert.equal(await findNoteCommit(git, old), reviewed)
+  // HEAD on the branch that forked before p: none of its commits descends from p, so the branches give the reviewed edit.
+  run('checkout', '-q', 'side')
+  assert.equal(await findNoteCommit(git, old), reviewed)
+  // A newer descendant that changes the same content again: the oldest, the closest to p, is the one.
+  run('checkout', '-q', 'main')
+  commit('back', { 'f.txt': 'x\n' })
+  commit('again', { 'f.txt': 'w\n' })
+  assert.equal(await findNoteCommit(git, old), reviewed)
+})
+
 test('a note whose content no commit changes has no commit', async () => {
   const { git, commit, blob } = repo()
   const one = commit('one', { 'a.txt': '1\n' })

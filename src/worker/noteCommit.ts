@@ -8,7 +8,7 @@ const HASH = /^[0-9a-f]{40}$/
  * The full hash of the commit whose own diff (with its first parent) changes the content of a note on the note's side, so
  * the Diff tab shows the note there: on the new side the newest from `rev` back (when the newest whose diff holds the
  * content does not change it, as a pure rename, the first that does among the 50 newest that hold it); on the old side the
- * oldest after `rev` on HEAD's history, else on every branch, remote branch and tag. Null when there is none, when `rev` or
+ * oldest descendant of `rev` on HEAD's history, else on every branch, remote branch and tag. Null when there is none, when `rev` or
  * `blob` is not 40 hex, or when git refuses (a revision it does not know). Throws when git was stopped (the time limit of
  * a read on a long history): the commit may be there.
  */
@@ -44,5 +44,8 @@ export async function findNoteCommit(git: Git, note: Pick<NoteAnchor, 'side' | '
     if (newest.found.length || !newest.shown.length) return newest.found[0] ?? null
     return (await search(['-n', '50', rev])).found[0] ?? null
   }
-  return (await search(['HEAD', `^${rev}`])).found.at(-1) ?? (await search(['--branches', '--remotes', '--tags', `^${rev}`])).found.at(-1) ?? null
+  // --ancestry-path: only rev's descendants. `X ^rev` alone also lists a branch that forked before rev, whose older edit of
+  // the same content would be taken as the oldest.
+  const after = (revisions: string[]) => search(['--ancestry-path', ...revisions, `^${rev}`])
+  return (await after(['HEAD'])).found.at(-1) ?? (await after(['--branches', '--remotes', '--tags'])).found.at(-1) ?? null
 }
