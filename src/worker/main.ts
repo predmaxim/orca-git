@@ -18,7 +18,7 @@ import { takeReveal } from './reveal.ts'
 import { readFileDiff } from './diff.ts'
 import { readRangeDiff, readSelectionFiles } from './selection.ts'
 import { findNoteCommit } from './noteCommit.ts'
-import { placeNotes, setPlaceLog, type Hunk } from './notePlace.ts'
+import { outdatedAtHead, placeNotes, setPlaceLog, type Hunk } from './notePlace.ts'
 import { addNote, agentKey, deleteNotes, diffKey, editMessage, fitList, listNotes, markSent, markUnsent, pendingRoots, removeMessage, replyNote, resendNote, resolveNote, setAnswers, setNotesLog } from './notes.ts'
 import { promptRefusal, readAnswers, removeReview, reviewPaths, reviewPrompt, writeReview } from './review.ts'
 import { browseSkills, checkSkills, listSkills, saveSkills, skillPathAbs, skillsForReview } from './skills.ts'
@@ -488,7 +488,8 @@ export default function activate(orca: OrcaWorkerApi): void {
   })
 
   handle('notes.list', async ({ root }) => {
-    const key = (await gitFor(root)).root
+    const git = await gitFor(root)
+    const key = git.root
     let warning = ''
     try {
       await ingest(key)
@@ -497,7 +498,10 @@ export default function activate(orca: OrcaWorkerApi): void {
       // Most likely the stored value would pass Orca's 262144 bytes: the user has to know, and can free space.
       warning = t('notesAnswersFailed', { error: errorText(error) })
     }
-    const { notes, cut } = fitList(await listNotes(orca.storage, key))
+    const all = await listNotes(orca.storage, key)
+    const outdated = await outdatedAtHead(git, all, blobPairs)
+    // Copies: the mark holds for HEAD as it is now, and is never stored.
+    const { notes, cut } = fitList(all.map((n) => (outdated.has(n.id) ? { ...n, outdated: true as const } : n)))
     if (cut) warning = [warning, t('notesCut', { count: cut })].filter(Boolean).join(' ')
     return warning ? { notes, warning } : { notes }
   })
@@ -666,8 +670,9 @@ export default function activate(orca: OrcaWorkerApi): void {
     // The threads and their NEW messages as they are now, after the waits above: what the notes file says is what gets marked.
     const notes = await unsentNotes()
     if (!notes.length) return { ok: false, reason: t('reviewNothing') }
+    const outdated = await outdatedAtHead(git, notes, blobPairs)
     const review = randomBytes(6).toString('hex')
-    const made = writeReview(key, review, notes, skills)
+    const made = writeReview(key, review, notes, skills, outdated)
     if (!made.ok) return { ok: false, reason: made.reason }
     const prompt = reviewPrompt(made.paths, skills.length > 0)
     const refusal = promptRefusal(prompt, same !== null)

@@ -96,3 +96,46 @@ export async function placeNotes(git: Git, notes: ReviewNote[], files: Selection
   }
   return placed
 }
+
+/**
+ * The ids of the new-side notes of `notes` whose lines changed between their version of the file and HEAD's, or whose file HEAD
+ * no longer has (removed or renamed): for the Notes list and the agent. Only notes whose commit is in HEAD's history: for one of
+ * another branch or of a rewritten commit, HEAD's file is no later version of its lines. None for a HEAD without commits, and
+ * none of a pair of blobs git does not compare (`blobHunks`).
+ */
+export async function outdatedAtHead(git: Git, notes: ReviewNote[], cache: Map<string, Hunk[] | null>): Promise<Set<string>> {
+  const outdated = new Set<string>()
+  // One commit for every check of the call, though HEAD may move meanwhile.
+  const head = (await git.run(['rev-parse', '-q', '--verify', 'HEAD'])).stdout.trim()
+  if (!hex(head)) return outdated
+  const ancestors = new Map<string, boolean>()
+  const checked: ReviewNote[] = []
+  for (const note of notes) {
+    // A path is a line of cat-file's input.
+    if (note.side !== 'new' || !hex(note.blob) || !hex(note.rev) || /[\r\n]/.test(note.path)) continue
+    if (!ancestors.has(note.rev)) {
+      const result = await git.run(['merge-base', '--is-ancestor', note.rev, head])
+      if (result.code !== 0 && result.code !== 1 && result.code !== 128) log(`notes of ${note.rev} not checked against HEAD: ${lastLines(result.stderr)}`)
+      ancestors.set(note.rev, result.code === 0)
+    }
+    if (ancestors.get(note.rev)) checked.push(note)
+  }
+  if (!checked.length) return outdated
+  // One process for every path, and a path only in its input: `<commit>:<path>` is never read as an option.
+  const found = await git.run(['cat-file', '--batch-check'], { input: checked.map((note) => `${head}:${note.path}\n`).join('') })
+  const lines = found.stdout.split('\n')
+  if (!found.ok || lines.length !== checked.length + 1) {
+    log(`notes not checked against HEAD: ${lastLines(found.stderr) || 'cat-file answered another number of lines'}`)
+    return outdated
+  }
+  for (const [i, note] of checked.entries()) {
+    // `<id> blob <size>`; anything else (`<name> missing`, a folder) is no file at the path.
+    const blob = /^([0-9a-f]{40}) blob /.exec(lines[i])?.[1]
+    if (!blob) outdated.add(note.id)
+    else if (blob !== note.blob) {
+      const hunks = await blobHunks(git, note.blob, blob, cache)
+      if (hunks && !carryLines(hunks, note.start.line, note.end.line)) outdated.add(note.id)
+    }
+  }
+  return outdated
+}

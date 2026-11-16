@@ -159,7 +159,14 @@ export interface NoteAnchor { path: string; side: NoteSide; blob: string; rev: s
 /** A review note as the Diff tab sends it: its anchor and the user's first message. */
 export interface NoteDraft extends NoteAnchor { body: string; images?: NoteImage[] }
 /** A review note is a thread: the messages of the user and the agent, oldest first. */
-export interface ReviewNote extends NoteAnchor { id: string; createdAt: number; messages: NoteMessage[]; resolvedAt?: number }
+export interface ReviewNote extends NoteAnchor {
+  id: string
+  createdAt: number
+  messages: NoteMessage[]
+  resolvedAt?: number
+  /** Its lines changed since its commit, as of HEAD: computed by notes.list and a send, never stored. */
+  outdated?: true
+}
 /** Where a note written on another version of a file stands on this one: its lines there, or `outdated` when they changed. */
 export type NotePlace = { id: string; start: NotePoint; end: NotePoint } | { id: string; outdated: true }
 /** null: the note is gone. */

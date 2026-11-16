@@ -19,7 +19,8 @@ export function reviewPaths(root: string, review: string): ReviewPaths {
 // Every line break a reader may start a line at, so no body line is left at column 0.
 const indent = (text: string): string => text.split(/\r\n|[\n\r\v\f\x85\u2028\u2029]/).map((line) => `    ${line}`).join('\n')
 
-export function notesFile(notes: ReviewNote[], paths: ReviewPaths, skills: string[] = []): string {
+/** `outdated`: the ids of the notes whose lines changed since their commit (`outdatedAtHead`). */
+export function notesFile(notes: ReviewNote[], paths: ReviewPaths, skills: string[] = [], outdated: Set<string> = new Set()): string {
   const head = [
     '# Review notes',
     `Write one answer file per thread to \`${join(paths.answers, '<thread id>.md')}\`. The first line is \`verdict: answered | confirmed | refuted | unclear\` (\`answered\` — the note was a question and you answered it), the second \`fixed: yes | no\`, then a blank line, then the answer in markdown, very short and with no filler: the answer itself (to a question — what the user asked; to a request or a claim — what you did or why you did not), with the facts (a code snippet, a file:line reference, or a screenshot of the design mockup, saved next to the answer file and shown as \`![caption](file-name.png)\` with the file's bare name). Write each answer file once, when you are done with that note — after the fix, if you make one. A thread can hold earlier messages: read them all, answer the messages marked NEW, and do not repeat what was already answered. A line starting with "Images:" under a message lists the files attached to that message: open them.`,
@@ -31,6 +32,7 @@ export function notesFile(notes: ReviewNote[], paths: ReviewPaths, skills: strin
       `## Thread ${n.id}`,
       `File: ${n.path}`,
       `Lines: ${n.start.line}-${n.end.line}, ${n.side} side, as of commit ${n.rev} (git show ${n.rev}:${n.path})`,
+      ...(outdated.has(n.id) ? [`Outdated: the code at these lines changed after ${n.rev}; compare with the current file before acting.`] : []),
       'Selected:',
       indent(n.quote),
       'Messages, oldest first:',
@@ -81,7 +83,7 @@ export function isFolder(path: string): boolean {
 }
 
 /** Makes the folder and its files; on a refusal or a failed write removes what it made. */
-export function writeReview(root: string, review: string, notes: ReviewNote[], skills: string[] = []): { ok: true; paths: ReviewPaths } | { ok: false; reason: string } {
+export function writeReview(root: string, review: string, notes: ReviewNote[], skills: string[] = [], outdated: Set<string> = new Set()): { ok: true; paths: ReviewPaths } | { ok: false; reason: string } {
   const paths = reviewPaths(root, review)
   const parent = join(root, FOLDER)
   if (!ID.test(review)) return { ok: false, reason: t('reviewDirTaken', { path: paths.dir }) }
@@ -103,7 +105,7 @@ export function writeReview(root: string, review: string, notes: ReviewNote[], s
       throw error
     }
     mkdirSync(paths.answers)
-    for (const [file, text] of [[paths.notes, notesFile(notes, paths, skills)], [paths.guide, REVIEW_GUIDE]]) {
+    for (const [file, text] of [[paths.notes, notesFile(notes, paths, skills, outdated)], [paths.guide, REVIEW_GUIDE]]) {
       // wx: never follows a link and never replaces a file.
       const fd = openSync(file, 'wx')
       try {
