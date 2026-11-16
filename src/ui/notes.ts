@@ -125,7 +125,7 @@ function pointOf(lines: HTMLElement, node: Node, offset: number, side: NoteSide,
 /**
  * A path field that suggests the files and folders `browse` lists in the folder typed so far: ↑ / ↓ pick, Enter or Tab
  * take a suggestion (a folder opens in the field, a file goes to `take`), Done or Enter with none take the typed path,
- * Esc goes to `cancel`. Only the answer to the latest lookup is shown: none while the one for what was just typed is on
+ * or go to `cancel` when nothing is typed (there is no path to take); Esc goes to `cancel`. Only the answer to the latest lookup is shown: none while the one for what was just typed is on
  * its way. Its parts are placed by the caller.
  */
 function pathField(options: {
@@ -159,7 +159,9 @@ function pathField(options: {
     },
     onkeydown: onKey
   })
-  const done = h('button', { class: 'btn', onclick: () => options.take(input.value) }, t('skillDone'))
+  /** The typed path; an empty field closes, as a press of Done with nothing chosen means. */
+  const takeTyped = () => (input.value.trim() ? options.take(input.value) : options.cancel?.())
+  const done = h('button', { class: 'btn', onclick: takeTyped }, t('skillDone'))
 
   function showItems(keepInView = false): void {
     list.replaceChildren(
@@ -211,7 +213,7 @@ function pathField(options: {
       showItems(true)
     } else if (event.key === 'Enter' || (event.key === 'Tab' && !event.shiftKey && items.length)) {
       if (items.length) pick(items[index])
-      else options.take(input.value)
+      else takeTyped()
     } else if (event.key === 'Escape' && options.cancel) {
       event.stopPropagation()
       options.cancel()
@@ -485,9 +487,11 @@ export function mountNotes(options: {
       cancel: () => closeField()
     })
     const field = h('div', { class: 'notes-skill-field d-note-attach' }, picker.input, picker.list, picker.done)
+    // What the field said goes with it: it was about the path, which is gone.
     const closeField = () => {
       picker.stop()
       field.remove()
+      error.textContent = ''
       area.focus()
     }
     /** The images, each with Remove unless the message is edited, then the ones being sent and Attach a file. */
@@ -720,7 +724,14 @@ export function mountNotes(options: {
       label: t('skillPath'),
       browse: (dir) => api.skillsBrowse(root, dir),
       take: (path) => void add(path),
-      typed: () => refuse(null)
+      typed: () => refuse(null),
+      cancel: () => {
+        adding = false
+        picker.stop()
+        refuse(null)
+        draw()
+        addSkill.focus()
+      }
     })
     const field = h('div', { class: 'notes-skill-field' }, picker.input, fieldError, picker.list, picker.done)
 
