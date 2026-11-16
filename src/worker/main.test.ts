@@ -211,8 +211,8 @@ function diffState(root: string) {
     state: {
       root,
       files: [
-        { status: 'A', path: 'three.txt', from: two, to: three },
-        { status: 'A', path: 'two.txt', from: one, to: two }
+        { status: 'A', path: 'three.txt', from: two, to: three, newBlob: sh(root, 'rev-parse', `${three}:three.txt`) },
+        { status: 'A', path: 'two.txt', from: one, to: two, newBlob: sh(root, 'rev-parse', `${two}:two.txt`) }
       ],
       index: 0
     }

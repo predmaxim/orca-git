@@ -175,6 +175,34 @@ export function parseNameStatus(stdout: string): FileChange[] {
   return files
 }
 
+/** A file's change with the blobs of its two sides: none on a side the file does not exist on. */
+export interface RawChange extends FileChange {
+  oldBlob?: string
+  newBlob?: string
+}
+
+/** The head of a `--raw -z` record, before its path or paths; `git log` puts a newline before a commit's first one. */
+export const RAW_ENTRY = /^\n?:\d{6} \d{6} [0-9a-f]{40,64} [0-9a-f]{40,64} [A-Z]\d*$/
+
+/** `--raw --no-abbrev -z` output: a rename or copy has two paths, the old one first; an id of zeros is a side that does not exist. */
+export function parseRaw(stdout: string): RawChange[] {
+  const tokens = stdout.split('\0')
+  const files: RawChange[] = []
+  for (let i = 0; i < tokens.length; ) {
+    const head = tokens[i++]
+    if (!RAW_ENTRY.test(head)) continue
+    const [, , oldBlob, newBlob, status] = head.trim().split(' ')
+    const sides = { ...(/^0+$/.test(oldBlob) ? {} : { oldBlob }), ...(/^0+$/.test(newBlob) ? {} : { newBlob }) }
+    if (status.startsWith('R') || status.startsWith('C')) {
+      const oldPath = tokens[i++]
+      files.push({ status: status[0], path: tokens[i++], oldPath, ...sides })
+    } else {
+      files.push({ status: status[0], path: tokens[i++], ...sides })
+    }
+  }
+  return files
+}
+
 export async function readDetails(git: Git, hash: string): Promise<CommitDetails> {
   assertRevision(hash)
   const show = await git.out(['show', '-s', '-z', '--encoding=UTF-8', '--format=%H%x00%P%x00%an%x00%ae%x00%at%x00%cn%x00%ce%x00%ct%x00%B', hash, '--'])

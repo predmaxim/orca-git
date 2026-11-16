@@ -87,6 +87,9 @@ export interface FileChange {
 export interface SelectionFile extends FileChange {
   from: string | null
   to: string
+  /** Full blob ids of the two sides; absent for a side that does not exist. A pure rename or a mode change has two equal ids. */
+  oldBlob?: string
+  newBlob?: string
 }
 
 export interface CommitDetails {

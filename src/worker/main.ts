@@ -263,6 +263,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     readFileDiff(await gitFor(root), hash, path, oldPath, Boolean(wholeFile))
   )
 
+  // shortcut: the answer has no window, and the blobs add 106 bytes a file: a selection of more than ~3 800 files (50-character paths) passes Orca's 1 MiB; split Files into pages when that is needed.
   handle('selection.files', async ({ root, hashes }) => readSelectionFiles(await gitFor(root), hashes))
 
   handle('range.diff', async ({ root, from, to, path, oldPath, wholeFile }) =>
