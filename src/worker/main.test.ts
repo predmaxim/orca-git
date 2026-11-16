@@ -231,7 +231,8 @@ test('opening a file shows it in the Diff tab of the workspace that holds its re
     assert.match(readFileSync(join(root, '.git', 'info', 'exclude'), 'utf8'), /^\.orca-git-log\.gitdiff$/m)
     assert.equal(sh(root, 'status', '--porcelain'), '')
     assert.deepEqual(worker.posts.at(-1), { event: 'diff.show', payload: { root } })
-    assert.deepEqual(await worker.request('diff.state', { root }), state)
+    const shown = await worker.request('diff.state', { root })
+    assert.deepEqual(shown, { ...state, open: shown?.open })
     assert.equal(await worker.request('diff.state', { root: tmpdir() }), null)
     await worker.deactivate()
   } finally {
@@ -268,7 +269,8 @@ test('going to an open Diff tab shows it again without reloading it', async () =
       { workspaceId: 'wt-1', path: ANCHOR }
     ])
     assert.equal(worker.posts.length, posted)
-    assert.deepEqual(await worker.request('diff.state', { root }), state)
+    const shown = await worker.request('diff.state', { root })
+    assert.deepEqual(shown, { ...state, open: shown?.open })
     await worker.deactivate()
   } finally {
     rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })

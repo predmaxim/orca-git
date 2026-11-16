@@ -66,7 +66,9 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   folder; each tree is one Tab stop, and a redraw keeps its scroll position.
 - **Details section**: one row per selected commit (short hash, title, author); click a row to expand
   the full message, author, committer, date and branches. A single selected commit is expanded at once.
-- **Diff tab**: one editor tab per repository; the next file you open replaces its content. Side by
+- **Diff tab**: one editor tab per repository; the next file you open replaces its content. The tab's
+  selection and the file it shows are kept in the plugin's storage: Orca stops an idle plugin worker and
+  starts a new one on the next request, and the new one shows them again instead of the placeholder. Side by
   side or unified, with changed words highlighted and syntax highlighting for 24 languages, in the colors
   the **Diff colors** setting picks. **Orca** (the default): the colors and font of Orca's file editor
   with a theme that brings no editor colors of its own (Monaco's dark and light themes), because Orca
@@ -438,8 +440,9 @@ keeps them all.
   a worker's answer over 1 MiB. The panel sends only the selected commits and the clicked file, and the
   worker lists the files again: Orca refuses a frame message over 65 KiB ("message too large", Orca as of
   2026-11-13), which a list of a thousand files exceeds.
-- The Diff tab's content lives in the plugin's worker: after Orca restarts, a restored Diff tab shows
-  its placeholder until you open a file again.
+- The Diff tab keeps its selection, not its files: a new worker lists them again from git, and when the
+  selected commits are gone (rebased away and collected), the tab shows its placeholder until you open a
+  file again.
 - Conflicts during a rewrite, cherry-pick or revert are not resolved in the panel; the operation is
   aborted (or, when Git is left mid-operation by a terminal command, a banner says so).
 - With git before 2.47 (seen on 2.34.8 to 2.45.4; fixed in 2.47.0), a `pre-rebase` hook that refuses

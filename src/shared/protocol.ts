@@ -354,7 +354,9 @@ export interface DiffTabState {
   root: string
   files: SelectionFile[]
   index: number
-  /** The id of the note the tab scrolls to once it shows the file; `diff.state` gives it once. */
+  /** This opening of the tab: 12 hex, new on each `diff.open` and `notes.open`. The tab scrolls to `reveal` once per `open`. */
+  open: string
+  /** The id of the note the tab scrolls to once it shows the file; every `diff.state` gives it until `diff.index` or another opening. */
   reveal?: string
 }
 

@@ -40,7 +40,7 @@ test('the tab\'s window of files fits the byte limit', () => {
   assert.deepEqual(fitWindow(short, 4, 1), { first: 4, count: 1 })
 })
 
-test('the tab takes the note to reveal once', async () => {
+test('every read of the state carries the note until the tab moves', async () => {
   const root = fixture()
   try {
     const worker = await mountWorker(main, { host: host(root) })
@@ -49,26 +49,31 @@ test('the tab takes the note to reveal once', async () => {
     const state = async () => (await worker.request('diff.state', { root })) as DiffTabState
     const note = 'abcdef012345'
 
+    // A new tab reads the state when it starts and again on diff.show: both reads have the note, with the same open.
     assert.deepEqual(await worker.request('diff.open', { ...open, note }), { ok: true })
-    assert.equal((await state()).reveal, note)
-    const after = await state()
-    assert.equal('reveal' in after, false)
-    assert.deepEqual(after.files.map((file) => file.path), ['three.txt', 'two.txt'])
+    const first = await state()
+    assert.equal(first.reveal, note)
+    assert.match(first.open, /^[0-9a-f]{12}$/)
+    assert.deepEqual(await state(), first)
+    assert.deepEqual(first.files.map((file) => file.path), ['three.txt', 'two.txt'])
 
-    // A file opened without a note drops the one not taken yet.
-    await worker.request('diff.open', { ...open, note })
+    // A file opened without a note drops the one not taken yet; each opening has its own id.
     await worker.request('diff.open', open)
-    assert.equal('reveal' in (await state()), false)
+    const plain = await state()
+    assert.equal('reveal' in plain, false)
+    assert.notEqual(plain.open, first.open)
 
     assert.deepEqual(await worker.request('diff.open', { ...open, note: 'x' }), { ok: true })
     assert.equal('reveal' in (await state()), false)
 
-    // Stepping to another file drops it too.
+    // Stepping to another file drops it too; the tab is still the same opening.
     await worker.request('diff.open', { ...open, note })
+    const noted = await state()
     assert.deepEqual(await worker.request('diff.index', { root, index: 1 }), { ok: true })
     const stepped = await state()
     assert.equal(stepped.index, 1)
     assert.equal('reveal' in stepped, false)
+    assert.equal(stepped.open, noted.open)
     await worker.deactivate()
   } finally {
     rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })

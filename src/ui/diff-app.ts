@@ -3,6 +3,7 @@ import type { DiffTabState } from '../shared/protocol.ts'
 import { api, errorMessage, orca } from './api.ts'
 import { mountDiff, showDiffPlaceholder, type DiffMode } from './diff.ts'
 import { h } from './dom.ts'
+import { revealToDo } from './revealonce.ts'
 import { pickLocale, setLocale } from '../shared/i18n.ts'
 
 setLocale(pickLocale(orca.locale))
@@ -72,6 +73,9 @@ async function show(): Promise<void> {
   if (error) app.replaceChildren(h('div', { class: 'diff-view' }, h('div', { class: 'diff-note error' }, error)))
   else if (!state) showDiffPlaceholder(app)
   else {
+    // The last opening whose note this tab scrolled to: a second read of it (diff.show, a reload of the frame) does not scroll again.
+    const revealed = `git-log.revealed.${state.root}`
+    const reveal = revealToDo(state, localStorage.getItem(revealed))
     view = mountDiff(app, {
       root: state.root,
       files: state.files,
@@ -90,8 +94,9 @@ async function show(): Promise<void> {
       },
       // The worker keeps the index (a recreated tab opens on this file) and tells the sidebar.
       onIndex: (index) => void api.diffIndex(state.root, index).catch(() => undefined),
-      reveal: state.reveal
+      reveal: reveal ?? undefined
     })
+    if (reveal) localStorage.setItem(revealed, state.open)
   }
 }
 

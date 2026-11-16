@@ -122,14 +122,16 @@ test('notes.open shows a note in its commit and asks the panel to select that co
   const worker = await mountWorker(main, { host: host(root, {}, storage) })
 
   assert.deepEqual(await worker.request('notes.open', { root, id: 'aaaaaaaaaaa1' }), { ok: true })
+  assert.deepEqual(worker.posts.at(-1), { event: 'commit.reveal', payload: { root, hash: two, path: 'two.txt' } })
+  const shown = await worker.request('diff.state', { root })
   const state: DiffTabState = {
     root,
     files: [{ status: 'A', path: 'two.txt', from: one, to: two, newBlob: anchor.blob }],
     index: 0,
+    open: shown!.open,
     reveal: 'aaaaaaaaaaa1'
   }
-  assert.deepEqual(worker.posts.at(-1), { event: 'commit.reveal', payload: { root, hash: two, path: 'two.txt' } })
-  assert.deepEqual(await worker.request('diff.state', { root }), state)
+  assert.deepEqual(shown, state)
 
   assert.deepEqual(await worker.request('notes.open', { root, id: 'aaaaaaaaaaa2' }), { ok: false, reason: t('noteCommitMissing') })
   assert.deepEqual(await worker.request('notes.open', { root, id: 'bbbbbbbbbbbb' }), { ok: false, reason: t('noteGone') })
