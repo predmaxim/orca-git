@@ -433,7 +433,9 @@ keeps them all.
   a regular file); anything else is ignored. `fixed` is the agent's word: the plugin does not check it.
 - Review notes: up to 200 per repository, each with up to 100 messages. Orca limits a stored value to
   256 KiB, and a thread with all its messages is one value: a message or an answer that does not fit is
-  refused with a message; deleting messages or threads you no longer need frees space. The Notes list carries at most 900,000 bytes of notes (Orca
+  refused with a message; deleting messages or threads you no longer need frees space. Orca's storage
+  holds at most 1024 keys and one thread is one key: about a thousand threads across all repositories;
+  5 MiB in total. The Notes list carries at most 900,000 bytes of notes (Orca
   limits a worker's answer to 1 MiB): unresolved notes first, then resolved, newest first; a warning
   counts the ones left out, and Delete all removes those too.
 - Pasting an image into a note needs Orca to hand the pasted file to the Diff tab; whether it does has not
