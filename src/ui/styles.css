@@ -2208,6 +2208,118 @@ input[type='radio']:focus-visible {
   display: none;
 }
 
+/* The images of a message, under its text; in the editor, under the field, each with Remove, then Attach a file. */
+.d-note-images {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.d-note-images:empty {
+  display: none;
+}
+
+/* A thumbnail: a box with the image's name while it loads, the image once read, the name as text when it cannot be. */
+.d-image {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 96px;
+  min-width: 96px;
+  max-width: 100%;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted-fg);
+  font: 12px var(--font-ui);
+  overflow-wrap: anywhere;
+  cursor: default;
+}
+
+.d-image.loaded {
+  min-width: 0;
+  padding: 0;
+  border-color: transparent;
+}
+
+.d-image.loaded:hover {
+  border-color: var(--ring);
+}
+
+.d-image img {
+  display: block;
+  height: 94px;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.d-image.failed {
+  height: auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* Remove sits on the thumbnail's corner, on the popover's plate so that it shows over any image. */
+.d-image-item {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+}
+
+.d-image-item > .tool,
+.image-view > .tool {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  border: 1px solid var(--border);
+  background: var(--popover);
+  color: var(--popover-fg);
+}
+
+.d-note-attach {
+  margin-top: 6px;
+}
+
+/* An image over the tab: fitted to the window, its name and size under it, Close in the corner. */
+.image-view figure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  max-height: 100%;
+  margin: 0;
+}
+
+.image-view img {
+  min-height: 0;
+  max-width: 100%;
+  max-height: calc(100vh - 64px);
+  object-fit: contain;
+}
+
+.image-view figcaption {
+  display: flex;
+  gap: 8px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--popover);
+  color: var(--popover-fg);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.image-view > .tool {
+  top: 12px;
+  right: 12px;
+}
+
 /* The button at the end of a selection floats over the code. */
 .tool.note-add {
   position: fixed;

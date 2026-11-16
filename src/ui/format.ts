@@ -32,6 +32,9 @@ export function fullDate(seconds: number): string {
   return new Date(seconds * 1000).toLocaleString(getLocale(), { dateStyle: 'medium', timeStyle: 'short' })
 }
 
+/** A size: bytes under 1 KB, else whole KB. */
+export const sizeText = (bytes: number): string => (bytes < 1024 ? t('sizeBytes', { n: bytes }) : t('sizeKilobytes', { n: Math.round(bytes / 1024) }))
+
 export interface RefLabel {
   kind: 'head' | 'local' | 'remote' | 'tag'
   text: string

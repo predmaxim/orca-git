@@ -2,7 +2,7 @@ import type { CheckoutRisk, PlanItem, PushCommit, PushPlan, RangeCommit, RebaseA
 import type { BackupBlock } from './backup.ts'
 import { h, icon } from './dom.ts'
 import { closePopups } from './menu.ts'
-import { shortHash } from './format.ts'
+import { shortHash, sizeText } from './format.ts'
 import { t } from '../shared/i18n.ts'
 
 interface Button<T> {
@@ -209,7 +209,7 @@ export async function askPatch(count: number, size: number, defaultPath: string,
   const canCopy = !noCopy
   const input = h('input', { class: 'field mono', spellcheck: false, placeholder: t('filePathPlaceholder') }) as HTMLInputElement
   input.value = defaultPath
-  const kb = size < 1024 ? t('sizeBytes', { n: size }) : t('sizeKilobytes', { n: Math.round(size / 1024) })
+  const kb = sizeText(size)
   const result = await dialog<'copy' | 'save'>({
     title: t('createPatchTitle'),
     body: [

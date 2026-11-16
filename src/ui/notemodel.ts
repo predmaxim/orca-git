@@ -86,6 +86,28 @@ export function authorOf(m: NoteMessage): string {
   return m.author === 'user' ? t('noteYou') : m.agent ? t('noteAgent', { agent: m.agent }) : t('noteAgentPlain')
 }
 
+/** Bytes of an image part: a multiple of 3, so its base64 has no padding and is the 60000 characters the worker takes. */
+const PART = 45000
+
+/** The parts a file of `bytes` bytes is sent in: [offset, length] of at most 45000 bytes each. */
+export function uploadParts(bytes: number): [number, number][] {
+  const parts: [number, number][] = []
+  for (let at = 0; at < bytes; at += PART) parts.push([at, Math.min(PART, bytes - at)])
+  return parts
+}
+
+/** Base64 of `bytes`; the binary string grows in slices, as a spread of a large array would overflow the stack. */
+export function toBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (let at = 0; at < bytes.length; at += 0x8000) binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000))
+  return btoa(binary)
+}
+
+/** The bytes of base64 `data`. */
+export function fromBase64(data: string): Uint8Array<ArrayBuffer> {
+  return Uint8Array.from(atob(data), (c) => c.charCodeAt(0))
+}
+
 /** All threads as markdown, for Copy all: every message under its author, oldest first. */
 export function notesText(notes: ReviewNote[]): string {
   return notes

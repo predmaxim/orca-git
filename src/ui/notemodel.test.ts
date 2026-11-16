@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { DiffHunk, NoteMessage, ReviewNote } from '../shared/protocol.ts'
-import { active, anchor, coveredRange, notesOf, notesText, pickSide, sideLines, unsent } from './notemodel.ts'
+import { active, anchor, coveredRange, fromBase64, notesOf, notesText, pickSide, sideLines, toBase64, unsent, uploadParts } from './notemodel.ts'
 
 const hunks: DiffHunk[] = [
   {
@@ -78,4 +78,21 @@ test('all threads as markdown: every message under its author, in order', () => 
     messages: [said('user', 'no', 'r'), { ...said('agent', 'yes', 'r'), agent: 'claude' }, said('user', 'still no')] } as ReviewNote
   assert.equal(notesText([one, two]),
     'a.ts:4 (new)\n> foo\n\n**You:**\nwhy?\n\n**Agent:**\nbecause\n\n---\n\nb.ts:2-3 (old)\n> x\n> y\n\n**You:**\nno\n\n**Agent · claude:**\nyes\n\n**You:**\nstill no')
+})
+test('an image goes in parts of 45000 bytes, the last one shorter', () => {
+  assert.deepEqual(uploadParts(0), [])
+  assert.deepEqual(uploadParts(45000), [[0, 45000]])
+  assert.deepEqual(uploadParts(45001), [[0, 45000], [45000, 1]])
+  const parts = uploadParts(5242880)
+  assert.equal(parts.length, 117)
+  assert.equal(parts.reduce((sum, [, length]) => sum + length, 0), 5242880)
+  assert.ok(parts.every(([at, length], i) => at === i * 45000 && (length === 45000 || i === parts.length - 1)))
+})
+test('base64 of a part: 60000 characters for 45000 bytes, and back to the same bytes', () => {
+  assert.equal(toBase64(new Uint8Array([0, 1, 2, 255])), 'AAEC/w==')
+  const bytes = Uint8Array.from({ length: 45000 }, (_, i) => (i * 7) % 256)
+  const text = toBase64(bytes)
+  assert.equal(text.length, 60000)
+  assert.deepEqual(fromBase64(text), bytes)
+  assert.deepEqual(fromBase64(''), new Uint8Array())
 })

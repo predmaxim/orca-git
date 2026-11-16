@@ -524,7 +524,12 @@ export const en = {
   imageMany: 'At most 5 images per message.',
   imageMissing: 'No such image file: {path}',
   imageFailed: 'The image could not be saved: {error}',
-  imageUpload: 'The image upload was interrupted.'
+  imageUpload: 'The image upload was interrupted.',
+  imageAttach: 'Attach a file',
+  imagePath: 'Image path: png, jpg, gif or webp',
+  imageRemove: 'Remove {name}',
+  imageOpen: 'Open {name}',
+  imageClose: 'Close'
 } satisfies Record<string, Message>
 
 export const ru: Record<keyof typeof en, Message> = {
@@ -1051,7 +1056,12 @@ export const ru: Record<keyof typeof en, Message> = {
   imageMany: 'Не больше 5 картинок на сообщение.',
   imageMissing: 'Нет такого файла картинки: {path}',
   imageFailed: 'Не удалось сохранить картинку: {error}',
-  imageUpload: 'Загрузка картинки прервана.'
+  imageUpload: 'Загрузка картинки прервана.',
+  imageAttach: 'Приложить файл',
+  imagePath: 'Путь до картинки: png, jpg, gif или webp',
+  imageRemove: 'Убрать {name}',
+  imageOpen: 'Открыть {name}',
+  imageClose: 'Закрыть'
 }
 
 export type MessageKey = keyof typeof en

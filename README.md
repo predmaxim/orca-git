@@ -88,7 +88,14 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   messages opens the same editor as a new note; the reply stays unsent while the thread waits for an
   answer. A resolved thread folds to one line (Resolved, the start of its first message and the count of
   messages) that opens and closes on a click; it takes no reply and is not sent until **Open again**.
-  One editor is open at a time: typed text is not dropped for another one. Links open
+  One editor is open at a time: typed text or attached images are not dropped for another one.
+  **Images** go with a new note or a reply: paste one into the editor (Ctrl+V), or press **Attach a file**
+  (the image icon) for a path field that suggests the images and folders of the folder typed so far, with
+  the keys of the skills' field below (a full path, `~/…` or from the repository root). A message takes up
+  to 5 PNG, JPEG, GIF or WebP images of up to 5 MiB each; they stand under the field, each with × to take
+  it off, and a refused image says why under the field. An edit keeps the message's images as they are.
+  A message shows its images as thumbnails 96 px high under its text; a click or Enter opens one over the
+  tab with its name and size, and Esc, a click outside it or × closes it. Links open
   in the browser. **Notes (N)** in the tab's header counts the threads not resolved and lists every
   thread of the repository with its file, lines, side, state, count of messages and the start of the
   quote and of the first message, resolved ones last and dimmed; Copy all copies them as markdown with
@@ -96,7 +103,7 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   the note is of the diff shown but its lines are outside the changed regions. Opening the list loads
   the notes again, so the agent's answers are read then too. Notes are kept in the plugin's storage, up
   to 200 per repository (see Limitations). When the notes cannot be loaded, the answers cannot be saved,
-  or a delete or Send again is refused, the Notes button turns yellow, its tooltip says why, and so does
+  or a delete, Send again, Resolved or Open again is refused, the Notes button turns yellow, its tooltip says why, and so does
   a line at the top of the list.
 - **Send notes to an agent**: **Send to an agent (N)** in the Diff tab's header (shown while a note
   is unsent) opens a menu of agent kinds (the ones Orca lists, plus claude and codex; the last one used
@@ -127,8 +134,9 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   question is answered (`answered`, no code changed), a request is made at once, a claim is checked and fixed when
   it holds; a note that is wrong is argued with — the fact and what to do instead — and "I did not change this
   code" is not an answer. The review skills of the repository and the project's own rules come before the guide:
-  a rule of the guide that contradicts them does not apply, the rest of it applies with them. An image path in an
-  answer is shown as text (caption and address), the image itself is not shown. The plugin reads
+  a rule of the guide that contradicts them does not apply, the rest of it applies with them. An image link in an
+  answer stays text (caption and address); the image of a file right inside the send's `answers/` folder also
+  shows as a thumbnail under the agent's message. The plugin reads
   them when the agent's status changes and when the notes are listed, and shows each answer in its thread
   as the agent's message, with its verdict label, "Fixed" and the markdown. An answer file the agent rewrites replaces the answer shown the next
   time the answers are read. Deleting the last note of a send, or Send again on it, removes its folder.
@@ -420,6 +428,8 @@ keeps them all.
   a message; deleting notes frees space. The Notes list carries at most 900,000 bytes of notes (Orca
   limits a worker's answer to 1 MiB): unresolved notes first, then resolved, newest first; a warning
   counts the ones left out, and Delete all removes those too.
+- Pasting an image into a note needs Orca to hand the pasted file to the Diff tab; whether it does has not
+  been checked in Orca yet. **Attach a file** works without it.
 
 ## Third-party code
 
@@ -427,7 +437,7 @@ The diff is highlighted with [highlight.js](https://highlightjs.org) 11.12.0 (BS
 
 Review notes and the agent's answers are markdown, read with the lexer of [marked](https://marked.js.org) 18.2.0 (MIT): the one file `lib/marked.esm.js` byte for byte in `src/vendor/marked/` (license next to it). Only the lexer is used; `src/ui/markdown.ts` turns its tokens into DOM nodes, never into HTML.
 
-Interface icons are [Lucide](https://lucide.dev) (ISC), the bodies of 34 icons from `lucide-static` 0.469.0 inlined in `src/ui/dom.ts` with the license notice.
+Interface icons are [Lucide](https://lucide.dev) (ISC), the bodies of 35 icons from `lucide-static` 0.469.0 inlined in `src/ui/dom.ts` with the license notice.
 
 ## License
 

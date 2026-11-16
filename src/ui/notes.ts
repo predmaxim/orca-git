@@ -1,12 +1,13 @@
 // Review notes in the Diff tab: the selection and its button, the editor, the threads under their lines and the list of all notes.
-import type { FileDiff, NoteDraft, NoteMessage, NotePoint, NoteResult, NoteSide, NoteVerdict, ReviewNote, SelectionFile } from '../shared/protocol.ts'
+import type { FileDiff, NoteDraft, NoteImage, NoteMessage, NotePoint, NoteResult, NoteSide, NoteVerdict, ReviewNote, SelectionFile } from '../shared/protocol.ts'
 import { t, type MessageKey } from '../shared/i18n.ts'
-import { lastAnswer, MAX_BODY, MAX_QUOTE, MAX_REVIEW_SKILLS, stateOf } from '../shared/notes.ts'
+import { lastAnswer, MAX_BODY, MAX_IMAGES, MAX_QUOTE, MAX_REVIEW_SKILLS, stateOf, unsentOf } from '../shared/notes.ts'
 import { api, copyText, errorMessage, orca } from './api.ts'
 import type { DiffMode } from './diff.ts'
 import { h, icon, ICONS } from './dom.ts'
 import { fullDate, relativeDate } from './format.ts'
 import { markRange } from './highlight.ts'
+import { disposeImages, thumbnail, uploadImage } from './images.ts'
 import { mdDom } from './markdown.ts'
 import { showMenu, showPopover, type MenuEntry } from './menu.ts'
 import { active, anchor, authorOf, coveredRange, notesOf, notesText, pickSide, sideLines, unsent } from './notemodel.ts'
@@ -28,8 +29,12 @@ export interface NotesView {
   dispose(): void
 }
 
-/** Where a note goes: everything of a draft but its text. */
-type Anchor = Omit<NoteDraft, 'body'>
+/** Where a note goes: everything of a draft but its text and images. */
+type Anchor = Omit<NoteDraft, 'body' | 'images'>
+type Editor = { anchor: Anchor; id?: string; message?: string; start: string; images: NoteImage[]; sending: string[]; el: HTMLElement; area: HTMLTextAreaElement; error: HTMLElement }
+
+/** Whether the editor holds text or images the user put there: another editor must not drop them. */
+const typed = (e: Editor) => e.area.value.trim() !== e.start || (e.message === undefined && e.images.length > 0) || e.sending.length > 0
 
 const VERDICT: Record<NoteVerdict, MessageKey> = { answered: 'noteAnswered', confirmed: 'noteConfirmed', refuted: 'noteRefuted', unclear: 'noteUnclear' }
 
@@ -80,6 +85,128 @@ function pointOf(lines: HTMLElement, node: Node, offset: number, side: NoteSide,
   return cell ? { line: Number(cell.dataset[side]), col: forward ? 0 : cellText(cell.textContent ?? '').length } : null
 }
 
+/**
+ * A path field that suggests the files and folders `browse` lists in the folder typed so far: ↑ / ↓ pick, Enter or Tab
+ * take a suggestion (a folder opens in the field, a file goes to `take`), Done or Enter with none take the typed path,
+ * Esc goes to `cancel`. Only the answer to the latest lookup is shown: none while the one for what was just typed is on
+ * its way. Its parts are placed by the caller.
+ */
+function pathField(options: {
+  /** The id of the suggestion list. */
+  id: string
+  label: string
+  browse(dir: string): Promise<{ dirs: string[]; files: string[] }>
+  take(path: string): void
+  /** Each change of the text, before its lookup. */
+  typed(): void
+  cancel?(): void
+}): { input: HTMLInputElement; list: HTMLElement; done: HTMLButtonElement; start(): void; stop(): void } {
+  /** The suggestions shown, the highlighted one, and the count of lookups: only the answer to the latest one is shown. */
+  let items: string[] = []
+  let index = 0
+  let lookups = 0
+  const list = h('div', { class: 'notes-suggest', id: options.id, role: 'listbox', 'aria-label': options.label })
+  const input = h('input', {
+    class: 'field',
+    type: 'text',
+    autocomplete: 'off',
+    role: 'combobox',
+    'aria-autocomplete': 'list',
+    'aria-expanded': 'false',
+    'aria-controls': options.id,
+    placeholder: options.label,
+    'aria-label': options.label,
+    oninput: () => {
+      options.typed()
+      lookUp()
+    },
+    onkeydown: onKey
+  })
+  const done = h('button', { class: 'btn', onclick: () => options.take(input.value) }, t('skillDone'))
+
+  function showItems(keepInView = false): void {
+    list.replaceChildren(
+      ...items.map((path, i) =>
+        h(
+          'div',
+          {
+            class: `notes-suggest-item${i === index ? ' on' : ''}`,
+            role: 'option',
+            'aria-selected': String(i === index),
+            // A press keeps the focus in the field.
+            onmousedown: (event: MouseEvent) => event.preventDefault(),
+            onclick: () => pick(path)
+          },
+          path
+        )
+      )
+    )
+    input.setAttribute('aria-expanded', String(items.length > 0))
+    if (keepInView) list.querySelector('.on')?.scrollIntoView({ block: 'nearest' })
+  }
+
+  /** No suggestions until the listing for what the field holds now comes: Enter meanwhile takes the typed path. */
+  function lookUp(): void {
+    items = []
+    showItems()
+    void suggest()
+  }
+
+  async function suggest(): Promise<void> {
+    const mine = ++lookups
+    const value = input.value
+    let found: string[] = []
+    try {
+      found = skillSuggestions(value, await options.browse(browseDir(value)))
+    } catch {
+      found = []
+    }
+    if (mine !== lookups) return
+    items = found
+    index = 0
+    showItems()
+  }
+
+  function onKey(event: KeyboardEvent): void {
+    if (event.isComposing) return
+    if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && items.length) {
+      index = (index + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length
+      showItems(true)
+    } else if (event.key === 'Enter' || (event.key === 'Tab' && !event.shiftKey && items.length)) {
+      if (items.length) pick(items[index])
+      else options.take(input.value)
+    } else if (event.key === 'Escape' && options.cancel) {
+      event.stopPropagation()
+      options.cancel()
+    } else return
+    event.preventDefault()
+  }
+
+  /** A picked folder opens in the field; a picked file is taken. */
+  function pick(path: string): void {
+    if (!path.endsWith('/')) return options.take(path)
+    input.value = path
+    input.focus()
+    lookUp()
+  }
+
+  return {
+    input,
+    list,
+    done,
+    /** Empties the field, focuses it and lists the folder of the repository. */
+    start() {
+      input.value = ''
+      input.focus()
+      lookUp()
+    },
+    /** Drops the answer of a lookup still on its way: the field is closed. */
+    stop() {
+      lookups++
+    }
+  }
+}
+
 export function mountNotes(options: {
   root: string
   files: SelectionFile[]
@@ -100,9 +227,10 @@ export function mountNotes(options: {
   let file: SelectionFile | null = null
   /**
    * The open editor: a new note at `anchor`, a reply to the thread `id`, or the message `message` of the thread `id`, and
-   * the text it started with. Its element lives on across renders, and the text with it.
+   * the text it started with; its images, and the names of those still being sent. Its element lives on across renders,
+   * and the text and the images with it.
    */
-  let editor: { anchor: Anchor; id?: string; message?: string; start: string; el: HTMLElement; area: HTMLTextAreaElement; error: HTMLElement } | null = null
+  let editor: Editor | null = null
   /** The resolved threads opened from their one line. */
   const unfolded = new Set<string>()
   let saving = false
@@ -236,15 +364,19 @@ export function mountNotes(options: {
     return true
   }
 
-  /** Opens the editor of a new note at `at`, of a reply to the thread `of.id`, or of its message `of.message`. */
-  function openEditor(at: Anchor, of?: { id: string; message?: string }, text = ''): void {
+  /**
+   * Opens the editor of a new note at `at`, of a reply to the thread `of.id`, or of its message `of.message` with its
+   * `images`. A new note and a reply take images pasted or picked by path; an edit keeps the message's images as they are.
+   */
+  function openEditor(at: Anchor, of?: { id: string; message?: string }, text = '', images: NoteImage[] = []): void {
     const open = editor
-    // Typed text is not dropped for another editor: the open one is shown instead. One out of view (another file) cannot be.
-    if (open && open.area.value.trim() !== open.start && open.el.isConnected) {
+    // What the user typed or attached is not dropped for another editor: the open one is shown instead. One out of view (another file) cannot be.
+    if (open && typed(open) && open.el.isConnected) {
       open.el.scrollIntoView({ block: 'nearest' })
       open.area.focus({ preventScroll: true })
       return
     }
+    const editing = of?.message !== undefined
     const area = h('textarea', {
       class: 'field d-note-input',
       rows: 3,
@@ -258,11 +390,88 @@ export function mountNotes(options: {
         event.preventDefault()
         if (event.key === 'Escape') closeEditor()
         else void save()
-      }
+      },
+      onpaste: editing ? undefined : (event: ClipboardEvent) => void paste(event)
     })
     area.value = text
     const error = h('div', { class: 'd-note-error' })
-    editor = { anchor: at, id: of?.id, message: of?.message, start: text, el: h('div', { class: 'd-note-edit' }, area, error), area, error }
+    const strip = h('div', { class: 'd-note-images' })
+    const mine: Editor = { anchor: at, id: of?.id, message: of?.message, start: text, images, sending: [], el: h('div', { class: 'd-note-edit' }, area, strip, error), area, error }
+    const attachButton = tool('image', 'imageAttach', () => {
+      if (field.parentNode) return picker.input.focus()
+      error.before(field)
+      picker.start()
+    })
+    const picker = pathField({
+      id: 'd-image-suggest',
+      label: t('imagePath'),
+      browse: (dir) => api.imagesBrowse(root, dir),
+      take: (path) => void attach(path.slice(path.lastIndexOf('/') + 1), () => api.imagesAttach(root, path)).then((ok) => ok && closeField()),
+      typed: () => (error.textContent = ''),
+      cancel: () => closeField()
+    })
+    const field = h('div', { class: 'notes-skill-field d-note-attach' }, picker.input, picker.list, picker.done)
+    const closeField = () => {
+      picker.stop()
+      field.remove()
+      area.focus()
+    }
+    /** The images, each with Remove unless the message is edited, then the ones being sent and Attach a file. */
+    const draw = () =>
+      strip.replaceChildren(
+        ...mine.images.map((image) =>
+          h(
+            'span',
+            { class: 'd-image-item' },
+            thumbnail(root, image),
+            editing
+              ? null
+              : h(
+                  'button',
+                  {
+                    class: 'tool',
+                    title: t('imageRemove', { name: image.name }),
+                    'aria-label': t('imageRemove', { name: image.name }),
+                    onclick: () => {
+                      mine.images = mine.images.filter((i) => i !== image)
+                      draw()
+                      area.focus()
+                    }
+                  },
+                  icon('close')
+                )
+          )
+        ),
+        ...mine.sending.map((name) => h('span', { class: 'd-image' }, name)),
+        ...(editing ? [] : [attachButton])
+      )
+    /** Attaches the image `get` stores while the message has room for one more; a refusal shows under the field. True when attached. */
+    const attach = async (name: string, get: () => Promise<{ ok: true; image: NoteImage } | { ok: false; reason: string }>): Promise<boolean> => {
+      if (mine.images.length + mine.sending.length >= MAX_IMAGES) {
+        error.textContent = t('imageMany')
+        return false
+      }
+      error.textContent = ''
+      mine.sending.push(name)
+      draw()
+      const result = await get().catch((caught: unknown) => ({ ok: false as const, reason: errorMessage(caught) }))
+      mine.sending.splice(mine.sending.indexOf(name), 1)
+      if (!result.ok) error.textContent = result.reason
+      else if (!mine.images.some((i) => i.id === result.image.id)) mine.images = [...mine.images, result.image]
+      draw()
+      return result.ok
+    }
+    /** Pasted image files are sent one after another, until one is refused; anything else is pasted as text. */
+    const paste = async (event: ClipboardEvent) => {
+      const files = Array.from(event.clipboardData?.files ?? [])
+      const items = Array.from(event.clipboardData?.items ?? []).filter((item) => item.kind === 'file').map((item) => item.getAsFile())
+      const pasted = (files.length ? files : items).filter((file): file is File => file?.type.startsWith('image/') === true)
+      if (!pasted.length) return
+      event.preventDefault()
+      for (const file of pasted) if (!(await attach(file.name, () => uploadImage(root, file, file.name)))) break
+    }
+    draw()
+    editor = mine
     options.rerender()
     area.focus()
   }
@@ -274,18 +483,20 @@ export function mountNotes(options: {
 
   async function save(): Promise<void> {
     const open = editor
-    if (!open || saving || !open.area.value.trim()) return
+    // An image still being sent would be left out: the save waits for the user to press again.
+    if (!open || saving || open.sending.length || !open.area.value.trim()) return
     // An edit that changes nothing sends nothing.
     if (open.message && open.area.value.trim() === open.start) return closeEditor()
     saving = true
     open.error.textContent = ''
     try {
       const body = open.area.value
+      const images = open.images.length ? open.images : undefined
       const result = !open.id
-        ? await api.noteAdd(root, { ...open.anchor, body })
+        ? await api.noteAdd(root, { ...open.anchor, body, ...(images ? { images } : {}) })
         : open.message
           ? await api.noteEdit(root, open.id, open.message, body)
-          : await api.noteReply(root, open.id, body)
+          : await api.noteReply(root, open.id, body, images)
       if (!result.ok) open.error.textContent = result.reason
       else if (result.note) {
         if (editor === open) editor = null
@@ -300,7 +511,7 @@ export function mountNotes(options: {
 
   /** A message: its author and time, an agent's verdict, Not sent on the user's own until it goes out and Edit until then, Delete. */
   function message(n: ReviewNote, m: NoteMessage): HTMLElement {
-    const draft = m.author === 'user' && m.sentAt === undefined
+    const draft = unsentOf(n).includes(m)
     return h(
       'div',
       { class: `d-note-msg ${m.author}`, dataset: { id: m.id } },
@@ -312,11 +523,19 @@ export function mountNotes(options: {
         ...verdict(m),
         draft ? h('span', { class: 'muted d-note-unsent' }, t('noteUnsent')) : null,
         h('span', { class: 'spacer' }),
-        draft ? tool('edit', 'noteEdit', () => openEditor(n, { id: n.id, message: m.id }, m.body)) : null,
+        draft ? tool('edit', 'noteEdit', () => openEditor(n, { id: n.id, message: m.id }, m.body, m.images)) : null,
         tool('drop', 'noteDeleteMessage', () => void change(n.id, api.noteRemove(root, n.id, m.id)))
       ),
-      h('div', { class: 'md' }, mdDom(m.body, openLink))
+      h('div', { class: 'md' }, mdDom(m.body, openLink)),
+      m.images?.length ? h('div', { class: 'd-note-images' }, ...m.images.map((image) => thumbnail(root, image))) : null
     )
+  }
+
+  /** After a redraw took the focused control away, focuses the control `selector` of the thread `id` in its place. */
+  function refocus(id: string, selector: string): void {
+    if (document.activeElement && document.activeElement !== document.body) return
+    const found = container?.isConnected ? Array.from(container.querySelectorAll<HTMLElement>('.d-note')).find((el) => el.dataset.id === id) : undefined
+    found?.querySelector<HTMLElement>(selector)?.focus({ preventScroll: true })
   }
 
   /** A thread: its state and buttons, its messages, and Reply… under them; a resolved one is one line until it is opened. */
@@ -326,13 +545,18 @@ export function mountNotes(options: {
     // The editor open in a thread keeps it open.
     const open = !resolved || unfolded.has(n.id) || mine !== null
     const fold = () => {
+      // The editor open in the thread keeps it open: a press changes nothing.
+      if (mine) return
       if (!unfolded.delete(n.id)) unfolded.add(n.id)
       options.rerender()
+      refocus(n.id, '.d-note-fold')
     }
     const resolve = (yes: boolean) => {
       unfolded.delete(n.id)
-      void change(n.id, api.noteResolve(root, n.id, yes))
+      void change(n.id, api.noteResolve(root, n.id, yes)).then(() => refocus(n.id, '.d-note-toggle'))
     }
+    const toggle = resolved ? tool('undo', 'noteReopen', () => resolve(false)) : tool('check', 'noteResolve', () => resolve(true))
+    toggle.classList.add('d-note-toggle')
     return h(
       'div',
       { class: `d-note${resolved ? ' resolved' : ''}`, dataset: { id: n.id } },
@@ -352,7 +576,7 @@ export function mountNotes(options: {
           : [...labels(n), h('span', { class: 'spacer' })]),
         // Sending again takes the sent mark off the messages nobody answered, so they go with the next sending.
         stateOf(n) === 'waiting' ? tool('refresh', 'noteResend', () => void change(n.id, api.noteResend(root, n.id))) : null,
-        resolved ? tool('undo', 'noteReopen', () => resolve(false)) : tool('check', 'noteResolve', () => resolve(true)),
+        toggle,
         tool('drop', 'noteDeleteThread', () => void remove([n.id]))
       ),
       ...(open ? n.messages.map((m) => (mine?.message === m.id ? mine.el : message(n, m))) : []),
@@ -382,33 +606,19 @@ export function mountNotes(options: {
     }
     let skills = loaded.skills
     let adding = false
-    /** The suggestions shown, the highlighted one, and the count of lookups: only the answer to the latest one is shown. */
-    let items: string[] = []
-    let index = 0
-    let lookups = 0
     /** The save running: the next one waits for it and starts from the list it stored. */
     let saving: Promise<unknown> = Promise.resolve()
     const fieldError = h('div', { class: 'd-note-error', role: 'alert' })
     const listError = h('div', { class: 'd-note-error', role: 'alert' })
     const addSkill = h('button', { class: 'btn', onclick: openField }, t('skillAdd'))
-    const list = h('div', { class: 'notes-suggest', id: 'notes-skill-suggest', role: 'listbox', 'aria-label': t('skillPath') })
-    const input = h('input', {
-      class: 'field',
-      type: 'text',
-      autocomplete: 'off',
-      role: 'combobox',
-      'aria-autocomplete': 'list',
-      'aria-expanded': 'false',
-      'aria-controls': 'notes-skill-suggest',
-      placeholder: t('skillPath'),
-      'aria-label': t('skillPath'),
-      oninput: () => {
-        refuse(null)
-        lookUp()
-      },
-      onkeydown: onKey
+    const picker = pathField({
+      id: 'notes-skill-suggest',
+      label: t('skillPath'),
+      browse: (dir) => api.skillsBrowse(root, dir),
+      take: (path) => void add(path),
+      typed: () => refuse(null)
     })
-    const field = h('div', { class: 'notes-skill-field' }, input, fieldError, list, h('button', { class: 'btn', onclick: () => void add(input.value) }, t('skillDone')))
+    const field = h('div', { class: 'notes-skill-field' }, picker.input, fieldError, picker.list, picker.done)
 
     function draw(): void {
       el.replaceChildren(
@@ -432,75 +642,10 @@ export function mountNotes(options: {
       for (const line of [fieldError, listError]) line.textContent = line === at ? reason : ''
     }
 
-    function showItems(keepInView = false): void {
-      list.replaceChildren(
-        ...items.map((path, i) =>
-          h(
-            'div',
-            {
-              class: `notes-suggest-item${i === index ? ' on' : ''}`,
-              role: 'option',
-              'aria-selected': String(i === index),
-              // A press keeps the focus in the field.
-              onmousedown: (event: MouseEvent) => event.preventDefault(),
-              onclick: () => pick(path)
-            },
-            path
-          )
-        )
-      )
-      input.setAttribute('aria-expanded', String(items.length > 0))
-      if (keepInView) list.querySelector('.on')?.scrollIntoView({ block: 'nearest' })
-    }
-
-    /** No suggestions until the listing for what the field holds now comes: Enter meanwhile takes the typed path. */
-    function lookUp(): void {
-      items = []
-      showItems()
-      void suggest()
-    }
-
-    async function suggest(): Promise<void> {
-      const mine = ++lookups
-      const value = input.value
-      let found: string[] = []
-      try {
-        found = skillSuggestions(value, await api.skillsBrowse(root, browseDir(value)))
-      } catch {
-        found = []
-      }
-      if (mine !== lookups || !adding) return
-      items = found
-      index = 0
-      showItems()
-    }
-
     function openField(): void {
       adding = true
-      input.value = ''
       draw()
-      input.focus()
-      lookUp()
-    }
-
-    function onKey(event: KeyboardEvent): void {
-      if (event.isComposing) return
-      if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && items.length) {
-        index = (index + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length
-        showItems(true)
-      } else if (event.key === 'Enter' || (event.key === 'Tab' && !event.shiftKey && items.length)) {
-        if (items.length) pick(items[index])
-        else void add(input.value)
-      } else return
-      event.preventDefault()
-    }
-
-    /** A picked folder opens in the field; a picked file is added. */
-    function pick(path: string): void {
-      if (!path.endsWith('/')) return void add(path)
-      input.value = path
-      input.focus()
-      lookUp()
+      picker.start()
     }
 
     /**
@@ -530,7 +675,7 @@ export function mountNotes(options: {
     async function add(path: string): Promise<void> {
       if (!(await save((stored) => [...stored, path], fieldError))) return
       adding = false
-      lookups++
+      picker.stop()
       draw()
       // At ten skills there is no Add button: the focus stays in the list, on the last row.
       ;(skills.length < MAX_REVIEW_SKILLS ? addSkill : Array.from(el.querySelectorAll<HTMLElement>('.notes-skill .tool')).pop())?.focus()
@@ -539,7 +684,7 @@ export function mountNotes(options: {
     async function remove(path: string): Promise<void> {
       if (!(await save((stored) => stored.filter((s) => s !== path), listError))) return
       draw()
-      ;(adding ? input : addSkill).focus()
+      ;(adding ? picker.input : addSkill).focus()
     }
 
     draw()
@@ -753,6 +898,7 @@ export function mountNotes(options: {
       document.removeEventListener('scroll', onScroll, true)
       addButton.remove()
       closeList?.()
+      disposeImages()
     }
   }
 }

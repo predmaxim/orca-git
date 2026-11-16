@@ -110,7 +110,12 @@ export const api = {
     call('notes.send', { root, ids, agent }),
   skills: (root: string): Promise<{ skills: string[] }> => call('skills.list', { root }),
   skillsSet: (root: string, skills: string[]): Promise<{ ok: true; skills: string[] } | { ok: false; reason: string }> => call('skills.set', { root, skills }),
-  skillsBrowse: (root: string, dir: string): Promise<{ dirs: string[]; files: string[] }> => call('skills.browse', { root, dir })
+  skillsBrowse: (root: string, dir: string): Promise<{ dirs: string[]; files: string[] }> => call('skills.browse', { root, dir }),
+  imagesPut: (root: string, upload: string, index: number, last: boolean, data: string, name: string): Promise<{ ok: true; image?: NoteImage } | { ok: false; reason: string }> =>
+    call('images.put', { root, upload, index, last, data, name }),
+  imagesAttach: (root: string, path: string): Promise<{ ok: true; image: NoteImage } | { ok: false; reason: string }> => call('images.attach', { root, path }),
+  imagesBrowse: (root: string, dir: string): Promise<{ dirs: string[]; files: string[] }> => call('images.browse', { root, dir }),
+  imagesGet: (root: string, id: string, offset: number): Promise<{ data: string; total: number }> => call('images.get', { root, id, offset })
 }
 
 export function errorMessage(error: unknown): string {
