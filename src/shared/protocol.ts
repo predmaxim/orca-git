@@ -399,7 +399,7 @@ declare module 'orca' {
     'notes.delete': { input: { root: string; ids?: string[]; all?: boolean }; output: { ok: boolean; reason?: string } }
     /** The agent that got the repository's last send, when its terminal is open and it is free; null otherwise. */
     'notes.agent': { input: { root: string }; output: { agent: string | null } }
-    /** Without `agent` the send goes to the earlier agent, when it is free. */
+    /** Without `agent`: to the earlier agent, typed into its terminal, when it is free (`done`), else refused. With `agent`: always a new agent of that kind. */
     'notes.send': { input: { root: string; ids: string[]; agent?: string }; output: { ok: true; review: string; to: 'same' | 'new' } | { ok: false; reason: string } }
     'skills.list': { input: { root: string }; output: { skills: string[] } }
     'skills.set': { input: { root: string; skills: string[] }; output: { ok: true; skills: string[] } | { ok: false; reason: string } }

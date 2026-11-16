@@ -156,7 +156,7 @@ export function editMessage(store: NoteStore, root: string, id: unknown, message
   })
 }
 
-const unmarked = ({ review, sentAt, ...rest }: NoteMessage): NoteMessage => rest
+const unmarked = ({ review, sentAt, agent, ...rest }: NoteMessage): NoteMessage => rest
 
 /** Takes the sent mark off the user's messages of the send the thread waits for; without one the thread stays as it is. */
 export function resendNote(store: NoteStore, root: string, id: unknown): Promise<NoteResult> {

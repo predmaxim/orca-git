@@ -97,7 +97,7 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   independent reviewer) and an empty `answers/`, adds `.orca-git-log/` to the repository's
   `.git/info/exclude`, marks the notes sent and starts a new agent in that workspace whose prompt names
   the three paths. If the agent does not start, the folder is removed and the notes go back to unsent;
-  the reason shows under the button. The next send goes to that same agent, typed into its terminal, while the terminal is open in the focused workspace and the agent is waiting or done; the menu then offers "to the same agent" instead of the kinds. A busy or closed agent means a new one: pick a kind. If the terminal does not take the text, the send is undone and the next one starts a new agent. One send per repository runs at a time, and a note waits for one
+  the reason shows under the button. The next send goes to that same agent, typed into its terminal, while the terminal is open in the focused workspace and the agent is `done`; the menu then offers "to the same agent" instead of the kinds. A busy or closed agent means a new one: pick a kind. If the terminal does not take the text, the send is undone and the next one starts a new agent. One send per repository runs at a time, and a note waits for one
   answer at a time: while its last send has no answer it shows "Sent, no answer yet" and is not sent again.
 - **Review skills** of a repository: under the notes in the Notes list, set up to 10 skills the agent
   takes first, in their order, before the project's own rules and skills and the plugin's guide. A skill

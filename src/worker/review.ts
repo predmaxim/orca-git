@@ -16,7 +16,8 @@ export function reviewPaths(root: string, review: string): ReviewPaths {
   return { dir, notes: join(dir, 'notes.md'), guide: join(dir, 'SKILL.md'), answers: join(dir, 'answers') }
 }
 
-const indent = (text: string): string => text.split(/\r?\n/).map((line) => `    ${line}`).join('\n')
+// Every line break a reader may start a line at, so no body line is left at column 0.
+const indent = (text: string): string => text.split(/\r\n|[\n\r\v\f\x85\u2028\u2029]/).map((line) => `    ${line}`).join('\n')
 
 export function notesFile(notes: ReviewNote[], paths: ReviewPaths, skills: string[] = []): string {
   const head = [
