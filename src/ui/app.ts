@@ -1,8 +1,9 @@
-import type { ActionRequest, ActionResult, BackupDelete, BackupRequest, BranchAction, BranchActionResult, BranchRef, CommitDetails, CommitRow, LogFilter, PushPlan, PushRequest, RefsResult, RepoInfo, RepoResult, ResetCheck, RewriteKind, SelectionFile, WorkspaceChoice } from '../shared/protocol.ts'
+import type { ActionRequest, ActionResult, BackupDelete, BackupRequest, BranchAction, BranchActionResult, BranchRef, CommitDetails, CommitRow, LogFilter, PushPlan, PushRequest, RefsResult, RepoInfo, RepoResult, ResetCheck, ReviewNote, RewriteKind, SelectionFile, WorkspaceChoice } from '../shared/protocol.ts'
 import { api, copyText, errorMessage, orca, timedOut } from './api.ts'
 import { backupBlock, suggestBackupName, type BackupBlock } from './backup.ts'
 import { lateResults } from './late.ts'
 import { buildFileTree, orderedFiles, type FileNode } from '../shared/filetree.ts'
+import { notesOfFile } from '../shared/notes.ts'
 import { dirPaths, renderFileTree } from './filetree.ts'
 import { renderBranches } from './branches.ts'
 import { renderCommitList, renderPlaceholder } from './details.ts'
@@ -528,6 +529,8 @@ function setRepo(next: RepoInfo): void {
     detailsCache.clear()
     anchor = cursor = -1
     updateFiles()
+    repoNotes = []
+    loadNotes(next.root)
     // A repository opens on HEAD in the branch tree, as a click on it does.
     filter = { ...filter, branches: ['HEAD'] }
     viewport.scrollTop = 0
@@ -936,9 +939,30 @@ function drawFiles(): void {
     expanded: openFolders,
     current: currentFile,
     open: (file) => openFile(selectionFiles.indexOf(file)),
-    onToggle: drawFiles
+    onToggle: drawFiles,
+    notes: (file) => notesOfFile(repoNotes, file),
+    openNote: (file, note) => openFile(selectionFiles.indexOf(file), note.id)
   })
 }
+
+/** The review notes of the repository: each shows under the files of the selection whose diff shows it. */
+let repoNotes: ReviewNote[] = []
+let notesToken = 0
+
+/** Loads the notes of `root`; a failure shows none. */
+function loadNotes(root: string): void {
+  const token = ++notesToken
+  void api.notes(root).then((answer) => answer.notes, () => []).then((notes) => {
+    if (token !== notesToken) return
+    repoNotes = notes
+    if (fileTree.length) drawFiles()
+  })
+}
+
+// A note was added, answered, resolved or deleted, here or in a Diff tab: its rows under the files follow.
+orca.plugin.on('notes.changed', ({ root }: { root: string }) => {
+  if (root === repo?.root) loadNotes(root)
+})
 
 function setAllFolders(open: boolean): void {
   openFolders.clear()
@@ -946,12 +970,12 @@ function setAllFolders(open: boolean): void {
   if (fileTree.length) drawFiles()
 }
 
-/** Makes `selectionFiles[index]` the current file and shows its diff in the Diff tab. */
-function openFile(index: number): void {
+/** Makes `selectionFiles[index]` the current file and shows its diff in the Diff tab, scrolled to the card of `note` when given. */
+function openFile(index: number, note?: string): void {
   if (!repo || index < 0 || index >= selectionFiles.length) return
   currentFile = selectionFiles[index].path
   drawFiles()
-  void openDiff(repo.root, index)
+  void openDiff(repo.root, index, note)
 }
 
 function updateFiles(): void {
@@ -978,6 +1002,8 @@ function updateFiles(): void {
       // The open file stays open when the new selection still changes it.
       if (!selectionFiles.some((file) => file.path === currentFile)) currentFile = null
       filesSection.setSummary(t('filesCount', { count: files.length }))
+      // A new selection's files start at the top: the redraw keeps the place the old tree was scrolled to.
+      filesPane.firstElementChild?.scrollTo(0, 0)
       if (files.length) drawFiles()
       else renderFilesNote('')
     })
@@ -1625,9 +1651,9 @@ async function forcePush(root: string, pushed: PushRequest): Promise<void> {
 }
 
 pushButton.addEventListener('click', () => void push())
-async function openDiff(root: string, index: number): Promise<void> {
+async function openDiff(root: string, index: number, note?: string): Promise<void> {
   try {
-    const result = await api.openDiff(root, filesHashes, selectionFiles[index])
+    const result = await api.openDiff(root, filesHashes, selectionFiles[index], note)
     if (!result.ok) showBanner(result.reason ?? t('openDiffFailed'), 'error')
   } catch (error) {
     showBanner(errorMessage(error), 'error')

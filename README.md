@@ -53,8 +53,16 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   letters (added, modified, deleted, renamed), expand/collapse all. For each file the diff runs from its
   state before the earliest selected commit that touched it to its state after the latest one, so a
   selection across a merge works too. A click (or Enter) opens the file's diff in the Diff tab.
+  Under each file stand its **review notes**, as Azure DevOps lists threads in the file tree of a pull
+  request: the notes the file's diff shows (none under a file renamed without changes or changing type),
+  one row each: a dot of the state (hollow: not sent; yellow: sent, no answer yet; blue: answered; green:
+  confirmed or fixed), the first line, the start of the first message. Resolved notes come last, with a
+  check and pale; the file row counts the others. Hover a note for its path, lines, side, state and
+  whole first message; a click (or Enter) opens the file in the Diff tab at the note's card. The rows
+  follow every change of the notes, here or in the Diff tab.
   Tree keys (here and in the branch tree): ↑ / ↓ move between rows, → opens a folder or steps into it,
-  ← closes it or steps up to the parent folder, Space opens or closes a folder; each tree is one Tab stop.
+  ← closes it or steps up to the parent folder (from a note, to its file), Space opens or closes a
+  folder; each tree is one Tab stop, and a redraw keeps its scroll position.
 - **Details section**: one row per selected commit (short hash, title, author); click a row to expand
   the full message, author, committer, date and branches. A single selected commit is expanded at once.
 - **Diff tab**: one editor tab per repository; the next file you open replaces its content. Side by

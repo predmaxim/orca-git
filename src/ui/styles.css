@@ -1786,6 +1786,51 @@ input[type='radio']:focus-visible {
   font-size: 12px;
 }
 
+/* A file's count of open review notes, and the rows of its notes under it. */
+.ft-notes {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.ft-notes .icon {
+  width: 12px;
+  height: 12px;
+}
+
+.ft-note {
+  font-size: 12px;
+}
+
+.ft-note.resolved {
+  opacity: 0.5;
+}
+
+/* The state of a note: 14 px wide like the check of a resolved one, so the line numbers line up. */
+.note-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin: 0 3px;
+  border-radius: 50%;
+}
+
+.note-dot.tone-unsent {
+  border: 1.5px solid var(--muted-fg);
+}
+
+.note-dot.tone-waiting {
+  background: var(--state-wait);
+}
+
+.note-dot.tone-answered {
+  background: var(--state-info);
+}
+
+.note-dot.tone-done {
+  background: var(--state-done);
+}
+
 /* ---------- Diff tab ---------- */
 
 /* An editor tab: Orca paints its editors with the background, not the card. */

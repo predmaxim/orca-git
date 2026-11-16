@@ -28,7 +28,7 @@ export function append(el: Element, children: Child[]): void {
  * closed folder or enters an open one, ← closes an open folder or goes up to the row's folder, Enter
  * clicks a row and Space a folder. A folder row has aria-expanded and opens or closes on click;
  * `depths[i]` is how deep `rows[i]` sits, one deeper than its folder. The tree is one Tab stop, and a
- * redraw keeps focus on the row with the same data-key.
+ * redraw keeps focus on the row with the same data-key and the place the tree is scrolled to.
  */
 export function mountTree(container: HTMLElement, rows: HTMLElement[], depths: number[], cls?: string): void {
   const active = document.activeElement as HTMLElement | null
@@ -54,7 +54,9 @@ export function mountTree(container: HTMLElement, rows: HTMLElement[], depths: n
   // The focused row is gone (its folder closed): focus moves to the deepest folder still drawn above it, else the first row.
   const heir = key === undefined || kept ? kept : (rows.filter((row) => key.startsWith(`${row.dataset.key}/`)).pop() ?? rows[0])
   tabStop(heir ?? rows[0])
+  const top = container.firstElementChild?.scrollTop ?? 0
   container.replaceChildren(tree)
+  tree.scrollTop = top
   heir?.focus()
 }
 
