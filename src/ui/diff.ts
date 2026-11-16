@@ -318,11 +318,11 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { notes
   document.addEventListener('keydown', onKey)
   container.replaceChildren(view)
   const shown = load()
-  const loaded = notes.load()
-  // The note's card is in the rows only once both are in; then reveal finds the file loaded and does not load it again.
+  void notes.load()
+  // Once the file is shown, reveal finds it loaded and does not load it again; the notes view waits for its list itself.
   const id = options.reveal
   if (id)
-    void Promise.all([loaded, shown]).then(([, ok]) => {
+    void shown.then((ok) => {
       if (ok) notes.reveal(id)
     })
   return {

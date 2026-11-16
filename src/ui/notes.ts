@@ -24,7 +24,7 @@ export interface NotesView {
   attach(lines: HTMLElement, diff: FileDiff, file: SelectionFile, mode: DiffMode): void
   /** Loads the notes of the repository, and with them the answers the worker reads; a failure or a warning shows in the Notes list. */
   load(): Promise<void>
-  /** Shows the file of this tab the note `id` shows in and scrolls to its card, as a click on it in the list does; call it once the notes and the file are loaded. */
+  /** Shows the file of this tab the note `id` shows in and scrolls to its card, as a click on it in the list does; call it once the file is shown. Before a list of notes is applied it waits for one. */
   reveal(id: string): void
   /** Ctrl+Shift+A: opens the editor on the current selection; false when there is none to note. */
   addFromSelection(): boolean
@@ -273,6 +273,9 @@ export function mountNotes(options: {
   let warning = ''
   let refused = ''
   let loads = 0
+  /** A list has been applied; until then a reveal waits in `pending`, as a load overtaken by a newer one applies none. */
+  let applied = false
+  let pending: string | null = null
   /** The agent chosen last, first in the menu. */
   let lastAgent = options.agent
 
@@ -335,9 +338,28 @@ export function mountNotes(options: {
     }
     // Only the latest answer is shown, and none after dispose.
     if (mine !== loads) return
-    if (list) notes = list
+    if (list) {
+      notes = list
+      applied = true
+    }
     warning = said
     refresh()
+    if (applied && pending) {
+      const id = pending
+      pending = null
+      revealNote(id)
+    }
+  }
+
+  /** Shows the file of this tab the note `id` shows in and scrolls to its card; before the first list, once it is applied. */
+  function revealNote(id: string): void {
+    if (!applied) {
+      pending = id
+      return
+    }
+    const note = notes.find((n) => n.id === id)
+    const index = note ? fileOf(note) : -1
+    if (index >= 0) reveal(index, id)
   }
 
   /** Drops the threads `ids` the worker no longer has, and the editor open in one of them. */
@@ -948,11 +970,7 @@ export function mountNotes(options: {
       })
     },
     load,
-    reveal(id) {
-      const note = notes.find((n) => n.id === id)
-      const index = note ? fileOf(note) : -1
-      if (index >= 0) reveal(index, id)
-    },
+    reveal: revealNote,
     addFromSelection: add,
     dispose() {
       loads++
