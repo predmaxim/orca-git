@@ -441,6 +441,9 @@ keeps them all.
   a worker's answer over 1 MiB. The panel sends only the selected commits and the clicked file, and the
   worker lists the files again: Orca refuses a frame message over 65 KiB ("message too large", Orca as of
   2026-11-13), which a list of a thousand files exceeds.
+- The Files section lists a selection while its files fit in Orca's 1 MiB answer: about 3,800 files with
+  50-character paths, 1,600 renamed ones with 200-character paths (each file carries the ids of both its sides, for the review notes). A larger
+  selection shows Orca's refusal instead of the files, and its Diff tab cannot be opened from them.
 - The Diff tab keeps its selection, not its files: a new worker lists them again from git, and when the
   selected commits are gone (rebased away and collected), the tab shows its placeholder until you open a
   file again. When the files do not fit in the 900,000 bytes, the new worker centers them on the file the
