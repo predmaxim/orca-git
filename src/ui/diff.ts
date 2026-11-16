@@ -25,6 +25,8 @@ export interface DiffOptions {
   onNoteAgent(agent: string): void
   /** Called when the user moves to another file with the arrows. */
   onIndex(index: number): void
+  /** Called when the note editor closes: saved, cancelled, or its thread gone. */
+  onEditorClosed(): void
   /** The id of a note to scroll to once, when the notes and the file are loaded. */
   reveal?: string
 }
@@ -164,6 +166,7 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { notes
     files,
     agent: options.noteAgent,
     onAgent: onNoteAgent,
+    closed: () => options.onEditorClosed(),
     rerender: () => {
       const top = body.scrollTop
       render()

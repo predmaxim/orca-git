@@ -128,7 +128,9 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   lines are outside the changed regions; else the tab opens the commit whose own diff writes the note's
   content, scrolls to it there, and the panel showing that repository selects the commit in Commits (on
   HEAD's history first, else among every branch) and highlights the note's file in Files, without
-  taking the keyboard. Opening the list loads
+  taking the keyboard. While a note or a reply you are writing holds text or images, the tab does not drop it
+  for another file or commit asked for from the panel or the Notes list: it shows the editor, says under it
+  that the other file opens once you save or cancel the note, and opens it then. Opening the list loads
   the notes again, so the agent's answers are read then too. Notes are kept in the plugin's storage, up
   to 200 per repository (see Limitations). When the notes cannot be loaded, the answers cannot be saved,
   or a delete, Send again, Resolved, Open again or the opening of a note's commit is refused, the Notes

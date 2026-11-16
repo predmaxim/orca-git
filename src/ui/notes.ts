@@ -28,6 +28,8 @@ export interface NotesView {
   reveal(id: string): void
   /** Ctrl+Shift+A: opens the editor on the current selection; false when there is none to note. */
   addFromSelection(): boolean
+  /** When the open editor holds what the user typed or attached: shows it (its file first) with `reason` under it, and true. */
+  hold(reason: string): boolean
   /** The notes of the diff shown, oldest first. */
   visible(): ReviewNote[]
   dispose(): void
@@ -252,6 +254,8 @@ export function mountNotes(options: {
   /** The agent the notes were last sent to, and the call that remembers a new choice. */
   agent?: string
   onAgent(agent: string): void
+  /** Called when the open editor closes: saved, cancelled, or its thread gone. */
+  closed(): void
 }): NotesView {
   const { root, files } = options
   let notes: ReviewNote[] = []
@@ -380,7 +384,7 @@ export function mountNotes(options: {
   /** Drops the threads `ids` the worker no longer has, and the editor open in one of them. */
   function forget(ids: string[]): void {
     notes = notes.filter((n) => !ids.includes(n.id))
-    if (editor?.id && ids.includes(editor.id)) editor = null
+    if (editor?.id && ids.includes(editor.id)) drop()
     refresh()
   }
 
@@ -552,9 +556,28 @@ export function mountNotes(options: {
     area.focus()
   }
 
-  function closeEditor(): void {
+  /** Forgets the open editor: an opening of the tab may wait for it. */
+  function drop(): void {
     editor = null
+    options.closed()
+  }
+
+  function closeEditor(): void {
+    drop()
     options.rerender()
+  }
+
+  /** Brings the open editor into view and focus; one in another file of the tab, that file first (with Whole file when its lines need it). */
+  function showEditor(open: Editor): void {
+    const focus = () => {
+      if (!open.el.isConnected) return false
+      open.el.scrollIntoView({ block: 'nearest' })
+      open.area.focus({ preventScroll: true })
+      return true
+    }
+    if (focus()) return
+    const index = fileOf(open.anchor)
+    if (index >= 0) options.show(index, false, () => void (focus() || options.show(index, true, focus)))
   }
 
   async function save(): Promise<void> {
@@ -580,7 +603,7 @@ export function mountNotes(options: {
           : await api.noteReply(root, open.id, body, images)
       if (!result.ok) open.error.textContent = result.reason
       else if (result.note) {
-        if (editor === open) editor = null
+        if (editor === open) drop()
         put(result.note)
       }
     } catch (caught) {
@@ -876,8 +899,8 @@ export function mountNotes(options: {
     ], sendButton)
   }
 
-  /** The file of this tab the note shows in, the one shown first; -1: none. */
-  const fileOf = (n: ReviewNote) => noteFileIndex(files, n, file ? files.indexOf(file) : -1)
+  /** The file of this tab the note (or an editor's anchor) shows in, the one shown first; -1: none. */
+  const fileOf = (n: Pick<ReviewNote, 'side' | 'blob' | 'path'>) => noteFileIndex(files, n, file ? files.indexOf(file) : -1)
 
   function item(n: ReviewNote): HTMLElement {
     const index = fileOf(n)
@@ -988,6 +1011,15 @@ export function mountNotes(options: {
     load,
     reveal: revealNote,
     addFromSelection: add,
+    hold(reason) {
+      const open = editor
+      if (!open || !typed(open)) return false
+      // A warning, not a failure: yellow, under the editor's own errors.
+      open.el.querySelector('.d-note-wait')?.remove()
+      open.el.append(h('div', { class: 'd-note-wait', role: 'status' }, reason))
+      showEditor(open)
+      return true
+    },
     visible: () => shown,
     dispose() {
       loads++

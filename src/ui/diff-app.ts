@@ -4,7 +4,7 @@ import { api, errorMessage, orca } from './api.ts'
 import { mountDiff, showDiffPlaceholder, type DiffMode } from './diff.ts'
 import { h } from './dom.ts'
 import { revealToDo } from './revealonce.ts'
-import { pickLocale, setLocale } from '../shared/i18n.ts'
+import { pickLocale, setLocale, t } from '../shared/i18n.ts'
 
 setLocale(pickLocale(orca.locale))
 
@@ -57,6 +57,8 @@ let root: string | null = null
 let view: ReturnType<typeof mountDiff> | null = null
 /** The opening `view` shows. */
 let shownOpen: string | null = null
+/** The worker has a newer opening than `view`, which holds a note the user is writing: it shows once the editor closes. */
+let waiting = false
 let token = 0
 
 /** Shows what the worker keeps for this tab's repository; the placeholder when it keeps nothing. */
@@ -71,7 +73,15 @@ async function show(): Promise<void> {
   }
   if (mine !== token) return
   // The same opening read again (a new tab reads when it starts and on diff.show): the view stays, so its scroll to the note still comes.
-  if (view && state && state.open === shownOpen) return
+  if (view && state && state.open === shownOpen) {
+    waiting = false
+    return
+  }
+  // What the user typed is not dropped for another opening (a click in Files or on a note of another commit): the view stays and says why.
+  // Waiting first: hold() may step the view to the editor's file, and that step must not reach the worker.
+  waiting = view !== null && state !== null
+  if (waiting && view!.notes.hold(t('diffOpenWaits'))) return
+  waiting = false
   view?.dispose()
   view = null
   if (error) app.replaceChildren(h('div', { class: 'diff-view' }, h('div', { class: 'diff-note error' }, error)))
@@ -96,8 +106,13 @@ async function show(): Promise<void> {
         prefs.noteAgent = agent
         localStorage.setItem(PREFS_KEY, JSON.stringify(prefs))
       },
-      // The worker keeps the index (a recreated tab opens on this file) and tells the sidebar.
-      onIndex: (index) => void api.diffIndex(state.root, index).catch(() => undefined),
+      // The worker keeps the index (a recreated tab opens on this file) and tells the sidebar; not while a newer opening waits, whose files the worker holds.
+      onIndex: (index) => {
+        if (!waiting) void api.diffIndex(state.root, index).catch(() => undefined)
+      },
+      onEditorClosed: () => {
+        if (waiting) void show()
+      },
       reveal: reveal ?? undefined
     })
     shownOpen = state.open

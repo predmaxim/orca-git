@@ -2316,6 +2316,16 @@ input[type='radio']:focus-visible {
   display: none;
 }
 
+/* An opening of the tab waits for the editor to close. */
+.d-note-wait {
+  margin-top: 4px;
+  color: var(--state-wait);
+}
+
+:root.light .d-note-wait {
+  color: color-mix(in srgb, var(--state-wait) 50%, black);
+}
+
 /* The images of a message, under its text; in the editor, under the field, each with Remove, then Attach a file. */
 .d-note-images {
   display: flex;

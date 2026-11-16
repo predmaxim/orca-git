@@ -57,8 +57,8 @@ export function notesOfFile(notes: ReviewNote[], file: SelectionFile): ReviewNot
 }
 
 /** The file a note shows in: the current one first, then the one at the note's path on its side, then the first; -1: none. */
-export function noteFileIndex(files: SelectionFile[], note: ReviewNote, current: number): number {
-  const shows = (f: SelectionFile | undefined): boolean => f !== undefined && notesOfFile([note], f).length > 0
+export function noteFileIndex(files: SelectionFile[], note: Pick<ReviewNote, 'side' | 'blob' | 'path'>, current: number): number {
+  const shows = (f: SelectionFile | undefined): boolean => f !== undefined && note.blob === noteBlob(f, note.side)
   if (shows(files[current])) return current
   const at = files.findIndex((f) => shows(f) && (note.side === 'new' ? f.path : f.oldPath ?? f.path) === note.path)
   return at >= 0 ? at : files.findIndex(shows)
