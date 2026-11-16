@@ -107,7 +107,9 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   every message under its author, Delete all asks once more and deletes every thread of the repository.
   A click on a note opens it where it shows: in a file of the tab, scrolled to, with Whole file when its
   lines are outside the changed regions; else the tab opens the commit whose own diff writes the note's
-  content, scrolls to it there, and the panel selects that commit. Opening the list loads
+  content, scrolls to it there, and the panel showing that repository selects the commit in Commits (on
+  HEAD's history first, else among every branch) and highlights the note's file in Files, without
+  taking the keyboard. Opening the list loads
   the notes again, so the agent's answers are read then too. Notes are kept in the plugin's storage, up
   to 200 per repository (see Limitations). When the notes cannot be loaded, the answers cannot be saved,
   or a delete, Send again, Resolved, Open again or the opening of a note's commit is refused, the Notes

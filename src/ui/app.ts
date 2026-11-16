@@ -806,14 +806,21 @@ function selectRange(to: number, additive: boolean): void {
   selectionChanged()
 }
 
-/** Selects a commit asked for from outside: on HEAD's history first, else among every branch. */
-async function revealCommit(hash: string): Promise<void> {
+/**
+ * Selects a commit asked for from outside: on HEAD's history first, else among every branch. `focus: false`
+ * leaves the keyboard where it is; `file` becomes the current file once the selection's files load, if it is among them.
+ */
+async function revealCommit(hash: string, { focus = true, file }: { focus?: boolean; file?: string } = {}): Promise<void> {
   await loadUntil(() => indexByHash.has(hash))
   if (!indexByHash.has(hash) && filter.branches?.length) applyFilter({ branches: [] })
-  await jumpTo(hash)
+  await jumpTo(hash, focus)
+  if (!file || !selected.has(hash)) return
+  const token = filesToken
+  await filesLoad
+  if (token === filesToken) markCurrentFile(file)
 }
 
-async function jumpTo(hash: string): Promise<void> {
+async function jumpTo(hash: string, focus = true): Promise<void> {
   await loadUntil(() => indexByHash.has(hash))
   const index = indexByHash.get(hash)
   if (index === undefined) {
@@ -822,7 +829,7 @@ async function jumpTo(hash: string): Promise<void> {
   }
   selectOnly(index)
   viewport.scrollTop = Math.max(0, index * rowH - viewport.clientHeight / 3)
-  viewport.focus({ preventScroll: true })
+  if (focus) viewport.focus({ preventScroll: true })
 }
 
 viewport.addEventListener('mousedown', (event) => {
@@ -1627,13 +1634,23 @@ async function openDiff(root: string, index: number): Promise<void> {
   }
 }
 
-// The Diff tab stepped to another file: highlight it here too, if it is still in this selection. No diff.open: it is already shown.
-orca.plugin.on('diff.current', ({ root, path }: { root: string; path: string }) => {
-  if (root !== repo?.root || !selectionFiles.some((file) => file.path === path)) return
+/** Makes `path` the current file of the Files section, its folders open and scrolled to, if this selection changes it. */
+function markCurrentFile(path: string): void {
+  if (!selectionFiles.some((file) => file.path === path)) return
   currentFile = path
   for (const dir of dirPaths(fileTree)) if (path.startsWith(`${dir}/`)) openFolders.add(dir)
   drawFiles()
   filesPane.querySelector('.ft-row.current')?.scrollIntoView({ block: 'nearest' })
+}
+
+// The Diff tab stepped to another file: highlight it here too, if it is still in this selection. No diff.open: it is already shown.
+orca.plugin.on('diff.current', ({ root, path }: { root: string; path: string }) => {
+  if (root === repo?.root) markCurrentFile(path)
+})
+
+// The Diff tab opened a review note in its own commit: select that commit and its file here, leaving the keyboard where it is.
+orca.plugin.on('commit.reveal', ({ root, hash, path }: { root: string; hash: string; path: string }) => {
+  if (root === repo?.root) void revealCommit(hash, { focus: false, file: path })
 })
 
 // ---------- Keyboard ----------
