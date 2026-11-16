@@ -412,10 +412,11 @@ keeps them all.
 
 - Local workspaces only: SSH, WSL and paired-host workspaces are not supported yet.
 - The diff viewer is read-only, and very large diffs are cut after 20,000 lines.
-- The Diff tab steps through at most 2,000 files: for a larger selection it gets the 2,000 around the
-  file you clicked. The panel sends only the selected commits and the clicked file, and the worker lists
-  the files again: Orca refuses a frame message over 65 KiB ("message too large", Orca as of 2026-11-13),
-  which a list of a thousand files exceeds.
+- The Diff tab steps through the files around the one you clicked that fit in 900,000 bytes of JSON
+  (about 3,200 files with 50-character paths, 1,400 renamed ones with 200-character paths): Orca refuses
+  a worker's answer over 1 MiB. The panel sends only the selected commits and the clicked file, and the
+  worker lists the files again: Orca refuses a frame message over 65 KiB ("message too large", Orca as of
+  2026-11-13), which a list of a thousand files exceeds.
 - The Diff tab's content lives in the plugin's worker: after Orca restarts, a restored Diff tab shows
   its placeholder until you open a file again.
 - Conflicts during a rewrite, cherry-pick or revert are not resolved in the panel; the operation is

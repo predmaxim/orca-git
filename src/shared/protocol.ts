@@ -354,6 +354,8 @@ export interface DiffTabState {
   root: string
   files: SelectionFile[]
   index: number
+  /** The id of the note the tab scrolls to once it shows the file; `diff.state` gives it once. */
+  reveal?: string
 }
 
 declare module 'orca' {
@@ -383,8 +385,8 @@ declare module 'orca' {
     'repo.fetch': { input: { root: string; id?: string }; output: ActionResult }
     'push.check': { input: { root: string }; output: { ok: true; plan: PushPlan } | { ok: false; reason: string } }
     'push.run': { input: { root: string; push: PushRequest; id?: string }; output: PushResult }
-    /** Opens the Diff tab on the file `path` changed by commit `to` in the selection `hashes`; the worker lists the files. */
-    'diff.open': { input: { root: string; hashes: string[]; path: string; to: string }; output: { ok: boolean; reason?: string } }
+    /** Opens the Diff tab on the file `path` changed by commit `to` in the selection `hashes`; the worker lists the files. `note`: the id of a note the tab scrolls to once; anything but 12 hex is ignored. */
+    'diff.open': { input: { root: string; hashes: string[]; path: string; to: string; note?: string }; output: { ok: boolean; reason?: string } }
     /** Brings forward the Diff tab `diff.open` showed for `root`, without reloading it; `ok: false` if none was shown. */
     'diff.focus': { input: { root: string }; output: { ok: boolean; reason?: string } }
     'diff.state': { input: { root: string }; output: DiffTabState | null }

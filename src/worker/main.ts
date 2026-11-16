@@ -3,13 +3,13 @@ import { appendFileSync, closeSync, constants, existsSync, fstatSync, mkdirSync,
 import { dirname, join, resolve } from 'node:path'
 import type { OrcaWorkerApi, PanelRequestContext } from 'orca/worker'
 import { pickLocale, setLocale, t } from '../shared/i18n.ts'
-import type { ActionResult, DiffTabState, NoteImage, NoteResult, RepoResult, RevealResult, ReviewNote } from '../shared/protocol.ts'
+import type { ActionResult, DiffTabState, NoteImage, NoteResult, RepoResult, RevealResult, ReviewNote, SelectionFile } from '../shared/protocol.ts'
 import { stateOf, unsentOf, waitingFor } from '../shared/notes.ts'
 import { answerImages, attachImage, checkImages, dropImages, putImage, readImage, sweepImages } from './images.ts'
 import { checkRewrite, runAction } from './actions.ts'
 import { checkBackup, checkReset, deleteBackup, runGuarded } from './backup.ts'
 import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
-import { DIFF_ANCHOR, workspaceFor } from './diffTab.ts'
+import { DIFF_ANCHOR, fitWindow, workspaceFor } from './diffTab.ts'
 import { buildFileTree, orderedFiles } from '../shared/filetree.ts'
 import { createGit, type Git } from './git.ts'
 import { readDetails, readLogPage, readRefs } from './log.ts'
@@ -168,17 +168,22 @@ async function diffTab(root: string): Promise<{ workspaceId: string; path: strin
  * a frame message is capped at 65 KiB, too little for a large selection's list.
  */
 async function openDiff(input: any): Promise<{ ok: boolean; reason?: string }> {
-  const { root, hashes, path, to } = input ?? {}
+  const { root, hashes, path, to, note } = input ?? {}
   if (typeof path !== 'string' || typeof to !== 'string') return { ok: false, reason: t('diffInvalid') }
   const files = orderedFiles(buildFileTree(await readSelectionFiles(await gitFor(root), hashes)))
   const index = files.findIndex((file) => file.path === path && file.to === to)
   if (index < 0) return { ok: false, reason: t('diffInvalid') }
+  return showDiff(root, files, index, typeof note === 'string' && /^[0-9a-f]{12}$/.test(note) ? note : undefined)
+}
+
+/** Shows `files` in the Diff tab of `root` on the one at `index`; `reveal` is the note the tab scrolls to once. */
+async function showDiff(root: string, files: SelectionFile[], index: number, reveal?: string): Promise<{ ok: boolean; reason?: string }> {
   const tab = await diffTab(root)
   if ('reason' in tab) return { ok: false, reason: tab.reason }
-  // shortcut: a response to a frame is capped too, so the tab gets at most 2000 files around the clicked one; send them all once it can page.
-  const first = Math.min(Math.max(0, index - 1000), Math.max(0, files.length - 2000))
+  // A response to a frame is capped at 1 MiB: the tab gets the files around this one that fit in 900 000 bytes of JSON.
+  const { first, count } = fitWindow(files, index)
   const previous = diffStates.get(root)
-  diffStates.set(root, { root, files: files.slice(first, first + 2000), index: index - first })
+  diffStates.set(root, { root, files: files.slice(first, first + count), index: index - first, ...(reveal ? { reveal } : {}) })
   try {
     await orcaApi.host.call('editor.open', tab)
   } catch (error) {
@@ -348,12 +353,17 @@ export default function activate(orca: OrcaWorkerApi): void {
 
   handle('diff.focus', focusDiff)
 
-  handle('diff.state', ({ root }) => diffStates.get(root) ?? null)
+  // The tab reveals a note once: a later `diff.show` or a reload of its frame reads the state without it.
+  handle('diff.state', ({ root }) => {
+    const state = diffStates.get(root)
+    if (state?.reveal) diffStates.set(root, { root, files: state.files, index: state.index })
+    return state ?? null
+  })
 
   handle('diff.index', ({ root, index }) => {
     const state = diffStates.get(root)
     if (!state || !Number.isInteger(index) || index < 0 || index >= state.files.length) return { ok: false }
-    diffStates.set(root, { ...state, index })
+    diffStates.set(root, { root, files: state.files, index })
     orca.panels.post('diff.current', { root, path: state.files[index].path })
     return { ok: true }
   })
