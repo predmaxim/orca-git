@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after } from 'node:test'
@@ -157,5 +157,24 @@ test('notes.open shows a note in its commit and asks the panel to select that co
 
   assert.deepEqual(await worker.request('notes.open', { root, id: 'aaaaaaaaaaa2' }), { ok: false, reason: t('noteCommitMissing') })
   assert.deepEqual(await worker.request('notes.open', { root, id: 'bbbbbbbbbbbb' }), { ok: false, reason: t('noteGone') })
+  await worker.deactivate()
+})
+
+test('notes.open refuses a note whose commit turns its file into a symlink: a file that changes type has no notes', async () => {
+  const root = fixture()
+  dirs.push(root)
+  const three = sh(root, 'rev-parse', 'HEAD')
+  rmSync(join(root, 'three.txt'))
+  symlinkSync('one.txt', join(root, 'three.txt'))
+  sh(root, 'add', '-A')
+  sh(root, 'commit', '-qm', 'link')
+  const { body, ...anchor } = draft({ path: 'three.txt', side: 'old', blob: sh(root, 'rev-parse', `${three}:three.txt`), rev: three })
+  const thread = { ...anchor, id: 'aaaaaaaaaaa1', createdAt: 1, messages: [{ id: 'm1', author: 'user', body, at: 1 }] }
+  const storage: any = { [notesKey(root)]: { root, ids: [thread.id] }, [noteKey(root, thread.id)]: thread }
+  const worker = await mountWorker(main, { host: host(root, {}, storage) })
+  // The link commit changes the note's content on the old side (`T`), so it is found, and then its file holds no notes.
+  assert.equal(await findNoteCommit(createGit(root), anchor), sh(root, 'rev-parse', 'HEAD'))
+  assert.deepEqual(await worker.request('notes.open', { root, id: thread.id }), { ok: false, reason: t('noteFileMissing') })
+  assert.equal(worker.posts.some((post: any) => post.event === 'commit.reveal'), false)
   await worker.deactivate()
 })

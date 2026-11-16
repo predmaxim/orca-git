@@ -1,6 +1,6 @@
 import { t } from '../shared/i18n.ts'
 import { stateOf } from '../shared/notes.ts'
-import type { DiffHunk, DiffLine, FileDiff, NoteMessage, NotePoint, NoteSide, ReviewNote } from '../shared/protocol.ts'
+import type { DiffHunk, DiffLine, NoteMessage, NotePoint, NoteSide, ReviewNote } from '../shared/protocol.ts'
 import type { DiffMode } from './diff.ts'
 
 /** Split: the column the selection starts in. Unified: a deleted line starts an old-side selection, any other a new-side one. */
@@ -56,11 +56,6 @@ export function anchor(lines: Map<number, string>, from: NotePoint, to: NotePoin
     .map((n) => lines.get(n)!.slice(n === start.line ? start.col : 0, n === end.line ? end.col : undefined))
     .join('\n')
   return { start, end, quote }
-}
-
-/** The notes whose side of this diff is their blob. */
-export function notesOf(notes: ReviewNote[], diff: Pick<FileDiff, 'oldBlob' | 'newBlob'>): ReviewNote[] {
-  return notes.filter((n) => n.blob === (n.side === 'old' ? diff.oldBlob : diff.newBlob))
 }
 
 /** The part [from, to) of a line a note covers; null when it covers none of it. */

@@ -1,4 +1,4 @@
-import type { NoteMessage, ReviewNote, SelectionFile } from './protocol.ts'
+import type { NoteMessage, NoteSide, ReviewNote, SelectionFile } from './protocol.ts'
 
 /** Limits of review notes; the worker enforces them, the frames use them to size inputs. */
 export const MAX_NOTES = 200
@@ -40,11 +40,19 @@ export const MAX_IMAGE_BYTES = 5242880
 export const MAX_IMAGES = 5
 export const IMAGE_ID = /^[0-9a-f]{12}\.(png|jpg|gif|webp)$/
 
-/** The notes the Diff tab would show on this file of a selection, open ones by line, then resolved ones by line; none on a file whose two sides are one blob (a pure rename or mode change) or a type change. */
+/**
+ * The blob a note on this side of a file of a selection is tied to, for the panel and the Diff tab alike; none on a file whose
+ * two sides are one blob (a pure rename or mode change) or a type change (git prints its diff as a deletion and an addition).
+ */
+export function noteBlob(file: Pick<SelectionFile, 'status' | 'oldBlob' | 'newBlob'>, side: NoteSide): string | undefined {
+  if (file.oldBlob === file.newBlob || file.status === 'T') return undefined
+  return side === 'old' ? file.oldBlob : file.newBlob
+}
+
+/** The notes the Diff tab shows on this file of a selection (`noteBlob`), open ones by line, then resolved ones by line. */
 export function notesOfFile(notes: ReviewNote[], file: SelectionFile): ReviewNote[] {
-  if (file.oldBlob === file.newBlob || file.status === 'T') return []
   return notes
-    .filter((n) => n.blob === (n.side === 'old' ? file.oldBlob : file.newBlob))
+    .filter((n) => n.blob === noteBlob(file, n.side))
     .sort((a, b) => Number(a.resolvedAt !== undefined) - Number(b.resolvedAt !== undefined) || a.start.line - b.start.line)
 }
 

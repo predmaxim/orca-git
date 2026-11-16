@@ -94,8 +94,9 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   (split), or in unified the line it starts on (a deleted line is the old side, any other the new one);
   while you select, the other side stays out of the selection. The note is tied to the content of the
   file on its side (its blob), so it shows in every diff where that side is the same, also after a
-  rebase or an amend that left the file alone. A note is a **thread**, as in Azure DevOps pull requests:
-  its card stands under the last selected line, in the half of its side in split, with the selected text
+  rebase or an amend that left the file alone. A file that changes type (a file turned into a symlink or
+  back) takes no notes and shows none, as it has none in the panel's Files section. A note is a
+  **thread**, as in Azure DevOps pull requests: its card stands under the last selected line, in the half of its side in split, with the selected text
   highlighted. On top, the thread's state (Resolved; Sent, no answer yet; Not sent; or the verdict of the
   agent's last answer and Fixed), Send again while a send has no answer and **Resolved** (small outlined
   buttons with an icon and a label; **Open again** in their place on a resolved thread), and Delete the

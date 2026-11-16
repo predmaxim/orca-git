@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { NoteMessage, ReviewNote, SelectionFile } from './protocol.ts'
-import { noteFileIndex, notesOfFile, noteTone } from './notes.ts'
+import { noteBlob, noteFileIndex, notesOfFile, noteTone } from './notes.ts'
 
 const A = 'a'.repeat(40)
 const B = 'b'.repeat(40)
@@ -28,6 +28,16 @@ test('notesOfFile: a note shows on the file whose blob of its side is the note b
 test('notesOfFile: no notes on a file with equal blobs or a type change', () => {
   assert.deepEqual(notesOfFile([note('n', 'new', A, 1)], file({ status: 'R', oldPath: 'src/y.ts', newBlob: A })), [])
   assert.deepEqual(notesOfFile([note('n', 'new', B, 1)], file({ status: 'T' })), [])
+})
+
+test('noteBlob: the blob of each side, which the Diff tab ties its cards and new notes to; none on a file with equal blobs or a type change', () => {
+  assert.deepEqual([noteBlob(file(), 'old'), noteBlob(file(), 'new')], [A, B])
+  assert.deepEqual([noteBlob(file({ status: 'A', oldBlob: undefined }), 'old'), noteBlob(file({ status: 'A', oldBlob: undefined }), 'new')], [undefined, B])
+  // A type change: git prints a deletion and an addition, and the tab's diff keeps the first; neither side holds notes.
+  for (const side of ['old', 'new'] as const) {
+    assert.equal(noteBlob(file({ status: 'T' }), side), undefined)
+    assert.equal(noteBlob(file({ status: 'R', oldPath: 'src/y.ts', newBlob: A }), side), undefined)
+  }
 })
 
 test('notesOfFile: open notes by line, then resolved notes by line', () => {

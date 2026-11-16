@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { DiffHunk, NoteMessage, ReviewNote } from '../shared/protocol.ts'
-import { active, anchor, coveredRange, fromBase64, notesOf, notesText, pickSide, sideLines, toBase64, unsent, uploadParts } from './notemodel.ts'
+import { active, anchor, coveredRange, fromBase64, notesText, pickSide, sideLines, toBase64, unsent, uploadParts } from './notemodel.ts'
 
 const hunks: DiffHunk[] = [
   {
@@ -41,11 +41,6 @@ test('points on lines the side lacks move onto it', () => {
 test('nothing selected', () => {
   assert.equal(anchor(sideLines(hunks, 'new'), { line: 1, col: 3 }, { line: 1, col: 3 }), null)
   assert.equal(anchor(new Map(), { line: 1, col: 0 }, { line: 2, col: 4 }), null)
-})
-test('a note shows where its blob is, on its side only', () => {
-  const note = { side: 'new', blob: 'b'.repeat(40) } as ReviewNote
-  assert.deepEqual(notesOf([note], { newBlob: 'b'.repeat(40) }), [note])
-  assert.deepEqual(notesOf([note], { oldBlob: 'b'.repeat(40) }), [])
 })
 test('the part of each line a note covers', () => {
   const note = { side: 'new', start: { line: 1, col: 6 }, end: { line: 3, col: 6 } } as ReviewNote

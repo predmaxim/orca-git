@@ -1,7 +1,7 @@
 // Review notes in the Diff tab: the selection and its button, the editor, the threads under their lines and the list of all notes.
 import type { FileDiff, NoteDraft, NoteImage, NoteMessage, NotePoint, NoteResult, NoteSide, NoteVerdict, ReviewNote, SelectionFile } from '../shared/protocol.ts'
 import { t, type MessageKey } from '../shared/i18n.ts'
-import { lastAnswer, MAX_BODY, MAX_IMAGES, MAX_QUOTE, MAX_REVIEW_SKILLS, noteFileIndex, stateOf, unsentOf } from '../shared/notes.ts'
+import { lastAnswer, MAX_BODY, MAX_IMAGES, MAX_QUOTE, MAX_REVIEW_SKILLS, noteBlob, noteFileIndex, notesOfFile, stateOf, unsentOf } from '../shared/notes.ts'
 import { api, copyText, errorMessage, orca } from './api.ts'
 import type { DiffMode } from './diff.ts'
 import { h, icon, ICONS } from './dom.ts'
@@ -10,7 +10,7 @@ import { markRange } from './highlight.ts'
 import { disposeImages, thumbnail, uploadImage } from './images.ts'
 import { mdDom } from './markdown.ts'
 import { showMenu, showPopover, type MenuEntry } from './menu.ts'
-import { active, anchor, authorOf, coveredRange, notesOf, notesText, pickSide, sideLines, unsent } from './notemodel.ts'
+import { active, anchor, authorOf, coveredRange, notesText, pickSide, sideLines, unsent } from './notemodel.ts'
 import { browseDir, skillSuggestions } from './skillmodel.ts'
 
 export interface NotesView {
@@ -315,7 +315,8 @@ export function mountNotes(options: {
     sendButton.style.display = open ? '' : 'none'
   }
   syncCount()
-  const blobOf = (side: NoteSide) => (side === 'old' ? diff?.oldBlob : diff?.newBlob)
+  // The rule of the panel's Files section: the file's blobs (those of the diff for M, A, D and R), none on a type change.
+  const blobOf = (side: NoteSide) => (file ? noteBlob(file, side) : undefined)
 
   function refresh(): void {
     syncCount()
@@ -972,7 +973,7 @@ export function mountNotes(options: {
       container = lines
       diff = next
       file = nextFile
-      shown = notesOf(notes, next).sort((a, b) => a.createdAt - b.createdAt)
+      shown = notesOfFile(notes, nextFile).sort((a, b) => a.createdAt - b.createdAt)
       // The side a selection starts on: CSS keeps the other side and the cards out of it.
       lines.addEventListener('mousedown', (event) => {
         if (event.button !== 0) return
