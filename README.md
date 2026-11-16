@@ -79,9 +79,11 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   once. Toggle **Whole file** for full context, jump between changes with F7 / Shift+F7 and
   between the files of the selection it was opened from with ← / → (keys or header buttons) or Alt+↑ /
   Alt+↓ (counter "3/5 files"); the panel's Files section highlights the file the tab shows. Merge
-  commits are compared with their first parent.
-- **Review notes** in the Diff tab: select text in the code, then press the button that appears at the
-  end of the selection or `Ctrl+Shift+A`, and write a note for an agent in markdown (Enter saves,
+  commits are compared with their first parent. The review has its own group at the end of the header,
+  after a divider: **Notes**, outlined, and **Send to an agent**, filled with Orca's primary color as the
+  tab's main action, each with its count in a circle.
+- **Review notes** in the Diff tab: select text in the code, then press **Note**, the button filled with Orca's
+  primary color that appears at the end of the selection, or `Ctrl+Shift+A`, and write a note for an agent in markdown (Enter saves,
   Shift+Enter adds a line, Esc cancels). A note belongs to one side: the column the selection starts in
   (split), or in unified the line it starts on (a deleted line is the old side, any other the new one);
   while you select, the other side stays out of the selection. The note is tied to the content of the
@@ -89,8 +91,9 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   rebase or an amend that left the file alone. A note is a **thread**, as in Azure DevOps pull requests:
   its card stands under the last selected line, in the half of its side in split, with the selected text
   highlighted. On top, the thread's state (Resolved; Sent, no answer yet; Not sent; or the verdict of the
-  agent's last answer and Fixed), Send again while a send has no answer, **Resolved** and Delete the
-  thread. Below, the messages oldest first, each with its author (You, or Agent and its kind), its time
+  agent's last answer and Fixed), Send again while a send has no answer and **Resolved** (small outlined
+  buttons with an icon and a label; **Open again** in their place on a resolved thread), and Delete the
+  thread (an icon, as Edit and Delete of a message are). Below, the messages oldest first, each with its author (You, or Agent and its kind), its time
   and a Delete button; the agent's messages stand on a tint and carry their own verdict and Fixed; your
   messages not sent yet say Not sent and have Edit (sent text stays as the agent saw it). Deleting the
   last message deletes the thread; an agent's answer you delete does not come back. Every Delete of a
@@ -110,7 +113,7 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   text says so under the field. An edit keeps the message's images as they are.
   A message shows its images as thumbnails 96 px high under its text; a click or Enter opens one over the
   tab with its name and size, and Esc, a click outside it or × closes it. Links open
-  in the browser. **Notes (N)** in the tab's header counts the threads not resolved and lists every
+  in the browser. **Notes** in the tab's header counts the threads not resolved and lists every
   thread of the repository with its file, lines, side, state, count of messages and the start of the
   quote and of the first message, resolved ones last and dimmed; Copy all copies them as markdown with
   every message under its author, Delete all asks once more and deletes every thread of the repository.
@@ -122,10 +125,10 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   the notes again, so the agent's answers are read then too. Notes are kept in the plugin's storage, up
   to 200 per repository (see Limitations). When the notes cannot be loaded, the answers cannot be saved,
   or a delete, Send again, Resolved, Open again or the opening of a note's commit is refused, the Notes
-  button turns yellow, its tooltip says why, and so does
+  button's text and border turn yellow, its tooltip says why, and so does
   a line at the top of the list.
-- **Send notes to an agent**: **Send to an agent (N)** in the Diff tab's header (shown while a note
-  is unsent) opens a menu of agent kinds (the ones Orca lists, plus claude and codex; the last one used
+- **Send notes to an agent**: **Send to an agent** in the Diff tab's header, with the count of unsent
+  notes (shown while a note is unsent), opens a menu of agent kinds (the ones Orca lists, plus claude and codex; the last one used
   first): all unsent notes, or only those of the file shown. The plugin writes a folder
   `.orca-git-log/review-<id>/` in the workspace with `notes.md` (every note: file, lines, the commit it
   was written on, the selected text, the whole thread of messages oldest first with the new ones marked NEW and each answer of the agent naming the messages it answers, and how to answer; the agent writes one answer file per thread, stored as the agent's message of that send), `SKILL.md` (a short guide for an

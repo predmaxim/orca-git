@@ -53,6 +53,8 @@ function openLink(url: string): void {
 
 const label = (key: MessageKey, tone = '') => h('span', { class: `d-label ${tone}` }, t(key))
 const tool = (name: keyof typeof ICONS, key: MessageKey, run: () => void) => h('button', { class: 'tool', title: t(key), 'aria-label': t(key), onclick: run }, icon(name))
+/** A thread's action that says what it does: an outlined button with its icon and its label. */
+const action = (name: keyof typeof ICONS, key: MessageKey, run: () => void) => h('button', { class: 'tool d-note-action', onclick: run }, icon(name), h('span', null, t(key)))
 
 /**
  * Delete, asked once more in place as Delete all is: the first press arms the button (the destructive look; its label and,
@@ -279,19 +281,29 @@ export function mountNotes(options: {
   /** The agent chosen last, first in the menu. */
   let lastAgent = options.agent
 
-  const count = h('span')
-  const button = h('button', { class: 'tool', title: t('notesButtonTip'), onclick: () => void openList() }, icon('note'), count)
+  const count = h('span', { class: 'review-count' })
+  const button = h('button', { class: 'tool review-btn', title: t('notesButtonTip'), onclick: () => void openList() }, icon('note'), h('span', null, t('notesButton')), count)
   // A press would drop the selection the button is for.
   const addButton = h(
     'button',
     { class: 'tool note-add', title: t('noteAdd'), 'aria-label': t('noteAdd'), onmousedown: (event: MouseEvent) => event.preventDefault(), onclick: () => add() },
-    icon('note')
+    icon('note'),
+    h('span', null, t('noteAddShort'))
   )
-  const sendCount = h('span')
-  const sendButton = h('button', { class: 'tool', title: t('notesSend', { count: 0 }), 'aria-label': t('notesSend', { count: 0 }), onclick: () => void openSend() }, icon('send'), sendCount)
+  const sendCount = h('span', { class: 'review-count' })
+  const sendButton = h(
+    'button',
+    { class: 'tool review-btn primary', title: t('notesSend', { count: 0 }), 'aria-label': t('notesSend', { count: 0 }), onclick: () => void openSend() },
+    icon('send'),
+    h('span', null, t('notesSendButton')),
+    sendCount
+  )
   const notices = () => [refused, warning].filter(Boolean)
   const syncCount = () => {
-    count.textContent = `${t('notesButton')} (${active(notes).length})`
+    const unresolved = active(notes).length
+    count.textContent = String(unresolved)
+    // The label and the count read as one name, as the button's text said before it had a count of its own.
+    button.ariaLabel = `${t('notesButton')} (${unresolved})`
     const said = notices()
     button.classList.toggle('notes-warn', said.length > 0)
     button.title = said.length ? said.join('\n') : t('notesButtonTip')
@@ -621,7 +633,7 @@ export function mountNotes(options: {
       unfolded.delete(n.id)
       void change(n.id, api.noteResolve(root, n.id, yes)).then(() => refocus(n.id, '.d-note-toggle'))
     }
-    const toggle = resolved ? tool('undo', 'noteReopen', () => resolve(false)) : tool('check', 'noteResolve', () => resolve(true))
+    const toggle = resolved ? action('undo', 'noteReopen', () => resolve(false)) : action('check', 'noteResolve', () => resolve(true))
     toggle.classList.add('d-note-toggle')
     return h(
       'div',
@@ -641,7 +653,7 @@ export function mountNotes(options: {
             ]
           : [...labels(n), h('span', { class: 'spacer' })]),
         // Sending again takes the sent mark off the messages nobody answered, so they go with the next sending.
-        stateOf(n) === 'waiting' ? tool('refresh', 'noteResend', () => void change(n.id, api.noteResend(root, n.id))) : null,
+        stateOf(n) === 'waiting' ? action('refresh', 'noteResend', () => void change(n.id, api.noteResend(root, n.id))) : null,
         toggle,
         dropTool('noteDeleteThread', () => void remove([n.id]))
       ),
@@ -921,9 +933,10 @@ export function mountNotes(options: {
     if (!range) return
     const rects = range.getClientRects()
     const end = rects[rects.length - 1] ?? range.getBoundingClientRect()
-    addButton.style.left = `${Math.max(4, Math.min(end.right + 4, innerWidth - 30))}px`
-    addButton.style.top = `${Math.max(4, Math.min(end.top + end.height / 2 - 13, innerHeight - 30))}px`
+    // In first, so its width is known: the label makes it wider than its height.
     document.body.append(addButton)
+    addButton.style.left = `${Math.max(4, Math.min(end.right + 4, innerWidth - addButton.offsetWidth - 4))}px`
+    addButton.style.top = `${Math.max(4, Math.min(end.top + end.height / 2 - 13, innerHeight - 30))}px`
   }
   // While the press is held the selection collapses first and then grows: only a collapse after it ends the pick.
   const onSelection = () => {

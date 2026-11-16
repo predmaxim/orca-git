@@ -194,9 +194,11 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { notes
       h('span', { class: 'sep' }),
       title,
       h('div', { class: 'spacer' }),
-      ...notes.buttons,
       h('div', { class: 'seg' }, splitButton, unifiedButton),
-      wholeButton
+      wholeButton,
+      // The review's own group, last: what the view shows first, then what to do with the notes.
+      h('span', { class: 'sep' }),
+      ...notes.buttons
     ),
     info,
     body
