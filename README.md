@@ -76,8 +76,12 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   Light, the editor background included. The highlighter knows tokens, not meaning: it cannot tell a
   local function from a global one the way WebStorm does, so a few names are colored by their place
   instead (parameters plain, object keys and properties as fields). A change of the setting applies at
-  once. Toggle **Whole file** for full context, jump between changes with F7 / Shift+F7 and
-  between the files of the selection it was opened from with ← / → (keys or header buttons) or Alt+↑ /
+  once. Toggle **Whole file** for full context: a 5 px map of the whole file then runs along the right
+  edge, past the scroll bar, with a mark for each block of changes (green added, blue modified, gray
+  deleted: the colors of the file statuses) and, over them, a yellow mark for each review note (faded
+  when resolved). The marks are measured from the rows shown, so they follow wrapped lines and opened
+  cards; a hover names the lines (and the note's first line), a click scrolls there. Jump between
+  changes with F7 / Shift+F7 and between the files of the selection it was opened from with ← / → (keys or header buttons) or Alt+↑ /
   Alt+↓ (counter "3/5 files"); the panel's Files section highlights the file the tab shows. Merge
   commits are compared with their first parent. The review has its own group at the end of the header,
   after a divider: **Notes**, outlined, and **Send to an agent**, filled with Orca's primary color as the

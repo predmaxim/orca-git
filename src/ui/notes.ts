@@ -28,6 +28,8 @@ export interface NotesView {
   reveal(id: string): void
   /** Ctrl+Shift+A: opens the editor on the current selection; false when there is none to note. */
   addFromSelection(): boolean
+  /** The notes of the diff shown, oldest first. */
+  visible(): ReviewNote[]
   dispose(): void
 }
 
@@ -985,6 +987,7 @@ export function mountNotes(options: {
     load,
     reveal: revealNote,
     addFromSelection: add,
+    visible: () => shown,
     dispose() {
       loads++
       document.removeEventListener('mouseup', onUp)

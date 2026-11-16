@@ -1918,13 +1918,63 @@ input[type='radio']:focus-visible {
   text-align: left;
 }
 
+/* The body and the map of the file at its right edge. */
+.diff-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
 .diff-body {
   flex: 1;
+  min-width: 0;
   overflow: auto;
   outline: 0;
   user-select: text;
   background: var(--code-bg);
   color: var(--code-fg);
+}
+
+/* Whole file: the map, as tall as the body, its marks where their rows are in the file. */
+.diff-overview {
+  width: 5px;
+  flex: none;
+  position: relative;
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+
+.diff-overview > div {
+  position: absolute;
+  left: 0;
+  right: 0;
+  cursor: pointer;
+}
+
+.diff-overview .ov-added {
+  background: var(--st-added);
+}
+
+.diff-overview .ov-deleted {
+  background: var(--st-deleted);
+}
+
+.diff-overview .ov-modified {
+  background: var(--st-modified);
+}
+
+/* The notes, over the changes: the color their text is marked with. */
+.diff-overview .ov-note,
+.diff-overview .ov-note-resolved {
+  background: var(--state-wait);
+}
+
+:root.light .diff-overview .ov-note,
+:root.light .diff-overview .ov-note-resolved {
+  background: color-mix(in srgb, var(--state-wait) 75%, black);
+}
+
+.diff-overview .ov-note-resolved {
+  opacity: 0.4;
 }
 
 .diff-note {
