@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { accessSync, constants, statSync } from 'node:fs'
+import { accessSync, constants, lstatSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, posix, win32 } from 'node:path'
 import { t } from '../shared/i18n.ts'
@@ -75,7 +75,7 @@ export function gitEnv(git: string) {
   }
   const keep = drop
   // Upper case: Windows reads variable names in any case. An empty PATH would mean the current folder: none then.
-  return Object.fromEntries(
+  const env = Object.fromEntries(
     Object.entries(process.env).flatMap(([key, value]) => {
       if (keep.has(key.toUpperCase()) || /^GIT_CONFIG_(KEY|VALUE)_\d+$/i.test(key)) return []
       if (key.toUpperCase() !== 'PATH') return [[key, value]]
@@ -83,4 +83,34 @@ export function gitEnv(git: string) {
       return dirs.length ? [[key, dirs.join(delimiter)]] : []
     })
   )
+  // shortcut: stablyai/orca#43189, see sessionRuntimeDir; remove with it.
+  const runtime = sessionRuntimeDir(process.env, process.getuid?.(), (path) => {
+    try {
+      return lstatSync(path)
+    } catch {
+      return null
+    }
+  })
+  return runtime ? { ...env, XDG_RUNTIME_DIR: runtime } : env
+}
+
+/** What `lstat` says about a folder: enough to trust it as the user's runtime folder. */
+export interface FolderStat {
+  isDirectory(): boolean
+  isSymbolicLink(): boolean
+  uid: number
+  mode: number
+}
+
+/**
+ * The user's runtime folder for git when the worker has no session: `/run/user/<uid>` if it is a folder (not a link),
+ * the user's own and closed to others; null when the session reaches the worker or the folder is not to be trusted.
+ * shortcut: Orca forks plugin workers without XDG_RUNTIME_DIR and DBUS_SESSION_BUS_ADDRESS (stablyai/orca#43189), so a
+ * credential helper on the session bus (libsecret) cannot run; remove this once Orca passes them.
+ */
+export function sessionRuntimeDir(env: Record<string, string | undefined>, uid: number | undefined, stat: (path: string) => FolderStat | null): string | null {
+  if (env.XDG_RUNTIME_DIR || env.DBUS_SESSION_BUS_ADDRESS || uid === undefined) return null
+  const dir = `/run/user/${uid}`
+  const found = stat(dir)
+  return found && found.isDirectory() && !found.isSymbolicLink() && found.uid === uid && (found.mode & 0o077) === 0 ? dir : null
 }
