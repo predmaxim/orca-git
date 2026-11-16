@@ -383,11 +383,11 @@ export function mountNotes(options: {
 
   /**
    * Shows the file of this tab the note `id` shows in and scrolls to its card; before the first list, once it is applied; a note
-   * that may be carried to the file shown (a row of the panel's Files), once its places there come.
+   * that may be carried to the file shown (a row of the panel's Files), once its places there come, or `unplaced`: they did not.
    */
-  function revealNote(id: string): void {
+  function revealNote(id: string, unplaced = false): void {
     const note = notes.find((n) => n.id === id)
-    pending = !applied || (note && file && !known.has(file) && placeTarget(note, file) !== undefined) ? id : null
+    pending = !applied || (!unplaced && note && file && !known.has(file) && placeTarget(note, file) !== undefined) ? id : null
     if (pending) return
     const index = note ? shownIn(note) : -1
     if (index >= 0) reveal(index, id)
@@ -929,7 +929,9 @@ export function mountNotes(options: {
 
   /**
    * Asks the worker where the notes of other versions of `of` stand on it, when a note may be one (`placeCandidate`); its answer
-   * redraws unless the tab asked again since, for another file or a new list. Until it comes, the places last taken for the file stay.
+   * redraws unless the tab asked again since, for another file or a new list. Until it comes, the places last taken for the file
+   * stay, and so they do when the request fails (the worker logs its own errors): an empty answer would take a carried card away,
+   * with an editor open in it that the tab then keeps waiting for.
    */
   function place(of: SelectionFile): void {
     const mine = ++placing
@@ -941,18 +943,19 @@ export function mountNotes(options: {
     }
     void api
       .notesPlace(root, [of])
-      // The worker logs what git did not answer: the notes are not carried.
-      .then((answer) => answer.places[0] ?? [], (): NotePlace[] => [])
+      .then((answer) => answer.places[0] ?? [], () => null)
       .then((next) => {
         if (mine !== placing) return
-        known.set(of, next)
-        // The same places again (a new list that moved none) redraw nothing: a redraw disarms a Delete pressed once.
-        if (JSON.stringify(next) !== JSON.stringify(places)) {
-          places = next
-          refresh()
+        if (next) {
+          known.set(of, next)
+          // The same places again (a new list that moved none) redraw nothing: a redraw disarms a Delete pressed once.
+          if (JSON.stringify(next) !== JSON.stringify(places)) {
+            places = next
+            refresh()
+          }
         }
-        // A reveal of a note that may be carried here waited for these places.
-        if (pending) revealNote(pending)
+        // A reveal of a note that may be carried here waited for these places; without them, it goes where the note shows.
+        if (pending) revealNote(pending, !next)
       })
   }
 
@@ -968,7 +971,7 @@ export function mountNotes(options: {
         h(
           'span',
           { class: 'notes-where' },
-          h('span', { class: 'path' }, `${n.path}:${lineSpan(n)}`),
+          h('span', { class: 'path', title: `${n.path}:${lineSpan(n)}` }, `${n.path}:${lineSpan(n)}`),
           label(n.side === 'old' ? 'noteSideOld' : 'noteSideNew'),
           ...labels(n),
           n.outdated ? h('span', { class: 'd-label outdated', title: t('noteOutdatedTip', { rev: shortHash(n.rev) }) }, t('noteOutdated')) : null,

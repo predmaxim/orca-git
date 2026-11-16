@@ -2576,10 +2576,12 @@ input[type='radio']:focus-visible {
   white-space: nowrap;
 }
 
+/* Wraps: the labels (Outdated with the state) would leave no room for the path and its lines in the 400 px list. */
 .notes-where {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 2px 6px;
 }
 
 .notes-where .path {
