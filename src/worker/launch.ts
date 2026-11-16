@@ -83,6 +83,7 @@ export function gitEnv(git: string) {
       return dirs.length ? [[key, dirs.join(delimiter)]] : []
     })
   )
+  // shortcut: stablyai/orca#43189, see sessionRuntimeDir; remove with it.
   const runtime = sessionRuntimeDir(process.env, process.getuid?.(), (path) => {
     try {
       return lstatSync(path)

@@ -273,12 +273,13 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
 - **Refresh** re-reads the log and branches; **Fetch** runs
   `git -c fetch.parallel=2 fetch --all --no-prune --no-prune-tags` (so `fetch.prune`,
   `remote.<name>.prune` and `fetch.pruneTags` in your config delete neither remote branches nor local
-  tags such as backups) and reports the result in the banner. It never asks for a password: it works
-  through the SSH agent and git's credential helpers. Orca starts the plugin's worker without the desktop
+  tags such as backups) and reports the result in the banner. It never asks for a password itself: it
+  works through git's credential helpers and SSH keys. Orca starts the plugin's worker without the desktop
   session ([stablyai/orca#43189](https://github.com/stablyai/orca/issues/43189)): until Orca passes it, the
   plugin gives git `XDG_RUNTIME_DIR=/run/user/<uid>` when that folder is the user's own and closed to others,
-  so a credential helper on the session bus (libsecret: GNOME Keyring, KWallet) works; an SSH key that needs
-  the SSH agent (`SSH_AUTH_SOCK`) still does not reach git there.
+  so a credential helper on the session bus (libsecret: GNOME Keyring, KWallet) works, and a locked keyring
+  may show its own unlock dialog; a key held by the SSH agent does not reach git, because Orca does not pass
+  `SSH_AUTH_SOCK` either.
 - Live refresh when the repository changes (commits, checkouts, fetches, rebases from a terminal). A
   panel that moves to another repository stops watching the one before, unless another panel shows it.
 

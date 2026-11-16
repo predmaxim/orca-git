@@ -2,7 +2,7 @@
 
 Published 2026-11-11 (by the user's decision): 1 as a comment on stablyai/orca#19826 ("Let plugin panels render in the workspace area", which it overlaps): https://github.com/stablyai/orca/issues/19826#issuecomment-6780278191; 2 as stablyai/orca#40879; a third, on a terminal's busy state and unsaved editor tabs (backlog item 15), as stablyai/orca#40880. Earlier: stablyai/orca#40813 (moving focus between the plugin's tab and panel).
 
-Published 2026-11-16 (by the user's decision): stablyai/orca#43189, plugin workers get no session environment (`XDG_RUNTIME_DIR`, `DBUS_SESSION_BUS_ADDRESS`, `SSH_AUTH_SOCK`), so git credential helpers on the session bus fail. The plugin's workaround is `sessionRuntimeDir` in `src/worker/launch.ts` (marked `shortcut:`); remove it, its test `src/worker/sessionenv.test.ts` and the sentences in the README and `docs/git-safety.md` once Orca passes the variables.
+Published 2026-11-16 (by the user's decision): stablyai/orca#43189, plugin workers get no session environment (`XDG_RUNTIME_DIR`, `DBUS_SESSION_BUS_ADDRESS`, `SSH_AUTH_SOCK`), so git credential helpers on the session bus fail. The plugin's workaround (the user's decision, 2026-11-16: keep it marked and remove it once Orca fixes this): in `src/worker/launch.ts` `sessionRuntimeDir`, the `FolderStat` interface, its call in `gitEnv` and the `lstatSync` import (all marked `shortcut:` or next to it; `grep -n 43189 src`); its test `src/worker/sessionenv.test.ts`; the sentences in the README (Fetch) and `docs/git-safety.md` (Environment).
 
 ## 1. Plugin API: open a plugin's own view in an editor tab without a file
 

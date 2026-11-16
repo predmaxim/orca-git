@@ -22,7 +22,7 @@ test('a worker without the session gets the user\'s runtime folder back for git'
   assert.equal(sessionRuntimeDir({}, 1000, () => folder({ mode: 0o40755 })), null)
 })
 
-test('git gets XDG_RUNTIME_DIR when the worker has none and the folder is the user\'s', () => {
+test('git gets XDG_RUNTIME_DIR when the worker has none and the folder is the user\'s', (t) => {
   const saved = { xdg: process.env.XDG_RUNTIME_DIR, bus: process.env.DBUS_SESSION_BUS_ADDRESS }
   delete process.env.XDG_RUNTIME_DIR
   delete process.env.DBUS_SESSION_BUS_ADDRESS
@@ -35,7 +35,12 @@ test('git gets XDG_RUNTIME_DIR when the worker has none and the folder is the us
         return null
       }
     }
-    assert.equal(gitEnv(resolveGit('git')).XDG_RUNTIME_DIR, sessionRuntimeDir({}, uid, stat) ?? undefined)
+    // The worker's own value stays as it is.
+    process.env.XDG_RUNTIME_DIR = '/custom'
+    assert.equal(gitEnv(resolveGit('git')).XDG_RUNTIME_DIR, '/custom')
+    delete process.env.XDG_RUNTIME_DIR
+    if (sessionRuntimeDir({}, uid, stat) === null) return t.skip(`no /run/user/${uid} of this user here`)
+    assert.equal(gitEnv(resolveGit('git')).XDG_RUNTIME_DIR, `/run/user/${uid}`)
   } finally {
     if (saved.xdg !== undefined) process.env.XDG_RUNTIME_DIR = saved.xdg
     if (saved.bus !== undefined) process.env.DBUS_SESSION_BUS_ADDRESS = saved.bus
