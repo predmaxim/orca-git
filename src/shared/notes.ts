@@ -1,4 +1,4 @@
-import type { NoteMessage, NoteSide, ReviewNote, SelectionFile } from './protocol.ts'
+import type { NoteMessage, NotePlace, NoteSide, ReviewNote, SelectionFile } from './protocol.ts'
 
 /** Limits of review notes; the worker enforces them, the frames use them to size inputs. */
 export const MAX_NOTES = 200
@@ -54,6 +54,27 @@ export function notesOfFile(notes: ReviewNote[], file: SelectionFile): ReviewNot
   return notes
     .filter((n) => n.blob === noteBlob(file, n.side))
     .sort((a, b) => Number(a.resolvedAt !== undefined) - Number(b.resolvedAt !== undefined) || a.start.line - b.start.line)
+}
+
+/**
+ * Whether `notes.place` may carry a note of another version of a side of `file` to it, by the rule of the worker: a note with
+ * the side's path (on the new side, also the path before a rename in this diff) and another blob than the side's.
+ */
+export function placeCandidate(notes: ReviewNote[], file: SelectionFile): boolean {
+  return notes.some((n) => {
+    const blob = noteBlob(file, n.side)
+    const path = n.side === 'new' ? n.path === file.path || n.path === file.oldPath : n.path === (file.oldPath ?? file.path)
+    return path && blob !== undefined && n.blob !== blob
+  })
+}
+
+/** Copies of the notes `places` carries to a file, at their lines there; the outdated ones and notes gone are left out. */
+export function carriedNotes(notes: ReviewNote[], places: NotePlace[]): ReviewNote[] {
+  return places.flatMap((p) => {
+    if (!('start' in p)) return []
+    const note = notes.find((n) => n.id === p.id)
+    return note ? [{ ...note, start: p.start, end: p.end }] : []
+  })
 }
 
 /** The file a note shows in: the current one first, then the one at the note's path on its side, then the first; -1: none. */

@@ -94,7 +94,11 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   (split), or in unified the line it starts on (a deleted line is the old side, any other the new one);
   while you select, the other side stays out of the selection. The note is tied to the content of the
   file on its side (its blob), so it shows in every diff where that side is the same, also after a
-  rebase or an amend that left the file alone. A file that changes type (a file turned into a symlink or
+  rebase or an amend that left the file alone. In a diff whose side holds another version of the note's
+  file (selecting the note's commit with later ones, or a later commit), a note whose lines that version
+  did not change stands on their new lines, as if written there, without a mark; the worker compares the
+  two versions with `git diff`, as GitLab and Gerrit carry comments, and not to a version older than the
+  note's commit. A note whose lines changed is outdated and is not drawn in the code. A file that changes type (a file turned into a symlink or
   back) takes no notes and shows none, as it has none in the panel's Files section. A note is a
   **thread**, as in Azure DevOps pull requests: its card stands under the last selected line, in the half of its side in split, with the selected text
   highlighted. On top, the thread's state (Resolved; Sent, no answer yet; Not sent; or the verdict of the
@@ -123,9 +127,11 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   tab with its name and size, and Esc, a click outside it or × closes it. Links open
   in the browser. **Notes** in the tab's header counts the threads not resolved and lists every
   thread of the repository with its file, lines, side, state, count of messages and the start of the
-  quote and of the first message, resolved ones last and dimmed; Copy all copies them as markdown with
+  quote and of the first message, resolved ones last and dimmed. **Outdated** (a dashed label; its
+  tooltip names the note's commit) marks a new-side note of HEAD's history whose lines HEAD has changed,
+  or whose file HEAD no longer has; the note stays open until you resolve it. Copy all copies them as markdown with
   every message under its author, Delete all asks once more and deletes every thread of the repository.
-  A click on a note opens it where it shows: in a file of the tab, scrolled to, with Whole file when its
+  A click on a note opens it where it shows: in a file of the tab (also one it is carried to), scrolled to, with Whole file when its
   lines are outside the changed regions; else the tab opens the commit whose own diff writes the note's
   content, scrolls to it there, and the panel showing that repository selects the commit in Commits (on
   HEAD's history first, else among every branch; of two notes clicked in a row the later one wins, even

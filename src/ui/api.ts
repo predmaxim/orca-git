@@ -15,6 +15,7 @@ import type {
   LogPage,
   NoteDraft,
   NoteImage,
+  NotePlace,
   NoteResult,
   PatchResult,
   PushPlan,
@@ -102,6 +103,8 @@ export const api = {
   notes: (root: string): Promise<{ notes: ReviewNote[]; warning?: string }> => call('notes.list', { root }),
   /** Opens the Diff tab on the commit whose own diff shows the note `id`; git searches the history for it. */
   notesOpen: (root: string, id: string): Promise<{ ok: boolean; reason?: string }> => call('notes.open', { root, id }, LONG),
+  /** Per file, the notes of other versions of it carried to it and the outdated ones; at most 100 files. git compares blobs for it. */
+  notesPlace: (root: string, files: SelectionFile[]): Promise<{ places: NotePlace[][] }> => call('notes.place', { root, files }, LONG),
   noteAdd: (root: string, draft: NoteDraft): Promise<NoteResult> => call('notes.add', { root, draft }),
   noteReply: (root: string, id: string, body: string, images?: NoteImage[]): Promise<NoteResult> => call('notes.reply', { root, id, body, images }),
   noteEdit: (root: string, id: string, message: string, body: string): Promise<NoteResult> => call('notes.edit', { root, id, message, body }),

@@ -1,11 +1,11 @@
 // Review notes in the Diff tab: the selection and its button, the editor, the threads under their lines and the list of all notes.
-import type { FileDiff, NoteDraft, NoteImage, NoteMessage, NotePoint, NoteResult, NoteSide, NoteVerdict, ReviewNote, SelectionFile } from '../shared/protocol.ts'
+import type { FileDiff, NoteDraft, NoteImage, NoteMessage, NotePlace, NotePoint, NoteResult, NoteSide, NoteVerdict, ReviewNote, SelectionFile } from '../shared/protocol.ts'
 import { t, type MessageKey } from '../shared/i18n.ts'
-import { lastAnswer, MAX_BODY, MAX_IMAGES, MAX_QUOTE, MAX_REVIEW_SKILLS, noteBlob, noteFileIndex, notesOfFile, stateOf, unsentOf } from '../shared/notes.ts'
+import { carriedNotes, lastAnswer, MAX_BODY, MAX_IMAGES, MAX_QUOTE, MAX_REVIEW_SKILLS, noteBlob, noteFileIndex, notesOfFile, placeCandidate, stateOf, unsentOf } from '../shared/notes.ts'
 import { api, copyText, errorMessage, orca } from './api.ts'
 import type { DiffMode } from './diff.ts'
 import { h, icon, ICONS } from './dom.ts'
-import { fullDate, relativeDate } from './format.ts'
+import { fullDate, relativeDate, shortHash } from './format.ts'
 import { markRange } from './highlight.ts'
 import { disposeImages, thumbnail, uploadImage } from './images.ts'
 import { mdDom } from './markdown.ts'
@@ -37,7 +37,8 @@ export interface NotesView {
 
 /** Where a note goes: everything of a draft but its text and images. */
 type Anchor = Omit<NoteDraft, 'body' | 'images'>
-type Editor = { anchor: Anchor; id?: string; message?: string; start: string; images: NoteImage[]; sending: string[]; el: HTMLElement; area: HTMLTextAreaElement; error: HTMLElement }
+/** `file`: the index of the file it was opened in, which a thread carried there is not tied to by its blob. */
+type Editor = { anchor: Anchor; id?: string; message?: string; start: string; images: NoteImage[]; sending: string[]; el: HTMLElement; area: HTMLTextAreaElement; error: HTMLElement; file: number }
 
 /** Whether the editor holds text or images the user put there: another editor must not drop them. */
 const typed = (e: Editor) => e.area.value.trim() !== e.start || (e.message === undefined && e.images.length > 0) || e.sending.length > 0
@@ -266,6 +267,10 @@ export function mountNotes(options: {
   let container: HTMLElement | null = null
   let diff: FileDiff | null = null
   let file: SelectionFile | null = null
+  /** Where the notes of other versions of `placed` stand on it (`notes.place`), and the count of requests: only the latest one's answer is taken. */
+  let placed: SelectionFile | null = null
+  let places: NotePlace[] = []
+  let placing = 0
   /**
    * The open editor: a new note at `anchor`, a reply to the thread `id`, or the message `message` of the thread `id`, and
    * the text it started with; its images, and the names of those still being sent. Its element lives on across renders,
@@ -362,6 +367,8 @@ export function mountNotes(options: {
     if (list) {
       notes = list
       applied = true
+      // A new list may have notes of other versions of the file shown; the places shown so far stay until the answer.
+      if (file) place(file)
     }
     warning = said
     refresh()
@@ -472,7 +479,7 @@ export function mountNotes(options: {
     area.value = text
     const error = h('div', { class: 'd-note-error' })
     const strip = h('div', { class: 'd-note-images' })
-    const mine: Editor = { anchor: at, id: of?.id, message: of?.message, start: text, images, sending: [], el: h('div', { class: 'd-note-edit' }, area, strip, error), area, error }
+    const mine: Editor = { anchor: at, id: of?.id, message: of?.message, start: text, images, sending: [], el: h('div', { class: 'd-note-edit' }, area, strip, error), area, error, file: file ? files.indexOf(file) : -1 }
     const attachButton = tool('image', 'imageAttach', () => {
       if (field.parentNode) return picker.input.focus()
       error.before(field)
@@ -580,8 +587,7 @@ export function mountNotes(options: {
       return true
     }
     if (focus()) return
-    const index = fileOf(open.anchor)
-    if (index >= 0) options.show(index, false, () => void (focus() || options.show(index, true, focus)))
+    if (open.file >= 0) options.show(open.file, false, () => void (focus() || options.show(open.file, true, focus)))
   }
 
   async function save(): Promise<void> {
@@ -910,11 +916,39 @@ export function mountNotes(options: {
     ], sendButton)
   }
 
-  /** The file of this tab the note (or an editor's anchor) shows in, the one shown first; -1: none. */
+  /** The file of this tab the note shows in, the one shown first; -1: none. */
   const fileOf = (n: Pick<ReviewNote, 'side' | 'blob' | 'path'>) => noteFileIndex(files, n, file ? files.indexOf(file) : -1)
 
+  /** Whether the note `id` of another version of the file shown was carried to it. */
+  const carriedHere = (id: string) => places.some((p) => p.id === id && 'start' in p)
+
+  /**
+   * Asks the worker where the notes of other versions of `of` stand on it, when a note may be one (`placeCandidate`); its answer
+   * redraws unless the tab asked again since, for another file or a new list. Until it comes, the places of the same file stay.
+   */
+  function place(of: SelectionFile): void {
+    const mine = ++placing
+    if (of !== placed) places = []
+    placed = of
+    if (!placeCandidate(notes, of)) {
+      places = []
+      return
+    }
+    void api
+      .notesPlace(root, [of])
+      // The worker logs what git did not answer: the notes are not carried.
+      .then((answer) => answer.places[0] ?? [], (): NotePlace[] => [])
+      .then((next) => {
+        // The same places again (a new list that moved none) redraw nothing: a redraw disarms a Delete pressed once.
+        if (mine !== placing || JSON.stringify(next) === JSON.stringify(places)) return
+        places = next
+        refresh()
+      })
+  }
+
   function item(n: ReviewNote): HTMLElement {
-    const index = fileOf(n)
+    // A note carried to the file shown is there, at its lines in this version.
+    const index = file && carriedHere(n.id) ? files.indexOf(file) : fileOf(n)
     return h(
       'div',
       { class: `notes-item${n.resolvedAt !== undefined ? ' resolved' : ''}` },
@@ -927,6 +961,7 @@ export function mountNotes(options: {
           h('span', { class: 'path' }, `${n.path}:${lineSpan(n)}`),
           label(n.side === 'old' ? 'noteSideOld' : 'noteSideNew'),
           ...labels(n),
+          n.outdated ? h('span', { class: 'd-label outdated', title: t('noteOutdatedTip', { rev: shortHash(n.rev) }) }, t('noteOutdated')) : null,
           h('span', { class: 'muted' }, t('noteMessages', { count: n.messages.length }))
         ),
         h('span', { class: 'mono muted' }, firstLine(n.quote)),
@@ -958,8 +993,8 @@ export function mountNotes(options: {
     }
     options.show(index, false, () => {
       const note = notes.find((n) => n.id === id)
-      // A note of other content (the file has changed since) has no card in this diff, whole file or not.
-      if (!scroll() && note && note.blob === blobOf(note.side)) options.show(index, true, scroll)
+      // A note of other content (the file has changed since) has no card in this diff, whole file or not, unless it was carried here.
+      if (!scroll() && note && (note.blob === blobOf(note.side) || carriedHere(id))) options.show(index, true, scroll)
     })
   }
 
@@ -1007,7 +1042,8 @@ export function mountNotes(options: {
       container = lines
       diff = next
       file = nextFile
-      shown = notesOfFile(notes, nextFile).sort((a, b) => a.createdAt - b.createdAt)
+      if (nextFile !== placed) place(nextFile)
+      shown = [...notesOfFile(notes, nextFile), ...carriedNotes(notes, places)].sort((a, b) => a.createdAt - b.createdAt)
       // The side a selection starts on: CSS keeps the other side and the cards out of it.
       lines.addEventListener('mousedown', (event) => {
         if (event.button !== 0) return
@@ -1034,6 +1070,7 @@ export function mountNotes(options: {
     visible: () => shown,
     dispose() {
       loads++
+      placing++
       document.removeEventListener('mouseup', onUp)
       document.removeEventListener('selectionchange', onSelection)
       document.removeEventListener('scroll', onScroll, true)

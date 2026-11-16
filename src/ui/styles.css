@@ -2256,6 +2256,11 @@ input[type='radio']:focus-visible {
   --tone: var(--state-wait);
 }
 
+/* Outdated: muted as a side, dashed as the outdated note's circle in Files, so it does not read as a state. */
+.d-label.outdated {
+  border-style: dashed;
+}
+
 .d-note .md > * {
   margin: 0 0 6px;
 }

@@ -37,3 +37,11 @@ test('a draft with undefined images has no images key', async () => {
   assert.equal('images' in (last().draft as object), false)
   isJson(last())
 })
+
+test('notes.place carries the files as they are, without the undefined old path', async () => {
+  const file = { path: 'a.ts', oldPath: undefined, status: 'M', from: 'p', to: 't', oldBlob: 'o', newBlob: 'n' }
+  await api.notesPlace('/r', [file])
+  assert.equal(requests[requests.length - 1].name, 'notes.place')
+  assert.deepEqual(last(), { root: '/r', files: [{ path: 'a.ts', status: 'M', from: 'p', to: 't', oldBlob: 'o', newBlob: 'n' }], locale: 'en' })
+  isJson(last())
+})
