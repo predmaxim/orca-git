@@ -194,6 +194,8 @@ export function readAnswers(root: string, notes: ReviewNote[], now = Date.now())
   for (const note of notes) {
     const review = waitingFor(note) ?? lastAnswer(note)?.review
     if (!review || !ID.test(review) || !ID.test(note.id)) continue
+    // The folders above the file are real ones: a link in any of them is not followed.
+    if (!isFolder(join(root, FOLDER)) || !isFolder(reviewPaths(root, review).dir) || !isFolder(reviewPaths(root, review).answers)) continue
     const text = readAnswerFile(join(reviewPaths(root, review).answers, `${note.id}.md`))
     const reply = text === null ? null : parseAnswer(text, now)
     // The kind of agent is on the user's messages the send marked.

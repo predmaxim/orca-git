@@ -1,6 +1,6 @@
 // The images of review messages: files in <root>/.orca-git-log/images/, named by the hash of their content.
-import { createHash } from 'node:crypto'
-import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readSync, unlinkSync, writeFileSync } from 'node:fs'
+import { createHash, randomBytes } from 'node:crypto'
+import { closeSync, constants, fstatSync, linkSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { t } from '../shared/i18n.ts'
 import { IMAGE_ID, MAX_IMAGE_BYTES, MAX_IMAGES } from '../shared/notes.ts'
@@ -52,29 +52,29 @@ export function storeImage(root: string, bytes: Uint8Array, name: string): { ok:
   try {
     for (const folder of [dirname(dir), dir]) if (!ensureFolder(folder)) return failure(t('reviewDirTaken', { path: folder }))
     const file = join(dir, id)
-    let fd: number
+    // The bytes go to a file of their own first, so the name is never taken before it holds all of them.
+    const tmp = join(dir, `.tmp-${randomBytes(6).toString('hex')}`)
     try {
-      // wx: never follows a link and never replaces a file.
-      fd = openSync(file, 'wx')
-    } catch (error: any) {
-      if (error?.code !== 'EEXIST') throw error
-      const stored = lstatSync(file)
-      return stored.isFile() && stored.size === bytes.length ? { ok: true, image: { id, name: cleanName(name, id), bytes: bytes.length } } : failure(t('reviewDirTaken', { path: file }))
-    }
-    try {
-      writeFileSync(fd, bytes)
-    } catch (error) {
-      closeSync(fd)
-      fd = -1
-      // Only the file this call made: a half-written one would be reused as the image.
+      const fd = openSync(tmp, 'wx')
       try {
-        unlinkSync(file)
-      } catch {
-        // Already gone.
+        writeFileSync(fd, bytes)
+      } finally {
+        closeSync(fd)
       }
-      throw error
+      try {
+        // A link fails with EEXIST where a rename would overwrite.
+        linkSync(tmp, file)
+      } catch (error: any) {
+        if (error?.code !== 'EEXIST') throw error
+        const stored = withFile(file, false, (open, size) => (size === bytes.length ? readBytes(open, 0, size) : null))
+        if (!stored || !Buffer.from(stored).equals(bytes)) return failure(t('imageFailed', { error: 'EEXIST' }))
+      }
     } finally {
-      if (fd >= 0) closeSync(fd)
+      try {
+        unlinkSync(tmp)
+      } catch {
+        // Never made, or gone.
+      }
     }
     return { ok: true, image: { id, name: cleanName(name, id), bytes: bytes.length } }
   } catch (error: any) {
@@ -153,24 +153,49 @@ export function dropImages(root: string, ids: string[], notes: ReviewNote[]): vo
   }
 }
 
-/** The images an answer names: `![caption](file)` with a regular file right inside `answers`; each stored, at most MAX_IMAGES. */
+/** How many files `answerImages` opened; a test reads it. */
+export const probes = { files: 0 }
+
+/** The images an answer names: `![caption](file)` with a regular file right inside `answers`; each stored. At most MAX_IMAGES distinct files are tried, and one is read whole only when its first bytes are an image's. */
 export function answerImages(root: string, answers: string, body: string): NoteImage[] {
-  const images: NoteImage[] = []
   const folder = resolve(answers)
+  // The folders above the files are real ones, never a link to somewhere else.
+  if (!isFolder(join(root, FOLDER)) || !isFolder(dirname(folder)) || !isFolder(folder)) return []
+  const candidates = new Set<string>()
   for (const [, address] of body.matchAll(/!\[[^\]]*\]\(\s*<?([^)\s>]+)>?[^)]*\)/g)) {
-    if (images.length >= MAX_IMAGES) break
     const file = resolve(folder, address)
-    if (dirname(file) !== folder) continue
-    try {
-      if (!lstatSync(file).isFile()) continue
-    } catch {
-      continue
-    }
-    const bytes = withFile(file, false, (fd, size) => (size > MAX_IMAGE_BYTES ? null : readBytes(fd, 0, size)))
+    if (dirname(file) === folder) candidates.add(file)
+  }
+  const images: NoteImage[] = []
+  for (const file of [...candidates].slice(0, MAX_IMAGES)) {
+    probes.files++
+    const bytes = withFile(file, false, (fd, size) => (size > MAX_IMAGE_BYTES || !imageKind(readBytes(fd, 0, 12)) ? null : readBytes(fd, 0, size)))
     const stored = bytes && storeImage(root, bytes, basename(file))
     if (stored?.ok && !images.some((i) => i.id === stored.image.id)) images.push(stored.image)
   }
   return images
+}
+
+const DAY = 86400000
+
+/** Removes the files of the images folder that no message uses and that are older than a day (an upload never attached to a message). Best effort: never throws. */
+export function sweepImages(root: string, notes: ReviewNote[], now: number): void {
+  try {
+    const used = new Set(notes.flatMap((n) => n.messages.flatMap((m) => (m.images ?? []).map((i) => i.id))))
+    if (!isFolder(join(root, FOLDER)) || !isFolder(imagesDir(root))) return
+    for (const id of readdirSync(imagesDir(root))) {
+      if (!IMAGE_ID.test(id) || used.has(id)) continue
+      const file = join(imagesDir(root), id)
+      try {
+        const stat = lstatSync(file)
+        if (stat.isFile() && now - stat.mtimeMs > DAY) unlinkSync(file)
+      } catch {
+        // The file stays.
+      }
+    }
+  } catch {
+    // Nothing to sweep.
+  }
 }
 
 /** Parts of an image on its way in: base64 chunks by upload id, kept in memory for seconds. */
@@ -178,19 +203,22 @@ const uploads = new Map<string, { root: string; chunks: Uint8Array[]; size: numb
 const MAX_UPLOADS = 4
 const UPLOAD_TTL = 60000
 const UPLOAD_ID = /^[0-9a-f]{12}$/
-const MAX_CHUNK = 64000
+const MAX_CHUNK = 60000
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/
 
 /** The next part of an upload (`index` from 0, in order); on `last` the whole is stored. A part that breaks the rules drops its upload. */
 export function putImage(root: string, input: { upload: unknown; index: unknown; last: unknown; data: unknown; name: unknown }, now = Date.now()): { ok: true; image?: NoteImage } | { ok: false; reason: string } {
   for (const [id, upload] of uploads) if (now - upload.at > UPLOAD_TTL) uploads.delete(id)
   const { upload: id, index, data } = input
+  const last = input.last === true
   const broken = failure(t('imageUpload'))
   if (typeof id !== 'string' || !UPLOAD_ID.test(id) || !Number.isInteger(index) || (index as number) < 0 || typeof data !== 'string') return broken
   const current = uploads.get(id)
   if (index === 0 && !current && uploads.size >= MAX_UPLOADS) return broken
   const upload = index === 0 ? { root, chunks: [] as Uint8Array[], size: 0, next: 0, at: now } : current
-  if (!upload || upload.root !== root || upload.next !== index || data.length > MAX_CHUNK || data.length % 4 !== 0 || !BASE64.test(data)) {
+  // A part is a full MAX_CHUNK, except the last, which is at least one group of 4.
+  const sized = last ? data.length >= 4 && data.length <= MAX_CHUNK : data.length === MAX_CHUNK
+  if (!upload || upload.root !== root || upload.next !== index || !sized || data.length % 4 !== 0 || !BASE64.test(data)) {
     uploads.delete(id)
     return broken
   }
@@ -203,7 +231,7 @@ export function putImage(root: string, input: { upload: unknown; index: unknown;
   upload.size += chunk.length
   upload.next++
   upload.at = now
-  if (!input.last) {
+  if (!last) {
     uploads.set(id, upload)
     return { ok: true }
   }

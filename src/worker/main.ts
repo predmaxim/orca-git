@@ -5,7 +5,7 @@ import type { OrcaWorkerApi, PanelRequestContext } from 'orca/worker'
 import { pickLocale, setLocale, t } from '../shared/i18n.ts'
 import type { ActionResult, DiffTabState, NoteImage, NoteResult, RepoResult, ReviewNote } from '../shared/protocol.ts'
 import { stateOf, unsentOf, waitingFor } from '../shared/notes.ts'
-import { answerImages, attachImage, checkImages, dropImages, putImage, readImage } from './images.ts'
+import { answerImages, attachImage, checkImages, dropImages, putImage, readImage, sweepImages } from './images.ts'
 import { checkRewrite, runAction } from './actions.ts'
 import { checkBackup, checkReset, deleteBackup, runGuarded } from './backup.ts'
 import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
@@ -345,12 +345,24 @@ export default function activate(orca: OrcaWorkerApi): void {
     return { ok: true }
   })
 
+  /** Removes the files of `images` that no message of a note of `root` uses any more, and the unused files older than a day. Best effort: never throws. */
+  const dropFiles = async (root: string, images: (NoteImage[] | undefined)[]): Promise<void> => {
+    try {
+      const notes = await listNotes(orca.storage, root)
+      dropImages(root, images.flatMap((list) => (list ?? []).map((i) => i.id)), notes)
+      sweepImages(root, notes, Date.now())
+    } catch (error) {
+      orca.log(`images not removed for ${root}: ${errorText(error)}`)
+    }
+  }
+
   /** Some answers were read and could not be stored: the others are stored. */
   class AnswersRefused extends Error {}
 
   /** Stores the answers the agent has written for `root` and tells the panels. Throws when they cannot be read, or an `AnswersRefused` when some cannot be stored. */
   const ingest = async (root: string): Promise<void> => {
-    const found = readAnswers(root, await listNotes(orca.storage, root))
+    const before = await listNotes(orca.storage, root)
+    const found = readAnswers(root, before)
     if (!found.size) return
     // The pictures an answer shows go in as files of their own; the same ones again give the same ids.
     for (const [id, answer] of found) {
@@ -358,6 +370,8 @@ export default function activate(orca: OrcaWorkerApi): void {
       if (images.length) found.set(id, { ...answer, images })
     }
     const { changed, refused } = await setAnswers(orca.storage, root, found)
+    // The pictures of an answer that was replaced or not kept go when no message uses them.
+    await dropFiles(root, [...found.values(), ...before.filter((n) => found.has(n.id)).flatMap((n) => n.messages.filter((m) => m.author === 'agent'))].map((m) => m.images))
     if (changed) orca.panels.post('notes.changed', { root })
     // The ones stored stay stored; the caller tells the user about the rest.
     if (refused.length) throw new AnswersRefused(`${refused.length} of ${found.size}: ${refused[0].error}`)
@@ -446,15 +460,6 @@ export default function activate(orca: OrcaWorkerApi): void {
     if (result.ok) await dropReviews(key, [before])
     return told(key, result)
   })
-
-  /** Removes the files of `images` that no message of a note of `root` uses any more. Best effort: never throws. */
-  const dropFiles = async (root: string, images: (NoteImage[] | undefined)[]): Promise<void> => {
-    try {
-      dropImages(root, images.flatMap((list) => (list ?? []).map((i) => i.id)), await listNotes(orca.storage, root))
-    } catch (error) {
-      orca.log(`images not removed for ${root}: ${errorText(error)}`)
-    }
-  }
 
   handle('notes.remove', async ({ root, id, message }) => {
     const key = (await gitFor(root)).root

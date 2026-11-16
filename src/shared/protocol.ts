@@ -405,7 +405,7 @@ declare module 'orca' {
     'skills.set': { input: { root: string; skills: string[] }; output: { ok: true; skills: string[] } | { ok: false; reason: string } }
     /** What the skill path field offers in `dir` (full, `~/…`, or from the repository root; '' is the root): subfolders and `.md` files, names only. */
     'skills.browse': { input: { root: string; dir: string }; output: { dirs: string[]; files: string[] } }
-    /** One base64 part (at most 64000 characters, a multiple of 4) of an image, in order from `index` 0; with `last` the image is stored and returned. */
+    /** One base64 part of an image, in order from `index` 0: every part but the last has exactly 60000 characters, the last 4 to 60000 (a multiple of 4); with `last: true` the image is stored and returned. */
     'images.put': { input: { root: string; upload: string; index: number; last: boolean; data: string; name: string }; output: { ok: true; image?: NoteImage } | { ok: false; reason: string } }
     /** Stores the image file at `path` (full, `~/…`, or from the repository root). */
     'images.attach': { input: { root: string; path: string }; output: { ok: true; image: NoteImage } | { ok: false; reason: string } }

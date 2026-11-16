@@ -1,13 +1,13 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, utimesSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assert, mountWorker, test } from 'orca/testing'
 import { IMAGE_ID, MAX_IMAGE_BYTES } from '../shared/notes.ts'
 import { t } from '../shared/i18n.ts'
 import type { NoteMessage } from '../shared/protocol.ts'
-import { answerImages, imageKind, storeImage } from './images.ts'
+import { answerImages, imageKind, probes, putImage, readImage, storeImage, sweepImages } from './images.ts'
 import * as main from './main.ts'
-import { reviewPaths, notesFile } from './review.ts'
+import { notesFile, readAnswers, reviewPaths } from './review.ts'
 import { draft, fixture, host } from './testkit.ts'
 
 const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4, 5])
@@ -70,8 +70,56 @@ test('a link in place of the folders is refused', () => {
     symlinkSync(outside, join(root, '.orca-git-log', 'images'))
     assert.equal(storeImage(root, PNG, 'a.png').ok, false)
     assert.deepEqual(readdirSync(outside), [])
+    // A valid image in the linked folder is not read through it either.
+    const id = `${'0'.repeat(12)}.png`
+    writeFileSync(join(outside, id), PNG)
+    assert.equal(readImage(root, id, 0, 100), null)
+    rmSync(join(root, '.orca-git-log', 'images'))
+    mkdirSync(join(root, '.orca-git-log', 'images'))
+    symlinkSync(join(outside, id), join(root, '.orca-git-log', 'images', id))
+    assert.equal(readImage(root, id, 0, 100), null)
   } finally {
     gone(root, outside)
+  }
+})
+
+test('a name already taken by other bytes is refused and left as it was', () => {
+  const root = scratch()
+  try {
+    const first = storeImage(root, PNG, 'a.png')
+    assert.ok(first.ok)
+    const file = join(root, '.orca-git-log', 'images', first.image.id)
+    writeFileSync(file, PNG.subarray(0, 5))
+    assert.deepEqual(storeImage(root, PNG, 'a.png'), { ok: false, reason: t('imageFailed', { error: 'EEXIST' }) })
+    assert.deepEqual(new Uint8Array(readFileSync(file)), PNG.subarray(0, 5))
+    // Same length, other content.
+    writeFileSync(file, new Uint8Array(PNG.length).fill(9))
+    assert.equal(storeImage(root, PNG, 'a.png').ok, false)
+    assert.deepEqual(readdirSync(join(root, '.orca-git-log', 'images')), [first.image.id])
+  } finally {
+    gone(root)
+  }
+})
+
+test('uploads: at most 4 unfinished, one older than 60 seconds is dropped, another root is refused', () => {
+  const root = scratch()
+  const part = Buffer.alloc(45000).toString('base64')
+  const input = (upload: string, index: number, last = false, data = part) => ({ upload, index, last, data, name: 'x' })
+  try {
+    const ids = ['111111111111', '222222222222', '333333333333', '444444444444']
+    for (const id of ids) assert.equal(putImage(root, input(id, 0), 1000).ok, true)
+    assert.equal(putImage(root, input('555555555555', 0), 1000).ok, false)
+    // One of the four goes on; a fifth waits for room.
+    assert.equal(putImage(root, input(ids[0], 1), 2000).ok, true)
+    // After 60 seconds without a part the upload is gone.
+    assert.equal(putImage(root, input(ids[1], 1), 1000 + 60001).ok, false)
+    assert.equal(putImage(root, input('555555555555', 0), 1000 + 60001).ok, true)
+    // Another root cannot continue an upload.
+    assert.equal(putImage(root + 'x', input('555555555555', 1, true, 'AAAA'), 1000 + 60002).ok, false)
+    assert.equal(putImage(root, input('555555555555', 1, true, 'AAAA'), 1000 + 60003).ok, false)
+    for (const id of ids) putImage(root, input(id, 9), 1000 + 200000)
+  } finally {
+    gone(root)
   }
 })
 
@@ -111,12 +159,20 @@ test('an image goes in parts and comes back in parts', async () => {
     assert.deepEqual(await worker.request('images.get', { root, id: '../../etc/passwd', offset: 0 }), { data: '', total: 0 })
     // Out of order: the part is refused and so is the next one of that upload.
     const other = '0123456789ab'
-    assert.equal(((await worker.request('images.put', { root, upload: other, index: 0, last: false, data: base64(PNG.subarray(0, 9)), name: 'x' })) as any).ok, true)
-    assert.equal(((await worker.request('images.put', { root, upload: other, index: 2, last: false, data: 'AAAA', name: 'x' })) as any).ok, false)
-    assert.equal(((await worker.request('images.put', { root, upload: other, index: 1, last: true, data: base64(PNG.subarray(9)), name: 'x' })) as any).ok, false)
+    const full = base64(Buffer.alloc(45000))
+    assert.equal(((await worker.request('images.put', { root, upload: other, index: 0, last: false, data: full, name: 'x' })) as any).ok, true)
+    assert.equal(((await worker.request('images.put', { root, upload: other, index: 2, last: false, data: full, name: 'x' })) as any).ok, false)
+    assert.equal(((await worker.request('images.put', { root, upload: other, index: 1, last: true, data: 'AAAA', name: 'x' })) as any).ok, false)
+    // A short middle part, and a truthy `last` that is not true, finish nothing.
+    const short = 'dddddddddddd'
+    assert.equal(((await worker.request('images.put', { root, upload: short, index: 0, last: false, data: full.slice(0, 40000), name: 'x' })) as any).ok, false)
+    const loose = 'eeeeeeeeeeee'
+    const goesOn = (await worker.request('images.put', { root, upload: loose, index: 0, last: 1 as any, data: full, name: 'x' })) as any
+    assert.deepEqual(goesOn, { ok: true })
+    assert.equal(((await worker.request('images.put', { root, upload: loose, index: 1, last: true, data: 'AAAA', name: 'x' })) as any).reason, t('imageKind'))
     // Not base64, too long and over the size limit.
     assert.equal(((await worker.request('images.put', { root, upload: other, index: 0, last: true, data: '***!', name: 'x' })) as any).ok, false)
-    assert.equal(((await worker.request('images.put', { root, upload: other, index: 0, last: true, data: 'A'.repeat(64004), name: 'x' })) as any).ok, false)
+    assert.equal(((await worker.request('images.put', { root, upload: other, index: 0, last: true, data: 'A'.repeat(60004), name: 'x' })) as any).ok, false)
     const huge = Buffer.alloc(45000)
     const bigUpload = 'bbbbbbbbbbbb'
     let refused: any
@@ -205,9 +261,11 @@ test('an answer attaches only regular files right inside its answers folder', ()
     writeFileSync(join(answers, 'sub', 'b.png'), PNG)
     writeFileSync(join(outside, 'c.png'), PNG)
     symlinkSync(join(outside, 'c.png'), join(answers, 'c.png'))
-    writeFileSync(join(root, '.orca-git-log', 'review-bbbbbbbbbbbb', 'notes.md'), 'notes')
+    // A real image outside `answers`: only the path rule refuses it.
+    writeFileSync(join(root, '.orca-git-log', 'review-bbbbbbbbbbbb', 'notes.md'), PNG)
+    writeFileSync(join(root, 'above.png'), PNG)
     writeFileSync(join(answers, 'd.png'), 'plain text')
-    const body = ['![a](a.png)', '![b](sub/b.png)', '![c](c.png)', '![n](../notes.md)', '![d](d.png)', '![same](./a.png)'].join('\n')
+    const body = ['![a](a.png)', '![b](sub/b.png)', '![c](c.png)', '![n](../notes.md)', '![up](../../../above.png)', `![abs](${join(root, 'above.png')})`, '![d](d.png)', '![same](./a.png)'].join('\n')
     const images = answerImages(root, answers, body)
     assert.equal(images.length, 1)
     assert.equal(images[0].name, 'a.png')
@@ -237,5 +295,113 @@ test('the images of an answer go into the thread, and the same answer read again
     await worker.deactivate()
   } finally {
     gone(root)
+  }
+})
+
+test('an answer repeating one image reads its file once, and one naming many files tries five', () => {
+  const root = scratch()
+  try {
+    const answers = join(root, '.orca-git-log', 'review-bbbbbbbbbbbb', 'answers')
+    mkdirSync(answers, { recursive: true })
+    const big = new Uint8Array(MAX_IMAGE_BYTES)
+    big.set(PNG)
+    writeFileSync(join(answers, 'a.png'), big)
+    probes.files = 0
+    assert.equal(answerImages(root, answers, '![](a.png)\n'.repeat(800)).length, 1)
+    assert.equal(probes.files, 1)
+    for (let i = 0; i < 10; i++) writeFileSync(join(answers, `t${i}.png`), 'not an image '.repeat(1000))
+    probes.files = 0
+    assert.deepEqual(answerImages(root, answers, Array.from({ length: 10 }, (_, i) => `![](t${i}.png)`).join('\n')), [])
+    assert.equal(probes.files, 5)
+  } finally {
+    gone(root)
+  }
+})
+
+test('an answers folder, or a folder above it, that is a link reads no answer and no image', async () => {
+  const root = fixture()
+  const outside = scratch()
+  try {
+    const worker = await mountWorker(main, { host: host(root, { 'agent.launch': { terminalId: 't-1' } }) })
+    const added = (await worker.request('notes.add', { root, draft: draft() })) as any
+    const sent = (await worker.request('notes.send', { root, ids: [added.note.id], agent: 'claude' })) as any
+    const { answers, dir } = reviewPaths(root, sent.review)
+    writeFileSync(join(outside, 'shot.png'), PNG)
+    writeFileSync(join(outside, `${added.note.id}.md`), 'verdict: answered\nfixed: no\n\n![](shot.png)')
+    rmSync(answers, { recursive: true })
+    symlinkSync(outside, answers)
+    assert.deepEqual(answerImages(root, answers, '![](shot.png)'), [])
+    assert.equal(readAnswers(root, ((await worker.request('notes.list', { root })) as any).notes).size, 0)
+    // The same with the review folder itself linked.
+    rmSync(answers)
+    const moved = join(outside, 'moved')
+    mkdirSync(join(moved, 'answers'), { recursive: true })
+    writeFileSync(join(moved, 'answers', 'shot.png'), PNG)
+    writeFileSync(join(moved, 'answers', `${added.note.id}.md`), 'verdict: answered\nfixed: no\n\n![](shot.png)')
+    rmSync(dir, { recursive: true })
+    symlinkSync(moved, dir)
+    assert.equal(readAnswers(root, ((await worker.request('notes.list', { root })) as any).notes).size, 0)
+    assert.deepEqual(answerImages(root, join(dir, 'answers'), '![](shot.png)'), [])
+    assert.equal(existsSync(join(root, '.orca-git-log', 'images')), false)
+    await worker.deactivate()
+  } finally {
+    gone(root, outside)
+  }
+})
+
+test('the image of an answer that is replaced goes, and an unused file older than a day is swept', async () => {
+  const root = fixture()
+  try {
+    const worker = await mountWorker(main, { host: host(root, { 'agent.launch': { terminalId: 't-1' } }) })
+    const added = (await worker.request('notes.add', { root, draft: draft() })) as any
+    const sent = (await worker.request('notes.send', { root, ids: [added.note.id], agent: 'claude' })) as any
+    const { answers } = reviewPaths(root, sent.review)
+    const other = Uint8Array.from([...PNG, 9, 9])
+    writeFileSync(join(answers, 'one.png'), PNG)
+    writeFileSync(join(answers, 'two.png'), other)
+    const answer = (name: string) => writeFileSync(join(answers, `${added.note.id}.md`), `verdict: answered\nfixed: no\n\n![](${name})`)
+    const list = async (): Promise<any> => (await worker.request('notes.list', { root })) as any
+    const images = join(root, '.orca-git-log', 'images')
+    answer('one.png')
+    const [, first] = (await list()).notes[0].messages
+    assert.equal(existsSync(join(images, first.images[0].id)), true)
+    answer('two.png')
+    const [, second] = (await list()).notes[0].messages
+    assert.notEqual(second.images[0].id, first.images[0].id)
+    assert.equal(existsSync(join(images, first.images[0].id)), false)
+    assert.equal(existsSync(join(images, second.images[0].id)), true)
+    // Files nobody uses: one a day old goes with the next removal, a fresh one stays.
+    const old = join(images, 'aaaaaaaaaaaa.png')
+    const fresh = join(images, 'bbbbbbbbbbbb.png')
+    writeFileSync(old, PNG)
+    writeFileSync(fresh, PNG)
+    const longAgo = new Date(Date.now() - 25 * 3600 * 1000)
+    utimesSync(old, longAgo, longAgo)
+    assert.equal(((await worker.request('notes.remove', { root, id: added.note.id, message: added.note.messages[0].id })) as any).ok, true)
+    assert.equal(existsSync(old), false)
+    assert.equal(existsSync(fresh), true)
+    await worker.deactivate()
+  } finally {
+    gone(root)
+  }
+})
+
+test('the sweep leaves what a message uses, what is not an image name and what is a link', () => {
+  const root = scratch()
+  const outside = scratch()
+  try {
+    const images = join(root, '.orca-git-log', 'images')
+    mkdirSync(images, { recursive: true })
+    const names = ['cccccccccccc.png', 'dddddddddddd.png', 'notes.txt']
+    for (const name of names) writeFileSync(join(images, name), PNG)
+    writeFileSync(join(outside, 'x.png'), PNG)
+    symlinkSync(join(outside, 'x.png'), join(images, 'eeeeeeeeeeee.png'))
+    const longAgo = new Date(Date.now() - 48 * 3600 * 1000)
+    for (const name of names) utimesSync(join(images, name), longAgo, longAgo)
+    const used = { id: 'x', createdAt: 1, messages: [{ id: 'm', author: 'user', body: 'b', at: 1, images: [{ id: 'cccccccccccc.png', name: 'c', bytes: 1 }] }] } as any
+    sweepImages(root, [used], Date.now())
+    assert.deepEqual(readdirSync(images).sort(), ['cccccccccccc.png', 'eeeeeeeeeeee.png', 'notes.txt'])
+  } finally {
+    gone(root, outside)
   }
 })
