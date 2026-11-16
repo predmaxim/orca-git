@@ -114,7 +114,8 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   **Images** go with a new note or a reply: paste one into the editor (Ctrl+V; text pasted with it goes in
   as text), or press **Attach a file**
   (the image icon) for a path field that suggests the images and folders of the folder typed so far, with
-  the keys of the skills' field below (a full path, `~/…` or from the repository root). A message takes up
+  the keys of the skills' field below (a full path, `~/…` or from the repository root); closing the field
+  clears what it said under it. A message takes up
   to 5 PNG, JPEG, GIF or WebP images of up to 5 MiB each; they stand under the field, each with × to take
   it off, and a refused image says why under the field. A message needs text: Enter with images and no
   text says so under the field. An edit keeps the message's images as they are.
@@ -155,7 +156,7 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   **Add a skill** opens a path field that suggests the `.md` files and the folders of the folder typed
   so far: ↑ / ↓ pick, Enter or Tab take a suggestion (a folder opens in the field, a file is added), Done
   or Enter with no suggestion take the typed path (while the suggestions for what was just typed are on
-  their way there are none); × removes a skill. A refused path shows under the field, a refused removal
+  their way there are none), and with nothing typed close the field; × removes a skill. A refused path shows under the field, a refused removal
   under the list. When notes are sent, `notes.md` lists the skills that exist then, each once, as full
   paths in order, and the prompt tells the agent to use them first; without skills the prompt is as
   before. The skills are kept in the plugin's storage.
