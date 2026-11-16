@@ -493,6 +493,9 @@ export const en = {
   notesFull: 'Too many notes for this repository: delete some first.',
   noteInvalid: 'This note cannot be saved.',
   noteMissing: 'The note no longer exists.',
+  noteGone: 'This note is gone',
+  noteCommitMissing: 'No commit shows this note: its content is not in the history any more',
+  noteFileMissing: 'The commit of this note does not change its file',
   noteFull: 'This thread is full: {count} messages.',
   noteSentFixed: 'A sent message cannot be changed.',
   notesCut: {
@@ -1025,6 +1028,9 @@ export const ru: Record<keyof typeof en, Message> = {
   notesFull: 'Слишком много заметок в этом репозитории: сначала удалите часть.',
   noteInvalid: 'Эту заметку нельзя сохранить.',
   noteMissing: 'Заметки уже нет.',
+  noteGone: 'Заметки больше нет',
+  noteCommitMissing: 'Нет коммита, где видна эта заметка: её содержимого больше нет в истории',
+  noteFileMissing: 'Коммит заметки не меняет её файл',
   noteFull: 'Обсуждение заполнено: {count} сообщений.',
   noteSentFixed: 'Отправленное сообщение изменить нельзя.',
   notesCut: {

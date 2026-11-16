@@ -393,6 +393,8 @@ declare module 'orca' {
     /** The Diff tab stepped to another file of its state. */
     'diff.index': { input: { root: string; index: number }; output: { ok: boolean } }
     'notes.list': { input: { root: string }; output: { notes: ReviewNote[]; warning?: string } }
+    /** Opens the Diff tab on the commit whose own diff shows the note `id`, to scroll to it once, and posts `commit.reveal`; `reason` when the note, its commit or its file there is gone. */
+    'notes.open': { input: { root: string; id: string }; output: { ok: boolean; reason?: string } }
     'notes.add': { input: { root: string; draft: NoteDraft }; output: NoteResult }
     /** A new message of the user at the end of the thread; it opens a resolved one again. */
     'notes.reply': { input: { root: string; id: string; body: string; images?: NoteImage[] }; output: NoteResult }
@@ -434,5 +436,7 @@ declare module 'orca' {
     'diff.current': { root: string; path: string }
     /** The notes of `root` changed. */
     'notes.changed': { root: string }
+    /** The Diff tab of `root` now shows commit `hash`, the commit of a note: the panel of `root` selects it and the file `path`. */
+    'commit.reveal': { root: string; hash: string; path: string }
   }
 }

@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path'
 import type { OrcaWorkerApi, PanelRequestContext } from 'orca/worker'
 import { pickLocale, setLocale, t } from '../shared/i18n.ts'
 import type { ActionResult, DiffTabState, NoteImage, NoteResult, RepoResult, RevealResult, ReviewNote, SelectionFile } from '../shared/protocol.ts'
-import { stateOf, unsentOf, waitingFor } from '../shared/notes.ts'
+import { noteFileIndex, stateOf, unsentOf, waitingFor } from '../shared/notes.ts'
 import { answerImages, attachImage, checkImages, dropImages, putImage, readImage, sweepImages } from './images.ts'
 import { checkRewrite, runAction } from './actions.ts'
 import { checkBackup, checkReset, deleteBackup, runGuarded } from './backup.ts'
@@ -17,6 +17,7 @@ import { resolveRepo, toplevel } from './repo.ts'
 import { takeReveal } from './reveal.ts'
 import { readFileDiff } from './diff.ts'
 import { readRangeDiff, readSelectionFiles } from './selection.ts'
+import { findNoteCommit } from './noteCommit.ts'
 import { addNote, agentKey, deleteNotes, editMessage, fitList, listNotes, markSent, markUnsent, pendingRoots, removeMessage, replyNote, resendNote, resolveNote, setAnswers, setNotesLog } from './notes.ts'
 import { promptRefusal, readAnswers, removeReview, reviewPaths, reviewPrompt, writeReview } from './review.ts'
 import { browseSkills, checkSkills, listSkills, saveSkills, skillPathAbs, skillsForReview } from './skills.ts'
@@ -428,6 +429,22 @@ export default function activate(orca: OrcaWorkerApi): void {
     const { notes, cut } = fitList(await listNotes(orca.storage, key))
     if (cut) warning = [warning, t('notesCut', { count: cut })].filter(Boolean).join(' ')
     return warning ? { notes, warning } : { notes }
+  })
+
+  // A note written in a commit the tab does not show: the tab opens the commit whose own diff shows it, and the panel selects that commit.
+  handle('notes.open', async ({ root, id }) => {
+    const git = await gitFor(root)
+    const key = git.root
+    const note = (await listNotes(orca.storage, key)).find((n) => n.id === id)
+    if (!note) return { ok: false, reason: t('noteGone') }
+    const hash = await findNoteCommit(git, note)
+    if (!hash) return { ok: false, reason: t('noteCommitMissing') }
+    const files = orderedFiles(buildFileTree(await readSelectionFiles(git, [hash])))
+    const index = noteFileIndex(files, note, -1)
+    if (index < 0) return { ok: false, reason: t('noteFileMissing') }
+    const shown = await showDiff(key, files, index, note.id)
+    if (shown.ok) orca.panels.post('commit.reveal', { root: key, hash, path: files[index].path })
+    return shown
   })
 
   /** Tells the panels when a change of the notes of `root` went through. */
