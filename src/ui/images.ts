@@ -6,6 +6,7 @@ import type { NoteImage } from '../shared/protocol.ts'
 import { api, errorMessage } from './api.ts'
 import { h, icon } from './dom.ts'
 import { sizeText } from './format.ts'
+import { closePopups } from './menu.ts'
 import { fromBase64, toBase64, uploadParts } from './notemodel.ts'
 
 /** The type of a stored image, by the extension of its id. */
@@ -53,18 +54,23 @@ async function read(root: string, id: string): Promise<string> {
   return URL.createObjectURL(new Blob(parts, { type: MIME[id.slice(id.lastIndexOf('.') + 1)] ?? '' }))
 }
 
-/** A blob: URL of the image, read from the worker in parts and kept for the tab's life. */
+/** A blob: URL of the image, read from the worker in parts and kept for the tab's life; a failed read is not kept, so the next drawing tries again. */
 export function imageUrl(root: string, id: string): Promise<string> {
   let url = urls.get(id)
   if (!url) {
-    url = read(root, id)
-    urls.set(id, url)
+    const reading = read(root, id)
+    reading.catch(() => {
+      if (urls.get(id) === reading) urls.delete(id)
+    })
+    urls.set(id, reading)
+    url = reading
   }
   return url
 }
 
 /** An image as a button that opens it: a box with its name while it loads, its name as text when it cannot be read. */
 export function thumbnail(root: string, image: NoteImage): HTMLButtonElement {
+  // showImage finds a thumbnail drawn anew by this label.
   const button = h('button', { class: 'd-image', 'aria-label': t('imageOpen', { name: image.name }), onclick: () => showImage(root, image) }, image.name)
   const failed = () => {
     button.className = 'd-image failed'
@@ -81,11 +87,24 @@ export function thumbnail(root: string, image: NoteImage): HTMLButtonElement {
 export function showImage(root: string, image: NoteImage): void {
   closeShown?.()
   const back = document.activeElement as HTMLElement | null
+  // One Esc must not close a menu or popover and the image at once.
+  closePopups()
+  const label = t('imageOpen', { name: image.name })
   const picture = h('img', { alt: image.name, title: image.name })
   const close = h('button', { class: 'tool', title: t('imageClose'), 'aria-label': t('imageClose'), onclick: () => finish() }, icon('close'))
   const layer = h(
     'div',
-    { class: 'overlay image-view', role: 'dialog', 'aria-modal': 'true', 'aria-label': image.name, onmousedown: (event: MouseEvent) => event.target !== picture && finish() },
+    {
+      class: 'overlay image-view',
+      role: 'dialog',
+      'aria-modal': 'true',
+      'aria-label': image.name,
+      // The press's own focus change would land on the layer just removed and take the focus off the thumbnail.
+      onmousedown: (event: MouseEvent) => {
+        event.preventDefault()
+        if (event.target !== picture) finish()
+      }
+    },
     close,
     h('figure', null, picture, h('figcaption', null, h('span', null, image.name), h('span', { class: 'muted' }, sizeText(image.bytes))))
   )
@@ -100,7 +119,9 @@ export function showImage(root: string, image: NoteImage): void {
     closeShown = null
     layer.remove()
     document.removeEventListener('keydown', onKey, true)
-    back?.focus({ preventScroll: true })
+    // A redraw meanwhile drew the thumbnail anew: the focus goes to the one of this image drawn now.
+    const heir = back?.isConnected ? back : Array.from(document.querySelectorAll<HTMLElement>('button.d-image')).find((el) => el.getAttribute('aria-label') === label)
+    heir?.focus({ preventScroll: true })
   }
   closeShown = finish
   imageUrl(root, image.id).then(

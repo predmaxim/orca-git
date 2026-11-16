@@ -272,9 +272,11 @@ export function mountNotes(options: {
   function refresh(): void {
     syncCount()
     refill?.()
-    const typing = editor && document.activeElement === editor.area ? editor.area : null
+    // The redraw moves the editor's element: the control of it that had the focus (the text, the path field, a thumbnail) gets it back.
+    const focused = document.activeElement
+    const kept = editor && focused instanceof HTMLElement && editor.el.contains(focused) ? focused : null
     options.rerender()
-    typing?.focus({ preventScroll: true })
+    kept?.focus({ preventScroll: true })
   }
 
   function put(note: ReviewNote): void {
@@ -433,6 +435,8 @@ export function mountNotes(options: {
                     title: t('imageRemove', { name: image.name }),
                     'aria-label': t('imageRemove', { name: image.name }),
                     onclick: () => {
+                      // The save running has taken the images already.
+                      if (saving) return
                       mine.images = mine.images.filter((i) => i !== image)
                       draw()
                       area.focus()
@@ -445,8 +449,12 @@ export function mountNotes(options: {
         ...mine.sending.map((name) => h('span', { class: 'd-image' }, name)),
         ...(editing ? [] : [attachButton])
       )
-    /** Attaches the image `get` stores while the message has room for one more; a refusal shows under the field. True when attached. */
+    /**
+     * Attaches the image `get` stores while the message has room for one more; a refusal shows under the field. Nothing is
+     * attached while the message is being saved: the save has taken its images already. True when attached.
+     */
     const attach = async (name: string, get: () => Promise<{ ok: true; image: NoteImage } | { ok: false; reason: string }>): Promise<boolean> => {
+      if (saving) return false
       if (mine.images.length + mine.sending.length >= MAX_IMAGES) {
         error.textContent = t('imageMany')
         return false
