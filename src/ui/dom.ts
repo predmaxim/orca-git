@@ -57,7 +57,8 @@ export function mountTree(container: HTMLElement, rows: HTMLElement[], depths: n
   const top = container.firstElementChild?.scrollTop ?? 0
   container.replaceChildren(tree)
   tree.scrollTop = top
-  heir?.focus()
+  // The same row keeps the place the user scrolled to (a redraw can come from outside, as notes.changed); a new heir is shown.
+  heir?.focus({ preventScroll: heir === kept })
 }
 
 /** An inline SVG icon from the set below; decorative, its button or text carries the meaning. Its size comes from CSS. */

@@ -815,22 +815,32 @@ function selectRange(to: number, additive: boolean): void {
   selectionChanged()
 }
 
+/** Counts revealCommit calls: one that waited for pages while a newer one came stops, as the newer is the user's last choice. */
+let revealGen = 0
+
 /**
  * Selects a commit asked for from outside: on HEAD's history first, else among every branch. `focus: false`
  * leaves the keyboard where it is; `file` becomes the current file once the selection's files load, if it is among them.
+ * It stops after any wait in which a newer reveal came or the panel switched to another repository.
  */
 async function revealCommit(hash: string, { focus = true, file }: { focus?: boolean; file?: string } = {}): Promise<void> {
+  const mine = ++revealGen
+  const root = repo?.root
+  const current = () => mine === revealGen && repo?.root === root
   await loadUntil(() => indexByHash.has(hash))
+  if (!current()) return
   if (!indexByHash.has(hash) && filter.branches?.length) applyFilter({ branches: [] })
-  await jumpTo(hash, focus)
-  if (!file || !selected.has(hash)) return
+  await jumpTo(hash, focus, current)
+  if (!current() || !file || !selected.has(hash)) return
   const token = filesToken
   await filesLoad
   if (token === filesToken) markCurrentFile(file)
 }
 
-async function jumpTo(hash: string, focus = true): Promise<void> {
+/** Selects `hash` once the pages that hold it are loaded; nothing when `current` says the wait was overtaken. */
+async function jumpTo(hash: string, focus = true, current = () => true): Promise<void> {
   await loadUntil(() => indexByHash.has(hash))
+  if (!current()) return
   const index = indexByHash.get(hash)
   if (index === undefined) {
     showBanner(isFiltered() || filter.branches?.length ? t('commitHidden') : t('commitNotInLog'), 'info')
