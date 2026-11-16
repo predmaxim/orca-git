@@ -2,6 +2,8 @@
 
 Published 2026-11-11 (by the user's decision): 1 as a comment on stablyai/orca#19826 ("Let plugin panels render in the workspace area", which it overlaps): https://github.com/stablyai/orca/issues/19826#issuecomment-6780278191; 2 as stablyai/orca#40879; a third, on a terminal's busy state and unsaved editor tabs (backlog item 15), as stablyai/orca#40880. Earlier: stablyai/orca#40813 (moving focus between the plugin's tab and panel).
 
+Published 2026-11-16 (by the user's decision): stablyai/orca#43189, plugin workers get no session environment (`XDG_RUNTIME_DIR`, `DBUS_SESSION_BUS_ADDRESS`, `SSH_AUTH_SOCK`), so git credential helpers on the session bus fail. The plugin's workaround is `sessionRuntimeDir` in `src/worker/launch.ts` (marked `shortcut:`); remove it, its test `src/worker/sessionenv.test.ts` and the sentences in the README and `docs/git-safety.md` once Orca passes the variables.
+
 ## 1. Plugin API: open a plugin's own view in an editor tab without a file
 
 **Problem.** A plugin can contribute a panel (sidebar) and a custom editor (a tab for a file type), but it cannot open a tab of its own. The only way to get a full-size view next to the other editor tabs is `editor.open` on a file that matches the custom editor's `extensions`.
