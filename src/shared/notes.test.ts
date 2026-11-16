@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { NoteMessage, ReviewNote, SelectionFile } from './protocol.ts'
-import { carriedNotes, noteBlob, noteFileIndex, notesOfFile, noteTone, placeCandidate } from './notes.ts'
+import { carriedNotes, noteBlob, noteFileIndex, notesOfFile, noteTone, placeCandidate, placeTarget } from './notes.ts'
 
 const A = 'a'.repeat(40)
 const B = 'b'.repeat(40)
@@ -83,6 +83,14 @@ test('placeCandidate: a note of the side path on another blob; on the new side t
   assert.equal(placeCandidate([note('n', 'new', C, 1)], renamed), true)
   assert.equal(placeCandidate([note('o', 'old', C, 1)], renamed), true)
   assert.equal(placeCandidate([note('o', 'old', C, 1, { path: 'src/y.ts' })], renamed), false)
+})
+
+test('placeTarget: the blob of the note side it is carried to, for the worker and the frames alike', () => {
+  assert.equal(placeTarget(note('n', 'new', C, 1), file()), B)
+  assert.equal(placeTarget(note('o', 'old', C, 1), file()), A)
+  assert.equal(placeTarget(note('n', 'new', B, 1), file()), undefined)
+  assert.equal(placeTarget(note('n', 'new', C, 1, { path: 'src/y.ts' }), file()), undefined)
+  assert.equal(placeTarget(note('n', 'new', C, 1), file({ status: 'T' })), undefined)
 })
 
 test('placeCandidate: none on a file whose side has no blob of notes', () => {

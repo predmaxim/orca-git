@@ -271,6 +271,8 @@ export function mountNotes(options: {
   let placed: SelectionFile | null = null
   let places: NotePlace[] = []
   let placing = 0
+  /** The last places taken per file of the tab: a note's place on a version never changes, so a file shown again has its carried cards at once. */
+  const known = new Map<SelectionFile, NotePlace[]>()
   /**
    * The open editor: a new note at `anchor`, a reply to the thread `id`, or the message `message` of the thread `id`, and
    * the text it started with; its images, and the names of those still being sent. Its element lives on across renders,
@@ -924,11 +926,11 @@ export function mountNotes(options: {
 
   /**
    * Asks the worker where the notes of other versions of `of` stand on it, when a note may be one (`placeCandidate`); its answer
-   * redraws unless the tab asked again since, for another file or a new list. Until it comes, the places of the same file stay.
+   * redraws unless the tab asked again since, for another file or a new list. Until it comes, the places last taken for the file stay.
    */
   function place(of: SelectionFile): void {
     const mine = ++placing
-    if (of !== placed) places = []
+    if (of !== placed) places = known.get(of) ?? []
     placed = of
     if (!placeCandidate(notes, of)) {
       places = []
@@ -939,8 +941,10 @@ export function mountNotes(options: {
       // The worker logs what git did not answer: the notes are not carried.
       .then((answer) => answer.places[0] ?? [], (): NotePlace[] => [])
       .then((next) => {
+        if (mine !== placing) return
+        known.set(of, next)
         // The same places again (a new list that moved none) redraw nothing: a redraw disarms a Delete pressed once.
-        if (mine !== placing || JSON.stringify(next) === JSON.stringify(places)) return
+        if (JSON.stringify(next) === JSON.stringify(places)) return
         places = next
         refresh()
       })

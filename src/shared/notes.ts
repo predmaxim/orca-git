@@ -57,15 +57,18 @@ export function notesOfFile(notes: ReviewNote[], file: SelectionFile): ReviewNot
 }
 
 /**
- * Whether `notes.place` may carry a note of another version of a side of `file` to it, by the rule of the worker: a note with
- * the side's path (on the new side, also the path before a rename in this diff) and another blob than the side's.
+ * The blob of a side of `file` that `notes.place` may carry `note` to: the side's (`noteBlob`), when the note has the side's path
+ * (on the new side, also the path before a rename in this diff) and another blob. One rule for the worker and the frames that ask it.
  */
+export function placeTarget(note: Pick<ReviewNote, 'side' | 'path' | 'blob'>, file: SelectionFile): string | undefined {
+  const blob = noteBlob(file, note.side)
+  const path = note.side === 'new' ? note.path === file.path || note.path === file.oldPath : note.path === (file.oldPath ?? file.path)
+  return path && blob !== note.blob ? blob : undefined
+}
+
+/** Whether `notes.place` may carry a note of another version of a side of `file` to it (`placeTarget`). */
 export function placeCandidate(notes: ReviewNote[], file: SelectionFile): boolean {
-  return notes.some((n) => {
-    const blob = noteBlob(file, n.side)
-    const path = n.side === 'new' ? n.path === file.path || n.path === file.oldPath : n.path === (file.oldPath ?? file.path)
-    return path && blob !== undefined && n.blob !== blob
-  })
+  return notes.some((n) => placeTarget(n, file) !== undefined)
 }
 
 /** Copies of the notes `places` carries to a file, at their lines there; the outdated ones and notes gone are left out. */

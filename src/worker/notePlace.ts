@@ -1,4 +1,4 @@
-import { noteBlob } from '../shared/notes.ts'
+import { placeTarget } from '../shared/notes.ts'
 import type { NotePlace, ReviewNote, SelectionFile } from '../shared/protocol.ts'
 import { lastLines, type Git } from './git.ts'
 
@@ -73,10 +73,9 @@ export async function placeNotes(git: Git, notes: ReviewNote[], files: Selection
   for (const file of files) {
     const places: NotePlace[] = []
     for (const note of notes) {
-      const target = noteBlob(file, note.side)
+      const target = placeTarget(note, file)
       const commit = note.side === 'new' ? file.to : file.from
-      const samePath = note.side === 'new' ? note.path === file.path || note.path === file.oldPath : note.path === (file.oldPath ?? file.path)
-      if (!samePath || !hex(target) || note.blob === target || !hex(note.blob) || !hex(note.rev) || !hex(commit)) continue
+      if (!hex(target) || !hex(note.blob) || !hex(note.rev) || !hex(commit)) continue
       if (commit !== note.rev) {
         // 1: not an ancestor; 128: a commit git does not know (rewritten by a fixup, a squash or a rebase, then collected). Both
         // are carried: the blobs are compared directly, so the history between them does not matter.
