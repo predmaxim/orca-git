@@ -201,3 +201,32 @@
 - [ ] **Step 1:** `orca plugin test .`, `orca plugin validate .`, `orca plugin check .` — зелёное и код 0; tsc — 190 плюс только `TS2307`/`TS2591` в новых файлах.
 - [ ] **Step 2:** `git diff --stat 7ab299c` — файлы со смешанными концами строк меняются только в правленых строках.
 - [ ] **Step 3:** спека — «реализовано в ветке, проверено стендом; живая проверка — после слияния»; бэклог п. 14 — сделано (ссылка на спеку). Commit `Mark the review navigation design done and item 14 of the backlog with it`.
+
+### Task 11: Вкладка Diff переживает перезапуск worker'а и не теряет заметку для прокрутки
+
+Причина (проверено 2026-11-16): состояние вкладки — только в памяти worker'а (`diffStates`, `src/worker/main.ts:34`); Orca останавливает простаивающий worker и запускает заново по следующему запросу («An idle worker stops and restarts on its next command, event or panel request», `orca skills get orca-plugin-authoring --reference recipes`, Orca 1.4.259). Вкладка, поднятая заново (другой проект, восстановление вкладок, `dev reload`), получает `diff.state = null` и показывает «Выберите файл в панели Git…». Живая проверка 17:25: `orca plugin dev request local.git-log diff.state --data '{"root":"/home/predmaxim/Projects/mrdonald"}'` → `null` при вкладке, открытой в 16:18.
+
+Вторая причина, того же места (ревью Task 3 и Task 5, проверено по коду `src/ui/diff-app.ts:60-70`): `diff.state` отдаёт `reveal` один раз, а новая вкладка может прочитать состояние дважды — в `start()` и по `diff.show`; первый `show()` отменяется токеном (`if (mine !== token) return`) вместе с полученным `reveal`, второй его уже не получает — прокрутка к заметке теряется.
+
+**Files:**
+- Modify: `src/shared/protocol.ts` (`DiffTabState`), `src/worker/notes.ts` (ключ рядом с `notesKey`), `src/worker/main.ts` (`showDiff`, `diff.state`, `diff.index`, `activate`), `src/worker/diffTab.test.ts` (тест «takes the note to reveal once» — под новое правило), `src/ui/diff-app.ts`, `README.md` (Diff tab), `docs/git-safety.md` (строка 43: hashes ещё и из хранилища)
+- Create: `src/worker/diffRestore.test.ts`, `src/ui/revealonce.ts`, `src/ui/revealonce.test.ts`
+
+**Interfaces:**
+- Consumes: `showDiff`, `fitWindow` (Task 3); `DiffTabState.reveal` (не хранится).
+- Produces:
+  - `diffKey(root: string): string` = `'diff:' + sha256(root)` в `src/worker/notes.ts`; хранимое значение `{ root: string; hashes: string[]; path: string; to: string; open: string; reveal?: string }` — выделение вкладки, её текущий файл, id открытия и заметка для прокрутки.
+  - `DiffTabState.open: string` — id открытия: 12 hex, новый на каждый `showDiff` (`randomBytes(6)`). `reveal` больше не снимается при чтении: `diff.state` отдаёт его каждый раз вместе с тем же `open`; снимает только `diff.index` и новое открытие без заметки.
+  - `src/ui/revealonce.ts`: `revealToDo(state: Pick<DiffTabState, 'root' | 'open' | 'reveal'>, done: string | null): string | null` — id заметки, если `reveal` есть и `open !== done`, иначе `null`; вкладка хранит последнее выполненное `open` в `localStorage` под ключом `git-log.revealed.<root>` (переживает и перемонтирование, и перезагрузку фрейма) и записывает его, когда передаёт `reveal` в `mountDiff`.
+
+- [ ] **Step 1: Failing tests** `src/worker/diffRestore.test.ts` (`mountWorker` и `host` из `testkit.ts`, один и тот же `host` — одно хранилище — на оба запуска):
+  - `test('the Diff tab shows the same files after the worker restarts')`: `diff.open` → `deactivate` → новый `mountWorker` → `diff.state` равен прежнему (файлы, индекс), без `reveal`.
+  - `test('the restarted tab opens on the file it was moved to')`: `diff.index` на другой файл → перезапуск → `index` этого файла.
+  - `test('a stored selection whose commits are gone shows the placeholder')`: в хранилище — `hashes` несуществующего коммита → `diff.state` → `null`, без исключения; мусор в значении (не массив, не 40 hex, больше 500) → `null`.
+  - `test('every read of the state carries the note until the tab moves')` (в `diffTab.test.ts`, вместо «takes the note to reveal once»): два `diff.state` подряд — оба с `reveal` и тем же `open`; после `diff.index` — без `reveal`; новый `diff.open` — другой `open`.
+  - `revealonce.test.ts`: `revealToDo` — нет `reveal` → `null`; `open === done` → `null`; иначе id; другой корень не мешает (ключ по корню — в `diff-app.ts`).
+  - Перезапуск в тесте: `activate` начинает с пустой памяти (`diffStates.clear()` в начале `activate`) — как настоящий новый worker; без этого модуль в одном процессе Node помнит состояние и тест не проверит ничего.
+- [ ] **Step 2:** тесты падают (`null` после перезапуска).
+- [ ] **Step 3:** `showDiff` после записи состояния — `storage.set(diffKey(root), { root, hashes, path, to })` (hashes — те, из которых строились файлы: вход `diff.open` или `[hash]` у `notes.open`); `diff.index` обновляет `path`/`to`; ошибка записи — в `orca.log`, не мешает показу; хранится и `open`, и `reveal`. `diff.state` без состояния в памяти читает хранилище, проверяет значение (корень совпадает, 1–500 hashes по 40 hex, строки), строит файлы как `openDiff` (`readSelectionFiles` → `buildFileTree` → `orderedFiles`), индекс — по `path` и `to` (нет — 0), окно — `fitWindow`, кладёт в память и отдаёт; любая ошибка — `null` и строка в `orca.log`. Вкладка (`diff-app.ts`): `show()` передаёт в `mountDiff` `reveal: revealToDo(state, localStorage.getItem(key))` и записывает `state.open` в `localStorage` сразу после передачи; отменённый токеном `show()` ничего не записывает — его `reveal` достанется следующему.
+- [ ] **Step 4:** `orca plugin test .` — зелёное; tsc — без новых ошибок, кроме `node:*` в новом файле.
+- [ ] **Step 5:** README (вкладка Diff помнит выделение и файл в хранилище плагина и после перезапуска worker'а Orca показывает их снова), `docs/git-safety.md` строка 43. Commit `Keep the Diff tab's selection and file in the plugin's storage, so a restarted worker shows them again instead of the placeholder`.
