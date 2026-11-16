@@ -160,6 +160,8 @@ export interface NoteAnchor { path: string; side: NoteSide; blob: string; rev: s
 export interface NoteDraft extends NoteAnchor { body: string; images?: NoteImage[] }
 /** A review note is a thread: the messages of the user and the agent, oldest first. */
 export interface ReviewNote extends NoteAnchor { id: string; createdAt: number; messages: NoteMessage[]; resolvedAt?: number }
+/** Where a note written on another version of a file stands on this one: its lines there, or `outdated` when they changed. */
+export type NotePlace = { id: string; start: NotePoint; end: NotePoint } | { id: string; outdated: true }
 /** null: the note is gone. */
 export type NoteResult = { ok: true; note: ReviewNote | null } | { ok: false; reason: string }
 
@@ -397,6 +399,8 @@ declare module 'orca' {
     'notes.list': { input: { root: string }; output: { notes: ReviewNote[]; warning?: string } }
     /** Opens the Diff tab on the commit whose own diff shows the note `id`, to scroll to it once, and posts `commit.reveal`; `reason` when the note, its commit or its file there is gone. */
     'notes.open': { input: { root: string; id: string }; output: { ok: boolean; reason?: string } }
+    /** Per file of `files`, in their order: the notes of other versions of its sides carried to it, and the outdated ones; [] for a file with none. At most 100 files, else refused. */
+    'notes.place': { input: { root: string; files: SelectionFile[] }; output: { places: NotePlace[][] } }
     'notes.add': { input: { root: string; draft: NoteDraft }; output: NoteResult }
     /** A new message of the user at the end of the thread; it opens a resolved one again. */
     'notes.reply': { input: { root: string; id: string; body: string; images?: NoteImage[] }; output: NoteResult }
