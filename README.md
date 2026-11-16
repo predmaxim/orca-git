@@ -312,6 +312,12 @@ orca plugin shot local.git-log --editor <repo>/.orca-git-log.gitdiff   # the Dif
 orca plugin dev unload local.git-log   # back to the installed predmaxim.git-log, so two "Git" panels do not show
 ```
 
+To run the plugin from its checkout all the time, instead of an installed release: `orca plugin dev load .` in the
+checkout of `main`, then uninstall the released copy so only one "Git" panel shows. A change reaches Orca with
+`orca plugin dev reload .` once it is on `main`; new access asks for a new approval. Load it from `main`, not from a
+work-in-progress worktree: Orca runs whatever the folder holds. The folder plugin is `local.git-log`, with its own
+settings and its own stored notes, apart from those of `predmaxim.git-log`.
+
 ### Release
 
 Orca installs the newest `vX.Y.Z` tag, not the newest commit, so a release is a tag:
