@@ -55,6 +55,8 @@ const app = document.getElementById('app')!
 /** The repository this tab belongs to, from its anchor file. */
 let root: string | null = null
 let view: ReturnType<typeof mountDiff> | null = null
+/** The opening `view` shows. */
+let shownOpen: string | null = null
 let token = 0
 
 /** Shows what the worker keeps for this tab's repository; the placeholder when it keeps nothing. */
@@ -68,6 +70,8 @@ async function show(): Promise<void> {
     error = errorMessage(caught)
   }
   if (mine !== token) return
+  // The same opening read again (a new tab reads when it starts and on diff.show): the view stays, so its scroll to the note still comes.
+  if (view && state && state.open === shownOpen) return
   view?.dispose()
   view = null
   if (error) app.replaceChildren(h('div', { class: 'diff-view' }, h('div', { class: 'diff-note error' }, error)))
@@ -96,6 +100,7 @@ async function show(): Promise<void> {
       onIndex: (index) => void api.diffIndex(state.root, index).catch(() => undefined),
       reveal: reveal ?? undefined
     })
+    shownOpen = state.open
     if (reveal) localStorage.setItem(revealed, state.open)
   }
 }

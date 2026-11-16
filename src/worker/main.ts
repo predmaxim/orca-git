@@ -228,7 +228,8 @@ async function restoreDiff(root: unknown): Promise<DiffKept | null> {
   if (typeof root !== 'string') return null
   try {
     const kept = (await orcaApi.storage.get(diffKey(root))) as any
-    if (kept?.root !== root || typeof kept.path !== 'string' || typeof kept.to !== 'string' || typeof kept.open !== 'string') return null
+    if (kept === null) return null
+    if (kept?.root !== root || typeof kept.path !== 'string' || typeof kept.to !== 'string' || typeof kept.open !== 'string') throw new Error('invalid value')
     // It refuses anything but 1 to 500 full hashes, and git refuses a commit that is gone.
     const files = orderedFiles(buildFileTree(await readSelectionFiles(await gitFor(root), kept.hashes)))
     if (!files.length) return null
@@ -249,7 +250,8 @@ async function restoreDiff(root: unknown): Promise<DiffKept | null> {
 
 /** Brings the Diff tab of `root` forward as it is: no new state, no `diff.show`, so it keeps its scroll. */
 async function focusDiff({ root }: { root: string }): Promise<{ ok: boolean; reason?: string }> {
-  if (!diffStates.has(root)) return { ok: false }
+  // A worker Orca has restarted keeps the tab in the storage only.
+  if (!diffStates.has(root) && !(await restoreDiff(root))) return { ok: false }
   const tab = await diffTab(root)
   if ('reason' in tab) return { ok: false, reason: tab.reason }
   await orcaApi.host.call('editor.open', tab)
@@ -415,7 +417,9 @@ export default function activate(orca: OrcaWorkerApi): void {
 
   // Another file of the tab: the note to reveal goes, the opening stays.
   handle('diff.index', async ({ root, index }) => {
-    const state = diffStates.get(root)
+    // A worker Orca has restarted keeps the tab in the storage only.
+    // shortcut: over 900 000 bytes of files, the restored window may start elsewhere than the tab's, so `index` may name another file; keep the window's start in the storage if that matters.
+    const state = diffStates.get(root) ?? (await restoreDiff(root))
     if (!state || !Number.isInteger(index) || index < 0 || index >= state.files.length) return { ok: false }
     diffStates.set(root, { root, files: state.files, index, open: state.open, hashes: state.hashes })
     orca.panels.post('diff.current', { root, path: state.files[index].path })

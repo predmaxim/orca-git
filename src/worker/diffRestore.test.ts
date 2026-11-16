@@ -62,6 +62,31 @@ test('the restarted tab opens on the file it was moved to', async () => {
   }
 })
 
+test('a tab that steps or is gone to before it reads the state of a restarted worker is not lost', async () => {
+  const root = fixture()
+  try {
+    const h = host(root)
+    const [three, two] = commits(root)
+    let worker = await mountWorker(main, { host: h })
+    await worker.request('diff.open', { root, hashes: [three, two], path: 'three.txt', to: three })
+    await worker.deactivate()
+
+    // The tab stays on screen and does not read diff.state again: the new worker's first request is its step.
+    worker = await mountWorker(main, { host: h })
+    assert.deepEqual(await worker.request('diff.index', { root, index: 1 }), { ok: true })
+    assert.deepEqual(worker.posts.at(-1), { event: 'diff.current', payload: { root, path: 'two.txt' } })
+    assert.equal((h.data().storage[diffKey(root)] as { path: string }).path, 'two.txt')
+    await worker.deactivate()
+
+    worker = await mountWorker(main, { host: h })
+    assert.deepEqual(await worker.request('diff.focus', { root }), { ok: true })
+    assert.equal(((await worker.request('diff.state', { root })) as DiffTabState).index, 1)
+    await worker.deactivate()
+  } finally {
+    remove(root)
+  }
+})
+
 test('a stored selection whose commits are gone shows the placeholder', async () => {
   const root = fixture()
   try {
@@ -91,10 +116,19 @@ test('a stored selection whose commits are gone shows the placeholder', async ()
       { path: 1 },
       { open: null }
     ]
+    // Each refused value is logged once; nothing kept is not.
     for (const over of garbage) {
-      assert.equal((await read(kept(over))).state, null, JSON.stringify(over).slice(0, 80))
+      const { state, logs } = await read(kept(over))
+      assert.equal(state, null, JSON.stringify(over).slice(0, 80))
+      assert.equal(logs.length, 1, JSON.stringify(over).slice(0, 80))
     }
-    assert.equal((await read('garbage')).state, null)
+    const { state, logs } = await read('garbage')
+    assert.equal(state, null)
+    assert.deepEqual(logs, [`Diff tab not restored for ${root}: invalid value`])
+    const worker = await mountWorker(main, { host: host(root) })
+    assert.equal(await worker.request('diff.state', { root }), null)
+    assert.deepEqual(worker.logs, [])
+    await worker.deactivate()
   } finally {
     remove(root)
   }
