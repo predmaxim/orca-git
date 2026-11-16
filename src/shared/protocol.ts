@@ -22,6 +22,8 @@ export interface WorkspaceChoice {
 }
 
 export type RepoResult = { ok: true; repo: RepoInfo } | { ok: false; reason: string; choices?: WorkspaceChoice[] }
+/** A commit another program asked the panel to show: its repository and the full hash. */
+export interface RevealResult { repo: RepoInfo; hash: string }
 
 export interface BranchRef {
   /** Short name: `main`, `origin/main`, `v1.0`. */
@@ -354,6 +356,7 @@ export interface DiffTabState {
 declare module 'orca' {
   interface PluginRequests {
     'repo.resolve': { input: { root?: string; workspaceId?: string }; output: RepoResult }
+    'reveal.take': { input: Record<string, never>; output: RevealResult | null }
     'repo.refs': { input: { root: string }; output: RefsResult }
     'repo.watch': { input: { root: string }; output: { ok: boolean } }
     'log.page': { input: { root: string; filter: LogFilter; skip: number; limit?: number }; output: LogPage }

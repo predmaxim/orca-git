@@ -22,6 +22,7 @@ import type {
   PushResult,
   RefsResult,
   RepoResult,
+  RevealResult,
   ResetCheck,
   ReviewNote,
   RewriteKind,
@@ -66,6 +67,7 @@ const call = (name: string, input: object, options?: { timeoutMs?: number }): Pr
 export const api = {
   resolve: (root?: string, workspaceId?: string): Promise<RepoResult> =>
     call('repo.resolve', root ? { root } : workspaceId ? { workspaceId } : {}),
+  revealTake: (): Promise<RevealResult | null> => call('reveal.take', {}),
   refs: (root: string): Promise<RefsResult> => call('repo.refs', { root }),
   watch: (root: string): Promise<{ ok: boolean }> => call('repo.watch', { root }),
   page: (root: string, filter: LogFilter, skip: number, limit?: number): Promise<LogPage> =>

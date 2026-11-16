@@ -3,7 +3,7 @@ import { appendFileSync, closeSync, constants, existsSync, fstatSync, mkdirSync,
 import { dirname, join, resolve } from 'node:path'
 import type { OrcaWorkerApi, PanelRequestContext } from 'orca/worker'
 import { pickLocale, setLocale, t } from '../shared/i18n.ts'
-import type { ActionResult, DiffTabState, NoteImage, NoteResult, RepoResult, ReviewNote } from '../shared/protocol.ts'
+import type { ActionResult, DiffTabState, NoteImage, NoteResult, RepoResult, RevealResult, ReviewNote } from '../shared/protocol.ts'
 import { stateOf, unsentOf, waitingFor } from '../shared/notes.ts'
 import { answerImages, attachImage, checkImages, dropImages, putImage, readImage, sweepImages } from './images.ts'
 import { checkRewrite, runAction } from './actions.ts'
@@ -14,6 +14,7 @@ import { buildFileTree, orderedFiles } from '../shared/filetree.ts'
 import { createGit, type Git } from './git.ts'
 import { readDetails, readLogPage, readRefs } from './log.ts'
 import { resolveRepo, toplevel } from './repo.ts'
+import { takeReveal } from './reveal.ts'
 import { readFileDiff } from './diff.ts'
 import { readRangeDiff, readSelectionFiles } from './selection.ts'
 import { addNote, agentKey, deleteNotes, editMessage, fitList, listNotes, markSent, markUnsent, pendingRoots, removeMessage, replyNote, resendNote, resolveNote, setAnswers, setNotesLog } from './notes.ts'
@@ -218,6 +219,17 @@ export default function activate(orca: OrcaWorkerApi): void {
     if (!result.ok) return result
     if (result.git) repos.set(result.repo.root, result.git)
     return { ok: true, repo: result.repo }
+  })
+
+  // A commit another program asked the panel to show (src/worker/reveal.ts): its repository and its full hash, once.
+  handle('reveal.take', async (): Promise<RevealResult | null> => {
+    const asked = takeReveal()
+    if (!asked) return null
+    const result = await resolveRepo(orca, await gitPath(), asked.root)
+    if (!result.ok || !result.git) return null
+    repos.set(result.repo.root, result.git)
+    const hash = await result.git.run(['rev-parse', '--verify', '--quiet', `${asked.hash}^{commit}`])
+    return hash.ok ? { repo: result.repo, hash: hash.stdout.trim() } : null
   })
 
   handle('repo.refs', async ({ root }) => readRefs(await gitFor(root)))

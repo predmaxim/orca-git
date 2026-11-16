@@ -257,6 +257,9 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   sections in one column; in a narrow column a commit takes two lines like a row of Orca's own lists
   (the message, then author and date smaller and muted, with space between commits; the graph's node
   level with the message).
+- **A commit shown from another program**: the Workflow plugin's «Показать коммит в Git» opens this panel on the
+  repository of a task's commit and selects the commit in Commits. The request waits in a private file the panel
+  takes when it starts; the contract is in [docs/reveal.md](docs/reveal.md).
 - **Diff tab**: opens when you click a file in the panel. Orca has no API for a plugin tab without a
   file, so the tab is a custom editor on a small anchor file, `.orca-git-log.gitdiff`, that the plugin
   writes at the root of the workspace holding the repository and adds to `.git/info/exclude`, so it

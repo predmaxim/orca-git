@@ -544,6 +544,14 @@ let startGen = 0
 async function start(): Promise<void> {
   const mine = ++startGen
   try {
+    // A commit another program asked to show (the Workflow plugin): its repository, with the commit selected.
+    const reveal = await api.revealTake().catch(() => null)
+    if (mine !== startGen) return
+    if (reveal) {
+      choices = []
+      setRepo(reveal.repo)
+      return void revealCommit(reveal.hash)
+    }
     let result: RepoResult = await api.resolve()
     if (!result.ok && result.choices?.length) {
       const saved = prefs.picked[choiceKey(result.choices)]
@@ -796,6 +804,13 @@ function selectRange(to: number, additive: boolean): void {
   cursor = to
   ensureVisible(to)
   selectionChanged()
+}
+
+/** Selects a commit asked for from outside: on HEAD's history first, else among every branch. */
+async function revealCommit(hash: string): Promise<void> {
+  await loadUntil(() => indexByHash.has(hash))
+  if (!indexByHash.has(hash) && filter.branches?.length) applyFilter({ branches: [] })
+  await jumpTo(hash)
 }
 
 async function jumpTo(hash: string): Promise<void> {
