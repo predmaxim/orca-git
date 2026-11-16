@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { NoteMessage, ReviewNote, SelectionFile } from './protocol.ts'
-import { carriedNotes, noteBlob, noteFileIndex, notesOfFile, noteTone, placeCandidate, placeTarget } from './notes.ts'
+import { carriedNotes, noteBlob, noteFileIndex, notesOfFile, notesUnder, noteTone, placeCandidate, placeTarget } from './notes.ts'
 
 const A = 'a'.repeat(40)
 const B = 'b'.repeat(40)
@@ -107,4 +107,20 @@ test('carriedNotes: copies of the carried notes at their lines there; outdated o
   ])
   assert.deepEqual(carried, [{ ...kept, start: { line: 5, col: 2 }, end: { line: 6, col: 5 } }])
   assert.deepEqual(kept.start, { line: 3, col: 2 })
+})
+
+test('notesUnder: own and carried notes at their lines on the file, outdated ones at their own lines and marked; open ones by line, then resolved ones', () => {
+  // `outdated` of the Notes list is as of HEAD: on this file the note is own, so it is not outdated here.
+  const own = note('own', 'new', B, 9, { outdated: true })
+  const carried = note('carried', 'new', C, 4, { outdated: true })
+  const changed = note('changed', 'new', C, 2)
+  const done = note('done', 'new', C, 1, { resolvedAt: 5 })
+  const under = notesUnder([own, carried, changed, done, note('other', 'new', A, 3, { path: 'src/y.ts' })], file(), [
+    { id: 'carried', start: { line: 6, col: 0 }, end: { line: 6, col: 1 } },
+    { id: 'changed', outdated: true },
+    { id: 'done', outdated: true },
+    { id: 'gone', outdated: true }
+  ])
+  assert.deepEqual(under.map((n) => [n.id, n.start.line, n.outdated]), [['changed', 2, true], ['carried', 6, undefined], ['own', 9, undefined], ['done', 1, true]])
+  assert.deepEqual(notesUnder([own], file(), []).map((n) => 'outdated' in n), [false])
 })

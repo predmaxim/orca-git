@@ -1,7 +1,7 @@
 // Review notes in the Diff tab: the selection and its button, the editor, the threads under their lines and the list of all notes.
 import type { FileDiff, NoteDraft, NoteImage, NoteMessage, NotePlace, NotePoint, NoteResult, NoteSide, NoteVerdict, ReviewNote, SelectionFile } from '../shared/protocol.ts'
 import { t, type MessageKey } from '../shared/i18n.ts'
-import { carriedNotes, lastAnswer, MAX_BODY, MAX_IMAGES, MAX_QUOTE, MAX_REVIEW_SKILLS, noteBlob, noteFileIndex, notesOfFile, placeCandidate, stateOf, unsentOf } from '../shared/notes.ts'
+import { carriedNotes, lastAnswer, MAX_BODY, MAX_IMAGES, MAX_QUOTE, MAX_REVIEW_SKILLS, noteBlob, noteFileIndex, notesOfFile, placeCandidate, placeTarget, stateOf, unsentOf } from '../shared/notes.ts'
 import { api, copyText, errorMessage, orca } from './api.ts'
 import type { DiffMode } from './diff.ts'
 import { h, icon, ICONS } from './dom.ts'
@@ -381,14 +381,15 @@ export function mountNotes(options: {
     }
   }
 
-  /** Shows the file of this tab the note `id` shows in and scrolls to its card; before the first list, once it is applied. */
+  /**
+   * Shows the file of this tab the note `id` shows in and scrolls to its card; before the first list, once it is applied; a note
+   * that may be carried to the file shown (a row of the panel's Files), once its places there come.
+   */
   function revealNote(id: string): void {
-    if (!applied) {
-      pending = id
-      return
-    }
     const note = notes.find((n) => n.id === id)
-    const index = note ? fileOf(note) : -1
+    pending = !applied || (note && file && !known.has(file) && placeTarget(note, file) !== undefined) ? id : null
+    if (pending) return
+    const index = note ? shownIn(note) : -1
     if (index >= 0) reveal(index, id)
   }
 
@@ -923,6 +924,8 @@ export function mountNotes(options: {
 
   /** Whether the note `id` of another version of the file shown was carried to it. */
   const carriedHere = (id: string) => places.some((p) => p.id === id && 'start' in p)
+  /** The file of this tab a note shows in: the file shown when the note is carried to it, else `fileOf`. */
+  const shownIn = (n: ReviewNote) => (file && carriedHere(n.id) ? files.indexOf(file) : fileOf(n))
 
   /**
    * Asks the worker where the notes of other versions of `of` stand on it, when a note may be one (`placeCandidate`); its answer
@@ -944,15 +947,18 @@ export function mountNotes(options: {
         if (mine !== placing) return
         known.set(of, next)
         // The same places again (a new list that moved none) redraw nothing: a redraw disarms a Delete pressed once.
-        if (JSON.stringify(next) === JSON.stringify(places)) return
-        places = next
-        refresh()
+        if (JSON.stringify(next) !== JSON.stringify(places)) {
+          places = next
+          refresh()
+        }
+        // A reveal of a note that may be carried here waited for these places.
+        if (pending) revealNote(pending)
       })
   }
 
   function item(n: ReviewNote): HTMLElement {
     // A note carried to the file shown is there, at its lines in this version.
-    const index = file && carriedHere(n.id) ? files.indexOf(file) : fileOf(n)
+    const index = shownIn(n)
     return h(
       'div',
       { class: `notes-item${n.resolvedAt !== undefined ? ' resolved' : ''}` },

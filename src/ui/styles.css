@@ -1831,6 +1831,11 @@ input[type='radio']:focus-visible {
   background: var(--state-done);
 }
 
+/* Outdated: its lines changed in this version; dashed as its label in the Notes list of the Diff tab. */
+.note-dot.outdated {
+  border: 1.5px dashed var(--muted-fg);
+}
+
 /* ---------- Diff tab ---------- */
 
 /* An editor tab: Orca paints its editors with the background, not the card. */

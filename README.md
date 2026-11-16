@@ -54,13 +54,18 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   state before the earliest selected commit that touched it to its state after the latest one, so a
   selection across a merge works too. A click (or Enter) opens the file's diff in the Diff tab.
   Under each file stand its **review notes**, as Azure DevOps lists threads in the file tree of a pull
-  request: the notes the file's diff shows (none under a file renamed without changes or changing type),
-  one row each: a dot of the state (hollow: not sent; yellow: sent, no answer yet; blue: answered; green:
-  confirmed or fixed), the first line, the start of the first message. Resolved notes come last, with a
-  check and pale; the file row counts the others. Hover a note for its path, lines, side, state and
-  whole first message; a click (or Enter) opens the file in the Diff tab at the note's card. The rows
-  follow every change of the notes, here or in the Diff tab. When the notes cannot be loaded, the banner
-  says so and the files show no notes.
+  request: the notes the file's diff shows (none under a file renamed without changes or changing type)
+  and the notes of another version of the file carried to it, at their new lines and with no mark, as in
+  the Diff tab; one row each: a dot of the state (hollow: not sent; yellow: sent, no answer yet; blue:
+  answered; green: confirmed or fixed), the first line, the start of the first message. Resolved notes
+  come last, with a check and pale; the file row counts the others. A note of another version whose lines
+  this version changed is **outdated**: it stands at its own first line with a dashed dot, among the
+  open or the resolved ones as its state is, and the file row counts it while it is open. Hover a note
+  for its path, lines, side, state and whole first message (an outdated one also names the commit after
+  which its lines changed); a click (or Enter) opens the file in the Diff tab at the note's card, and on
+  an outdated note opens the commit it was written in, as its row in the tab's Notes list does (a refusal
+  shows in the banner). The rows follow every change of the notes, here or in the Diff tab. When the
+  notes cannot be loaded, the banner says so and the files show no notes.
   Tree keys (here and in the branch tree): ↑ / ↓ move between rows, → opens a folder or steps into it,
   ← closes it or steps up to the parent folder (from a note, to its file), Space opens or closes a
   folder; each tree is one Tab stop, and a redraw keeps its scroll position.

@@ -1,9 +1,9 @@
-import type { ActionRequest, ActionResult, BackupDelete, BackupRequest, BranchAction, BranchActionResult, BranchRef, CommitDetails, CommitRow, LogFilter, PushPlan, PushRequest, RefsResult, RepoInfo, RepoResult, ResetCheck, ReviewNote, RewriteKind, SelectionFile, WorkspaceChoice } from '../shared/protocol.ts'
+import type { ActionRequest, ActionResult, BackupDelete, BackupRequest, BranchAction, BranchActionResult, BranchRef, CommitDetails, CommitRow, LogFilter, NotePlace, PushPlan, PushRequest, RefsResult, RepoInfo, RepoResult, ResetCheck, ReviewNote, RewriteKind, SelectionFile, WorkspaceChoice } from '../shared/protocol.ts'
 import { api, copyText, errorMessage, orca, timedOut } from './api.ts'
 import { backupBlock, suggestBackupName, type BackupBlock } from './backup.ts'
 import { lateResults } from './late.ts'
 import { buildFileTree, orderedFiles, type FileNode } from '../shared/filetree.ts'
-import { notesOfFile } from '../shared/notes.ts'
+import { notesUnder, placeCandidate } from '../shared/notes.ts'
 import { dirPaths, renderFileTree } from './filetree.ts'
 import { renderBranches } from './branches.ts'
 import { renderCommitList, renderPlaceholder } from './details.ts'
@@ -956,14 +956,39 @@ function drawFiles(): void {
     current: currentFile,
     open: (file) => openFile(selectionFiles.indexOf(file)),
     onToggle: drawFiles,
-    notes: (file) => notesOfFile(repoNotes, file),
-    openNote: (file, note) => openFile(selectionFiles.indexOf(file), note.id)
+    notes: (file) => notesUnder(repoNotes, file, notePlaces.get(file) ?? []),
+    openNote: (file, note) => (note.outdated ? openNoteCommit(note.id) : openFile(selectionFiles.indexOf(file), note.id))
   })
 }
 
-/** The review notes of the repository: each shows under the files of the selection whose diff shows it. */
+/** The review notes of the repository: each shows under the files of the selection whose diff shows it or that it is carried to. */
 let repoNotes: ReviewNote[] = []
 let notesToken = 0
+/** Where the notes of other versions of each file of the selection stand on it (`notes.place`): carried, or outdated. */
+let notePlaces = new Map<SelectionFile, NotePlace[]>()
+let placesToken = 0
+
+/**
+ * Asks the worker where the notes of other versions stand on the files of the selection a note may be carried to (`placeCandidate`),
+ * 100 files a request: a frame's message holds at most 64 KiB. The answer redraws the files unless the selection, the repository or
+ * the notes changed since; until it comes, the places taken last stay. A failed request carries no notes: the worker logs why.
+ */
+function placeNotes(): void {
+  const token = ++placesToken
+  const files = selectionFiles.filter((file) => placeCandidate(repoNotes, file))
+  if (!repo || !files.length) {
+    notePlaces = new Map()
+    return
+  }
+  const root = repo.root
+  const chunks: SelectionFile[][] = []
+  for (let i = 0; i < files.length; i += 100) chunks.push(files.slice(i, i + 100))
+  void Promise.all(chunks.map((chunk) => api.notesPlace(root, chunk).then((answer) => answer.places, (): NotePlace[][] => []))).then((answers) => {
+    if (token !== placesToken) return
+    notePlaces = new Map(chunks.flatMap((chunk, i) => chunk.map((file, j) => [file, answers[i][j] ?? []] as const)))
+    drawFiles()
+  })
+}
 
 /** Loads the notes of `root`; a failure shows none and says so in the banner. */
 function loadNotes(root: string): void {
@@ -974,6 +999,7 @@ function loadNotes(root: string): void {
   }).then((notes) => {
     if (token !== notesToken) return
     repoNotes = notes
+    placeNotes()
     if (fileTree.length) drawFiles()
   })
 }
@@ -994,7 +1020,14 @@ function openFile(index: number, note?: string): void {
   if (!repo || index < 0 || index >= selectionFiles.length) return
   currentFile = selectionFiles[index].path
   drawFiles()
-  void openDiff(repo.root, index, note)
+  const root = repo.root
+  void openTab(() => api.openDiff(root, filesHashes, selectionFiles[index], note))
+}
+
+/** An outdated note is not drawn in the diff of the selection: the worker opens the commit it was written in, as the Notes list of the tab does. */
+function openNoteCommit(id: string): void {
+  const root = repo?.root
+  if (root) void openTab(() => api.notesOpen(root, id))
 }
 
 function updateFiles(): void {
@@ -1002,6 +1035,8 @@ function updateFiles(): void {
   const hashes = selectedHashes()
   selectionFiles = []
   fileTree = []
+  // No places until the new files come: an answer for the old ones is dropped.
+  placeNotes()
   if (!repo || !hashes.length) {
     currentFile = null
     filesSection.setSummary('')
@@ -1016,6 +1051,7 @@ function updateFiles(): void {
       filesHashes = hashes
       fileTree = buildFileTree(files)
       selectionFiles = orderedFiles(fileTree)
+      placeNotes()
       openFolders.clear()
       for (const path of dirPaths(fileTree)) openFolders.add(path)
       // The open file stays open when the new selection still changes it.
@@ -1670,9 +1706,10 @@ async function forcePush(root: string, pushed: PushRequest): Promise<void> {
 }
 
 pushButton.addEventListener('click', () => void push())
-async function openDiff(root: string, index: number, note?: string): Promise<void> {
+/** Opens the Diff tab by `open`; why it did not, in the banner. */
+async function openTab(open: () => Promise<{ ok: boolean; reason?: string }>): Promise<void> {
   try {
-    const result = await api.openDiff(root, filesHashes, selectionFiles[index], note)
+    const result = await open()
     if (!result.ok) showBanner(result.reason ?? t('openDiffFailed'), 'error')
   } catch (error) {
     showBanner(errorMessage(error), 'error')
