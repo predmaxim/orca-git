@@ -1,0 +1,763 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Вариант B — Мессенджер</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+html, body { margin: 0; background: #0a0a0a; }
+
+.mock {
+  --m-bg: var(--background, #0a0a0a);
+  --m-card: var(--card, #171717);
+  --m-muted: var(--muted, #262626);
+  --m-muted-fg: var(--muted-foreground, #acacac);
+  --m-fg: var(--foreground, #fafafa);
+  --m-accent: var(--accent, #404040);
+  --m-accent-fg: var(--accent-foreground, #fafafa);
+  --m-border: var(--border, #ffffff12);
+  --m-input: var(--input, #ffffff26);
+  --m-primary: var(--primary, #e5e5e5);
+  --m-primary-fg: var(--primary-foreground, #171717);
+  --m-ring: var(--ring, #737373);
+  --m-danger: var(--destructive, #ff6467);
+  --m-radius: var(--radius, 10px);
+  --m-wait: #fbbf24;
+  --m-done: #4ade80;
+  --m-info: #7aa7ff;
+  --m-ui: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --m-mono: var(--font-mono, "JetBrains Mono", "JetBrainsMono Nerd Font", ui-monospace, monospace);
+  /* Bubbles: the user's on a tint of the theme's primary, the agent's on the muted plate. */
+  --m-me: color-mix(in srgb, var(--m-primary) 13%, var(--m-card));
+  --m-ag: var(--m-muted);
+  /* Armed delete: opaque, so that its words can lie over a bubble. */
+  --m-armed: color-mix(in srgb, var(--m-danger) 16%, var(--m-card));
+
+  box-sizing: border-box;
+  width: 1100px;
+  padding: 28px 30px 40px;
+  background: var(--m-bg);
+  color: var(--m-fg);
+  font: 13px/1.45 var(--m-ui);
+  letter-spacing: .01em;
+  -webkit-font-smoothing: antialiased;
+}
+.mock *, .mock *::before, .mock *::after { box-sizing: border-box; }
+:where(.mock) button { font: inherit; letter-spacing: inherit; color: inherit; }
+
+/* ---------- icons ---------- */
+.i { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- page chrome (not part of the design) ---------- */
+.page-head { margin-bottom: 22px; }
+.page-head h1 { margin: 0; font-size: 13px; font-weight: 600; }
+.page-head > p { margin: 2px 0 0; color: var(--m-muted-fg); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; color: var(--m-muted-fg); font-size: 12px; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend .ok2 { color: var(--m-info); }
+.changes { margin: 12px 0 0; padding: 10px 12px; border: 1px solid var(--m-border); border-radius: 8px; color: var(--m-muted-fg); font-size: 12px; }
+.changes h3 { margin: 0 0 4px; color: var(--m-fg); font-size: 12px; font-weight: 600; }
+.changes ul { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 24px; margin: 0; padding-left: 16px; }
+.sec { margin: 26px 0 10px; }
+.sec h2 { margin: 0; font-size: 13px; font-weight: 600; }
+.sec p { margin: 2px 0 0; color: var(--m-muted-fg); font-size: 12px; }
+.cap { display: flex; align-items: center; gap: 8px; margin: 18px 0 6px; color: var(--m-muted-fg); font-size: 12px; }
+.cap b { display: inline-grid; flex: none; place-items: center; width: 18px; height: 18px; border: 1px solid var(--m-border); border-radius: 4px; color: var(--m-fg); font: 600 11px/1 var(--m-mono); }
+
+/* ---------- diff ---------- */
+.diff { border: 1px solid var(--m-border); border-radius: 8px; overflow: hidden; background: var(--m-bg); }
+.diff .file { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border-bottom: 1px solid var(--m-border); background: var(--m-card); color: var(--m-muted-fg); font-size: 12px; }
+.diff .file code { color: var(--m-fg); font: 12px var(--m-mono); }
+.row { display: grid; grid-template-columns: 44px 44px minmax(0, 1fr); }
+.n { padding-right: 10px; color: #858585; font: 12px/20px var(--m-mono); text-align: right; user-select: none; }
+.c { padding: 0 12px; color: #d4d4d4; font: 13px/20px var(--m-mono); white-space: pre; }
+.row.add { background: color-mix(in srgb, var(--m-done) 7%, transparent); }
+.row.add .n { background: color-mix(in srgb, var(--m-done) 10%, transparent); }
+.row.note > .cell { grid-column: 3; padding: 4px 10px; }
+.q { background: color-mix(in srgb, var(--m-wait) 28%, transparent); border-radius: 2px; color: inherit; }
+.k { color: #569cd6; } .s { color: #ce9178; } .v { color: #4fc1ff; } .f { color: #dcdcaa; } .p { color: #9cdcfe; } .num { color: #b5cea8; }
+
+/* split: one grid row per line, four cells: gutter and code of "было", gutter and code of "стало" (480px) */
+.diff.split .row { grid-template-columns: 40px 478px 40px 480px; }
+.diff.split .row > :nth-child(3) { border-left: 1px solid var(--m-border); }
+.diff.split .row > :nth-child(-n+2) { opacity: .5; }
+.diff.split .row.note > .cell { grid-column: 4; }
+.diff.split .c { white-space: pre-wrap; overflow-wrap: anywhere; padding-left: 26px; text-indent: -14px; }
+.diff.split .row.file2 { grid-template-columns: 518px 520px; }
+.diff.split .s { white-space: nowrap; }
+.diff.split .row.file2 > .file { opacity: 1; border-left: 0; }
+.diff.split .row.file2 > .file + .file { border-left: 1px solid var(--m-border); }
+.diff.split .row.gap .n, .diff.split .row.gap .c { height: 22px; line-height: 22px; background: color-mix(in srgb, var(--m-fg) 3%, transparent); color: #858585; }
+.n.add, .c.add { background: color-mix(in srgb, var(--m-done) 7%, transparent); }
+.n.add { background: color-mix(in srgb, var(--m-done) 10%, transparent); }
+.n.del, .c.del { background: color-mix(in srgb, var(--m-danger) 8%, transparent); }
+.n.del { background: color-mix(in srgb, var(--m-danger) 11%, transparent); }
+.n.empty, .c.empty { background: repeating-linear-gradient(135deg, transparent 0 6px, #ffffff08 6px 7px); }
+
+/* ================================================================
+   The thread — what notes.ts would draw
+   ================================================================ */
+.th {
+  container-type: inline-size;
+  max-width: 680px;
+  border: 1px solid var(--m-border);
+  border-radius: 8px;
+  background: var(--m-card);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Head: one state label (plus Outdated); the thread's actions are one group that keeps to the right, wrapped or not. */
+.th-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 36px; padding: 5px 5px 5px 12px; border-bottom: 1px solid var(--m-border); }
+.th-acts { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+/* A narrow card (split, ~460px): Send again keeps only its icon, so the head stays one line. */
+@container (max-width: 520px) {
+  .btn.resend { width: 24px; padding: 0; justify-content: center; }
+  .btn.resend > span { display: none; }
+}
+
+/* Labels: .d-label, plus the delivery icon so the head speaks the bubbles' language. */
+.lbl {
+  --tone: var(--m-muted-fg);
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 18px; padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--tone) 45%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--tone) 12%, transparent);
+  color: color-mix(in srgb, var(--tone) 40%, var(--m-fg));
+  font-size: 11px; font-weight: 600; line-height: 16px; white-space: nowrap;
+}
+.lbl:has(> .i) { padding-left: 4px; }
+.lbl .i { width: 12px; height: 12px; }
+.lbl.done { --tone: var(--m-done); }
+.lbl.info { --tone: var(--m-info); }
+.lbl.wait { --tone: var(--m-wait); }
+.lbl.danger { --tone: var(--m-danger); }
+.lbl.outdated { border-style: dashed; color: var(--m-muted-fg); }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  height: 24px; padding: 0 8px;
+  border: 1px solid var(--m-input); border-radius: 6px;
+  background: color-mix(in srgb, var(--m-input) 30%, transparent);
+  font-size: 12px; font-weight: 500; white-space: nowrap;
+}
+.btn:hover, .btn.is-hover { background: color-mix(in srgb, var(--m-input) 50%, transparent); }
+.ib {
+  display: inline-grid; place-items: center; flex: none;
+  width: 26px; height: 26px; padding: 0;
+  border: 0; border-radius: 6px; background: none;
+  color: var(--m-muted-fg);
+}
+.ib .i { width: 16px; height: 16px; }
+.ib:hover, .ib.is-hover { background: var(--m-accent); color: var(--m-accent-fg); }
+.ib.is-focus, .btn.is-focus { outline: 2px solid var(--m-ring); outline-offset: 0; }
+/* Armed delete in a head or a folded line: the words before the icon, so the icon stays where it was pressed. */
+.ib.armed { display: inline-flex; gap: 6px; width: auto; padding: 0 5px 0 8px; background: var(--m-armed); color: var(--m-danger); font-size: 12px; font-weight: 500; white-space: nowrap; }
+
+/* ---------- messages ---------- */
+.msgs { display: flex; flex-direction: column; gap: 12px; padding: 12px 12px 0; }
+/* A group: one author and one delivery state; a new state of the same author starts a new group, close to the last. */
+.grp { display: flex; flex-direction: column; gap: 2px; }
+.grp.me + .grp.me { margin-top: -6px; }
+.grp.ag { flex-direction: row; align-items: flex-start; gap: 8px; }
+.grp.ag > .stack { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+
+/* A message row: the bubble and, on its free side, its tools. */
+.m { display: flex; align-items: flex-start; gap: 4px; min-width: 0; }
+.me .m { justify-content: flex-end; }
+.m > .tools { display: flex; gap: 2px; margin-top: 2px; opacity: 0; }
+.m:hover > .tools, .m:focus-within > .tools, .m.is-hover > .tools, .m.is-focus > .tools { opacity: 1; }
+/* Armed Delete message keeps its place and size; its words lie over the bubble on an opaque plate, so nothing reflows. */
+.m > .tools .ib.armed { position: relative; z-index: 1; width: 26px; padding: 0; justify-content: center; filter: drop-shadow(0 2px 6px rgb(0 0 0 / .45)); }
+.m > .tools .ib.armed > .say { position: absolute; top: 0; display: flex; align-items: center; height: 26px; padding: 0 10px; background: inherit; white-space: nowrap; }
+.me .m > .tools .ib.armed { border-radius: 6px 0 0 6px; }
+.me .m > .tools .ib.armed > .say { left: 100%; padding-left: 4px; border-radius: 0 6px 6px 0; }
+.ag .m > .tools .ib.armed { border-radius: 0 6px 6px 0; }
+.ag .m > .tools .ib.armed > .say { right: 100%; padding-right: 4px; border-radius: 6px 0 0 6px; }
+
+.b { position: relative; min-width: 0; padding: 6px 10px; border-radius: 10px; }
+/* The group's first bubble points at its author with a sharp top corner; joints between bubbles are sharp too. */
+.me .b { max-width: min(520px, 78%); background: var(--m-me); border-top-right-radius: 4px; }
+.me .m:not(:last-child) .b { border-bottom-right-radius: 4px; }
+.ag .b { max-width: min(600px, calc(100% - 30px)); background: var(--m-ag); border-top-left-radius: 4px; }
+.ag .m:not(:last-child) .b { border-bottom-left-radius: 4px; }
+
+/* Agent: avatar at the group's top, name (and a verdict the head does not show) in the bubble's first line. */
+.ava { display: grid; place-items: center; flex: none; width: 24px; height: 24px; margin-top: 1px; border-radius: 50%; background: color-mix(in srgb, var(--m-fg) 9%, transparent); color: var(--m-muted-fg); }
+.who { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 1px 0 5px; font-size: 12px; line-height: 18px; }
+.who .name { font-weight: 600; }
+.who .kind { margin-left: -2px; color: var(--m-muted-fg); }
+
+/* Time and delivery, Telegram-style: floats into the last line of a closing paragraph when it fits. */
+.meta { float: right; position: relative; top: 4px; display: inline-flex; align-items: center; gap: 3px; margin-left: 12px; color: var(--m-muted-fg); font-size: 11px; line-height: 14px; white-space: nowrap; }
+.meta .ok2 { color: var(--m-info); }
+/* Markdown that ends in a list, a code block or a quote: the time takes its own line at the bubble's end. */
+.meta-line { display: flex; justify-content: flex-end; margin-top: 2px; }
+.meta-line .meta, .imgs .meta { float: none; top: 0; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* Markdown */
+.md > * { margin: 0 0 6px; }
+.md > :last-child { margin-bottom: 0; }
+.md :is(ul, ol) { padding-left: 18px; }
+.md li + li { margin-top: 2px; }
+.md code { padding: 1px 4px; border-radius: 4px; background: color-mix(in srgb, var(--m-fg) 9%, transparent); font: 12px var(--m-mono); }
+.md pre { padding: 7px 10px; overflow: auto; border: 1px solid var(--m-border); border-radius: 6px; background: color-mix(in srgb, var(--m-bg) 70%, transparent); font: 12px/1.5 var(--m-mono); white-space: pre; }
+.md pre code { padding: 0; background: none; }
+.md a { color: var(--m-primary); text-underline-offset: 2px; }
+
+/* Images: 96px thumbnails; the time sits at the row's end. */
+.imgs { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px; margin-top: 8px; }
+.imgs .meta { margin-left: auto; padding-left: 12px; }
+.thumb { display: block; height: 96px; padding: 0; overflow: hidden; border: 1px solid var(--m-border); border-radius: 6px; background: none; }
+.thumb:hover { border-color: var(--m-ring); }
+.thumb svg { display: block; height: 94px; width: auto; }
+/* In the editor: Remove on the thumbnail's corner, on an opaque plate so that it shows over any image. */
+.img-item { position: relative; display: inline-flex; }
+.img-item > .ib { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; border: 1px solid var(--m-border); background: var(--m-card); color: var(--m-fg); }
+.img-item > .ib .i { width: 14px; height: 14px; }
+
+/* ---------- composer ---------- */
+/* Reply…: a quiet outlined field, one button. */
+.reply {
+  display: flex; align-items: center; width: calc(100% - 24px);
+  height: 32px; margin: 12px; padding: 0 10px;
+  border: 1px solid var(--m-input); border-radius: 6px;
+  background: color-mix(in srgb, var(--m-input) 30%, transparent);
+  color: var(--m-muted-fg); text-align: left; cursor: text;
+}
+.reply:hover { border-color: color-mix(in srgb, var(--m-ring) 70%, var(--m-input)); }
+/* Open: the text (rows=3, as today), the attached images, then a bar: attach left, save right. */
+.cmp {
+  margin: 12px;
+  border: 1px solid var(--m-input); border-radius: 6px;
+  background: color-mix(in srgb, var(--m-input) 30%, transparent);
+}
+.cmp.focus { border-color: var(--m-ring); box-shadow: 0 0 0 3px color-mix(in srgb, var(--m-ring) 30%, transparent); }
+.cmp .ta { min-height: 68px; padding: 7px 10px 4px; color: var(--m-fg); line-height: 19px; white-space: pre-wrap; }
+.cmp .ta.empty { color: var(--m-muted-fg); }
+.caret { display: inline-block; width: 1.5px; height: 15px; margin-left: 1px; vertical-align: -2px; background: var(--m-fg); }
+.ta.empty .caret { margin: 0 1px 0 0; }
+.cmp .strip { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px 2px; }
+.cmp .bar { display: flex; align-items: center; gap: 4px; padding: 4px; }
+.cmp .bar .btn { margin-left: auto; }
+.ib.on { background: var(--m-accent); color: var(--m-accent-fg); }
+.hint { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: -4px 12px 12px; color: var(--m-muted-fg); font-size: 12px; }
+.hint > span { display: inline-flex; align-items: center; gap: 4px; }
+kbd { display: inline-block; height: 16px; padding: 0 4px; border: 1px solid var(--m-border); border-bottom-width: 2px; border-radius: 4px; background: color-mix(in srgb, var(--m-fg) 5%, transparent); color: var(--m-fg); font: 500 11px/13px var(--m-ui); }
+.err { display: flex; align-items: center; gap: 6px; margin: -4px 12px 12px; color: var(--m-danger); font-size: 12px; }
+
+/* Edit in place: the editor takes the bubble's place and width on its side; an edit keeps its images, so no Attach. */
+.m.editing { flex-direction: column; align-items: flex-end; }
+.m.editing .cmp { width: min(520px, 78%); margin: 0; }
+.m.editing .err, .m.editing .hint { margin: 6px 2px 4px; }
+
+/* Attach a file: the path field under the editor, with suggestions, as the review skills' field. */
+.path { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 6px; margin: -4px 12px 10px; }
+.path .field { display: flex; align-items: center; height: 28px; padding: 0 8px; border: 1px solid var(--m-ring); border-radius: 6px; background: color-mix(in srgb, var(--m-input) 30%, transparent); font: 12px var(--m-mono); }
+.path .btn { height: 28px; }
+.suggest { grid-column: 1 / -1; padding: 4px 0; border: 1px solid var(--m-border); border-radius: 6px; font: 12px var(--m-mono); }
+.suggest div { padding: 3px 10px; color: var(--m-muted-fg); }
+.suggest div b { color: var(--m-fg); font-weight: 400; }
+.suggest .on { background: color-mix(in srgb, var(--m-fg) 8%, transparent); color: var(--m-fg); }
+
+/* ---------- resolved, folded to one line ---------- */
+.th.fold { display: flex; align-items: center; gap: 4px; min-height: 36px; padding: 4px 5px 4px 4px; }
+.th.fold + .th.fold { margin-top: 4px; }
+.fold-btn { display: flex; flex: 1; min-width: 0; align-items: center; gap: 8px; height: 26px; padding: 0 6px 0 4px; border: 0; border-radius: 6px; background: none; text-align: left; }
+.fold-btn:hover { background: color-mix(in srgb, var(--m-fg) 5%, transparent); }
+.fold-btn > .i { color: var(--m-muted-fg); }
+.fold-btn .first { min-width: 0; overflow: hidden; color: var(--m-muted-fg); text-overflow: ellipsis; white-space: nowrap; }
+.fold-btn .count { flex: none; color: var(--m-muted-fg); font-size: 12px; opacity: .8; }
+/* The line's buttons keep their place in the row (only the first line gives way), shown on hover or focus. */
+.fold > .tools { display: flex; flex: none; align-items: center; gap: 4px; opacity: 0; }
+.fold:hover > .tools, .fold:focus-within > .tools, .fold.is-hover > .tools { opacity: 1; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></symbol>
+  <symbol id="clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+  <symbol id="check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="check2" viewBox="0 0 24 24"><path d="M18 6 7 17l-5-5"/><path d="m22 10-7.5 7.5L13 16"/></symbol>
+  <symbol id="imgplus" viewBox="0 0 24 24"><path d="M16 5h6"/><path d="M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/><circle cx="9" cy="9" r="2"/></symbol>
+  <symbol id="chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="trash" viewBox="0 0 24 24"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
+  <symbol id="pencil" viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></symbol>
+  <symbol id="refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></symbol>
+  <symbol id="x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+  <symbol id="alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></symbol>
+  <symbol id="file" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M9 10h6"/><path d="M12 13V7"/><path d="M9 17h6"/></symbol>
+  <!-- a stand-in screenshot for the thumbnails -->
+  <symbol id="shot" viewBox="0 0 168 94">
+    <defs><linearGradient id="sg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1c2333"/><stop offset="1" stop-color="#2a2140"/></linearGradient></defs>
+    <rect width="168" height="94" fill="url(#sg)"/>
+    <rect width="168" height="11" fill="#0f131c"/>
+    <circle cx="7" cy="5.5" r="2" fill="#ff6467"/><circle cx="13" cy="5.5" r="2" fill="#fbbf24"/><circle cx="19" cy="5.5" r="2" fill="#4ade80"/>
+    <rect x="6" y="17" width="38" height="71" rx="3" fill="#ffffff0d"/>
+    <rect x="10" y="22" width="26" height="3" rx="1.5" fill="#ffffff2e"/><rect x="10" y="29" width="20" height="3" rx="1.5" fill="#ffffff1f"/><rect x="10" y="36" width="24" height="3" rx="1.5" fill="#7aa7ff80"/><rect x="10" y="43" width="18" height="3" rx="1.5" fill="#ffffff1f"/>
+    <rect x="50" y="17" width="112" height="22" rx="3" fill="#ffffff12"/>
+    <rect x="55" y="23" width="54" height="4" rx="2" fill="#ffffff40"/><rect x="55" y="31" width="34" height="3" rx="1.5" fill="#ffffff24"/>
+    <rect x="50" y="44" width="54" height="44" rx="3" fill="#ffffff0b"/><rect x="108" y="44" width="54" height="44" rx="3" fill="#ffffff0b"/>
+    <path d="M55 80 L64 70 L72 75 L82 60 L99 72" fill="none" stroke="#4ade80" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="113" y="50" width="36" height="3" rx="1.5" fill="#ffffff30"/><rect x="113" y="57" width="26" height="3" rx="1.5" fill="#ffffff1c"/><rect x="113" y="70" width="44" height="12" rx="3" fill="#ff646733"/>
+  </symbol>
+</svg>
+
+<div class="mock">
+  <header class="page-head">
+    <h1>Вариант B — Мессенджер</h1>
+    <p>Обсуждение как чат: ваши сообщения справа, агента слева, доставка — значком в пузыре.</p>
+    <div class="legend">
+      <span><svg class="i"><use href="#clock"/></svg>не отправлено</span>
+      <span><svg class="i"><use href="#check"/></svg>отправлено, ответа нет</span>
+      <span><svg class="i ok2"><use href="#check2"/></svg>агент ответил</span>
+      <span>Ширина обсуждения ≤ 680px, пузыря ≤ 78%</span>
+    </div>
+    <div class="changes">
+      <h3>Что меняется в поведении</h3>
+      <ul>
+        <li>«Вы» не пишется: ваши — справа; для чтения с экрана — скрытое «Вы».</li>
+        <li>Группа — подряд один автор и одно состояние доставки.</li>
+        <li>Время — у последнего пузыря группы, у прочих — в подсказке.</li>
+        <li>Доставка — значок с подсказкой; «агент ответил» — новое состояние.</li>
+        <li>Вердикт на пузыре агента — только когда в шапке другая метка.</li>
+        <li>Кнопки сообщения и свёрнутой строки — при наведении или фокусе.</li>
+        <li>Кнопка «Сохранить» (как Enter); клавиши — под полем, не в placeholder.</li>
+        <li>Карточка на --card, не --muted; в узкой «Отправить снова» — значок.</li>
+      </ul>
+    </div>
+  </header>
+
+  <!-- ================= UNIFIED ================= -->
+  <div class="sec">
+    <h2>Unified — широкая колонка</h2>
+    <p>Карточка обсуждения не тянется на всю колонку кода: её ширина ограничена, кнопки остаются рядом с текстом.</p>
+  </div>
+
+  <!-- a -->
+  <div class="cap"><b>a</b>Не отправлено: два сообщения подряд — одна группа, «Не отправлено» один раз, в шапке; часы — в последнем пузыре</div>
+  <div class="diff unified">
+    <div class="file"><svg class="i"><use href="#file"/></svg><code>src/features/catalog/actions.ts</code></div>
+    <div class="row"><span class="n">40</span><span class="n">40</span><span class="c"><span class="k">export const</span> <span class="v">OPEN_CATALOG_LIST_ACTION_ID</span> = <span class="s">'open-catalog-list'</span>;</span></div>
+    <div class="row add"><span class="n"></span><span class="n">41</span><span class="c"><span class="k">export const</span> <span class="v">OPEN_PRODUCT_DETAILS_ACTION_ID</span> = <mark class="q"><span class="s">'openProductDetails'</span></mark>;</span></div>
+    <div class="row note"><div class="cell">
+      <div class="th">
+        <div class="th-head">
+          <span class="lbl"><svg class="i"><use href="#clock"/></svg>Не отправлено</span>
+          <div class="th-acts">
+            <button class="btn"><svg class="i"><use href="#check"/></svg>Решено</button>
+            <button class="ib" title="Удалить обсуждение" aria-label="Удалить обсуждение"><svg class="i"><use href="#trash"/></svg></button>
+          </div>
+        </div>
+        <div class="msgs">
+          <div class="grp me">
+            <span class="sr">Вы</span>
+            <div class="m">
+              <div class="tools"><button class="ib" title="Изменить"><svg class="i"><use href="#pencil"/></svg></button><button class="ib" title="Удалить сообщение"><svg class="i"><use href="#trash"/></svg></button></div>
+              <div class="b" title="Не отправлено · 17 ноября 2026, 18:40"><div class="md"><p>Почему id не совпадает с именем константы? Остальные action id в этом файле в kebab-case.</p></div></div>
+            </div>
+            <div class="m">
+              <div class="tools"><button class="ib" title="Изменить"><svg class="i"><use href="#pencil"/></svg></button><button class="ib" title="Удалить сообщение"><svg class="i"><use href="#trash"/></svg></button></div>
+              <div class="b"><div class="md"><p>Проверь заодно, где он используется.<span class="meta" title="Не отправлено · 17 ноября 2026, 18:41">Только что<svg class="i" role="img" aria-label="Не отправлено"><use href="#clock"/></svg></span></p></div></div>
+            </div>
+          </div>
+        </div>
+        <button class="reply">Ответить…</button>
+      </div>
+    </div></div>
+    <div class="row"><span class="n">41</span><span class="n">42</span><span class="c"><span class="k">export const</span> <span class="v">CLOSE_PRODUCT_ACTION_ID</span> = <span class="s">'close-product'</span>;</span></div>
+  </div>
+
+  <!-- b -->
+  <div class="cap"><b>b</b>Ответ агента: вердикт и «Исправлено» — в шапке, на пузыре их нет, раз это его последний ответ; ответ под наведением — видна «Удалить сообщение»</div>
+  <div class="diff unified">
+    <div class="file"><svg class="i"><use href="#file"/></svg><code>src/features/catalog/ProductDetails.tsx</code></div>
+    <div class="row"><span class="n">57</span><span class="n">57</span><span class="c">  <span class="f">useEffect</span>(() =&gt; {</span></div>
+    <div class="row add"><span class="n"></span><span class="n">58</span><span class="c">    <mark class="q"><span class="f">load</span>(<span class="p">id</span>)</mark>.<span class="f">then</span>(<span class="p">setProduct</span>)</span></div>
+    <div class="row note"><div class="cell">
+      <div class="th">
+        <div class="th-head">
+          <span class="lbl done">Подтверждено</span>
+          <span class="lbl done">Исправлено</span>
+          <div class="th-acts">
+            <button class="btn"><svg class="i"><use href="#check"/></svg>Решено</button>
+            <button class="ib" title="Удалить обсуждение" aria-label="Удалить обсуждение"><svg class="i"><use href="#trash"/></svg></button>
+          </div>
+        </div>
+        <div class="msgs">
+          <div class="grp me">
+            <span class="sr">Вы</span>
+            <div class="m">
+              <div class="tools"><button class="ib" title="Удалить сообщение"><svg class="i"><use href="#trash"/></svg></button></div>
+              <div class="b"><div class="md"><p>Здесь гонка: <code>load()</code> может вернуться после размонтирования.<span class="meta" title="Агент ответил · 17 ноября 2026, 18:29">12 мин назад<svg class="i ok2" role="img" aria-label="Агент ответил"><use href="#check2"/></svg></span></p></div></div>
+            </div>
+          </div>
+          <div class="grp ag">
+            <div class="ava" title="Агент · claude"><svg class="i"><use href="#bot"/></svg></div>
+            <div class="stack">
+              <div class="m is-hover">
+                <div class="b">
+                  <div class="who"><span class="name">Агент</span><span class="kind">· claude</span></div>
+                  <div class="md">
+                    <p>Да, гонка есть: промис резолвится после <code>unmount</code>, и <code>setProduct</code> пишет в размонтированный компонент.</p>
+                    <ul>
+                      <li>Добавил <code>AbortController</code> и отмену в cleanup эффекта.</li>
+                      <li><code>load()</code> теперь принимает <code>signal</code> вторым аргументом.</li>
+                    </ul>
+<pre><code><span class="k">const</span> <span class="v">ctrl</span> = <span class="k">new</span> <span class="f">AbortController</span>()
+<span class="f">load</span>(<span class="p">id</span>, <span class="p">ctrl</span>.<span class="p">signal</span>).<span class="f">then</span>(<span class="p">setProduct</span>)
+<span class="k">return</span> () =&gt; <span class="p">ctrl</span>.<span class="f">abort</span>()</code></pre>
+                  </div>
+                  <div class="imgs">
+                    <button class="thumb" title="Открыть screenshot.png"><svg viewBox="0 0 168 94" width="168" height="94"><use href="#shot"/></svg></button>
+                    <span class="meta" title="17 ноября 2026, 18:41">Только что</span>
+                  </div>
+                </div>
+                <div class="tools"><button class="ib is-hover" title="Удалить сообщение"><svg class="i"><use href="#trash"/></svg></button></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <button class="reply">Ответить…</button>
+      </div>
+    </div></div>
+    <div class="row"><span class="n">59</span><span class="n">59</span><span class="c">  }, [<span class="p">id</span>])</span></div>
+  </div>
+
+  <!-- c -->
+  <div class="cap"><b>c</b>Ждёт ответа: «Отправить снова» в шапке; вердикт прошлого ответа — чипом на его пузыре, раз в шапке другая метка; код изменился — «Устарела»</div>
+  <div class="diff unified">
+    <div class="file"><svg class="i"><use href="#file"/></svg><code>src/features/catalog/actions.ts</code></div>
+    <div class="row"><span class="n">63</span><span class="n">64</span><span class="c"><span class="k">export function</span> <span class="f">registerCatalogActions</span>() {</span></div>
+    <div class="row add"><span class="n"></span><span class="n">65</span><span class="c">  <span class="f">registerAction</span>(<span class="v">OPEN_PRODUCT_DETAILS_ACTION_ID</span>, <mark class="q"><span class="p">openProductDetails</span></mark>)</span></div>
+    <div class="row note"><div class="cell">
+      <div class="th">
+        <div class="th-head">
+          <span class="lbl"><svg class="i"><use href="#check"/></svg>Отправлено, ответа нет</span>
+          <span class="lbl outdated" title="Код этих строк изменился после коммита 3f9c2a1">Устарела</span>
+          <div class="th-acts">
+            <button class="btn resend" title="Отправить снова" aria-label="Отправить снова"><svg class="i"><use href="#refresh"/></svg><span>Отправить снова</span></button>
+            <button class="btn"><svg class="i"><use href="#check"/></svg>Решено</button>
+            <button class="ib" title="Удалить обсуждение" aria-label="Удалить обсуждение"><svg class="i"><use href="#trash"/></svg></button>
+          </div>
+        </div>
+        <div class="msgs">
+          <div class="grp me">
+            <span class="sr">Вы</span>
+            <div class="m">
+              <div class="tools"><button class="ib" title="Удалить сообщение"><svg class="i"><use href="#trash"/></svg></button></div>
+              <div class="b"><div class="md"><p>Этот обработчик уже регистрируется в <code>product/actions.ts</code> — не будет двойного вызова?<span class="meta" title="Агент ответил · 17 ноября 2026, 18:16">25 мин назад<svg class="i ok2" role="img" aria-label="Агент ответил"><use href="#check2"/></svg></span></p></div></div>
+            </div>
+          </div>
+          <div class="grp ag">
+            <div class="ava" title="Агент · claude"><svg class="i"><use href="#bot"/></svg></div>
+            <div class="stack">
+              <div class="m">
+                <div class="b">
+                  <div class="who"><span class="name">Агент</span><span class="kind">· claude</span><span class="lbl danger">Опровергнуто</span></div>
+                  <div class="md"><p>Нет: в <code>product/actions.ts</code> регистрируется <code>OPEN_PRODUCT_ACTION_ID</code>, это другой id. Двойного вызова не будет.<span class="meta" title="17 ноября 2026, 18:21">20 мин назад</span></p></div>
+                </div>
+                <div class="tools"><button class="ib" title="Удалить сообщение"><svg class="i"><use href="#trash"/></svg></button></div>
+              </div>
+            </div>
+          </div>
+          <div class="grp me">
+            <span class="sr">Вы</span>
+            <div class="m">
+              <div class="tools"><button class="ib" title="Удалить сообщение"><svg class="i"><use href="#trash"/></svg></button></div>
+              <div class="b"><div class="md"><p>А <code>catalog/index.ts</code>? Там <code>registerCatalogActions()</code> вызывается ещё раз при горячей перезагрузке.<span class="meta" title="Отправлено, ответа нет · 17 ноября 2026, 18:36">5 мин назад<svg class="i" role="img" aria-label="Отправлено, ответа нет"><use href="#check"/></svg></span></p></div></div>
+            </div>
+          </div>
+        </div>
+        <button class="reply">Ответить…</button>
+      </div>
+    </div></div>
+    <div class="row"><span class="n">64</span><span class="n">66</span><span class="c">}</span></div>
+  </div>
+
+  <!-- d -->
+  <div class="cap"><b>d</b>Ввод открыт: текст, картинка, внизу «Приложить файл» и «Сохранить», клавиши — под полем. Ответ кончается списком — время своей строкой</div>
+  <div class="diff unified">
+    <div class="file"><svg class="i"><use href="#file"/></svg><code>src/features/catalog/fetchProduct.ts</code></div>
+    <div class="row"><span class="n">12</span><span class="n">12</span><span class="c"><span class="k">export async function</span> <span class="f">fetchProduct</span>(<span class="p">id</span>: <span class="v">string</span>) {</span></div>
+    <div class="row add"><span class="n"></span><span class="n">13</span><span class="c">  <span class="k">const</span> <span class="v">timeout</span> = <mark class="q"><span class="num">3000</span></mark></span></div>
+    <div class="row note"><div class="cell">
+      <div class="th">
+        <div class="th-head">
+          <span class="lbl wait">Нужно уточнение</span>
+          <div class="th-acts">
+            <button class="btn"><svg class="i"><use href="#check"/></svg>Решено</button>
+            <button class="ib" title="Удалить обсуждение" aria-label="Удалить обсуждение"><svg class="i"><use href="#trash"/></svg></button>
+          </div>
+        </div>
+        <div class="msgs">
+          <div class="grp me">
+            <span class="sr">Вы</span>
+            <div class="m">
+              <div class="tools"><button class="ib" title="Удалить сообщение"><svg class="i"><use href="#trash"/></svg></button></div>
+              <div class="b"><div class="md"><p>Вынеси таймаут в настройки.<span class="meta" title="Агент ответил · 17 ноября 2026, 18:21">20 мин назад<svg class="i ok2" role="img" aria-label="Агент ответил"><use href="#check2"/></svg></span></p></div></div>
+            </div>
+          </div>
+          <div class="grp ag">
+            <div class="ava" title="Агент · codex"><svg class="i"><use href="#bot"/></svg></div>
+            <div class="stack">
+              <div class="m">
+                <div class="b">
+                  <div class="who"><span class="name">Агент</span><span class="kind">· codex</span></div>
+                  <div class="md">
+                    <p>Какие настройки имеются в виду?</p>
+                    <ul>
+                      <li><code>app.config.ts</code> — там уже есть <code>REQUEST_TIMEOUT_MS</code>;</li>
+                      <li>переменные окружения.</li>
+                    </ul>
+                  </div>
+                  <div class="meta-line"><span class="meta" title="17 ноября 2026, 18:33">8 мин назад</span></div>
+                </div>
+                <div class="tools"><button class="ib" title="Удалить сообщение"><svg class="i"><use href="#trash"/></svg></button></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cmp focus">
+          <div class="ta">В `app.config.ts`, рядом с `REQUEST_TIMEOUT_MS`.
+И добавь проверку, что значение больше нуля —
+сейчас 0 молча отключает таймаут, как на снимке<span class="caret"></span></div>
+          <div class="strip">
+            <span class="img-item"><button class="thumb" title="Открыть timeout.png"><svg viewBox="0 0 168 94" width="168" height="94"><use href="#shot"/></svg></button><button class="ib" title="Убрать timeout.png" aria-label="Убрать timeout.png"><svg class="i"><use href="#x"/></svg></button></span>
+          </div>
+          <div class="bar">
+            <button class="ib" title="Приложить файл" aria-label="Приложить файл"><svg class="i"><use href="#imgplus"/></svg></button>
+            <button class="btn" title="Сохранить (Enter)">Сохранить</button>
+          </div>
+        </div>
+        <div class="hint">
+          <span><kbd>Enter</kbd>сохранить</span>
+          <span><kbd>Shift+Enter</kbd>перенос</span>
+          <span><kbd>Esc</kbd>отмена</span>
+          <span><kbd>Ctrl+V</kbd>картинка</span>
+        </div>
+      </div>
+    </div></div>
+    <div class="row"><span class="n">13</span><span class="n">14</span><span class="c">  <span class="k">const</span> <span class="v">ctrl</span> = <span class="k">new</span> <span class="f">AbortController</span>()</span></div>
+  </div>
+
+  <!-- e -->
+  <div class="cap"><b>e</b>Решено: одна строка, нажатие разворачивает; кнопки строки — при наведении или фокусе. Во второй строке «Удалить обсуждение» после первого нажатия</div>
+  <div class="diff unified">
+    <div class="file"><svg class="i"><use href="#file"/></svg><code>src/features/catalog/actions.ts</code></div>
+    <div class="row add"><span class="n"></span><span class="n">41</span><span class="c"><span class="k">export const</span> <span class="v">OPEN_PRODUCT_DETAILS_ACTION_ID</span> = <mark class="q"><span class="s">'openProductDetails'</span></mark>;</span></div>
+    <div class="row note"><div class="cell">
+      <div class="th fold">
+        <button class="fold-btn" aria-expanded="false">
+          <svg class="i"><use href="#chev"/></svg>
+          <span class="lbl done">Решено</span>
+          <span class="first">Почему id не совпадает с именем константы? Остальные action id в этом файле в kebab-case.</span>
+          <span class="count">3 сообщения</span>
+        </button>
+        <div class="tools">
+          <button class="btn"><svg class="i"><use href="#undo"/></svg>Открыть снова</button>
+          <button class="ib" title="Удалить обсуждение" aria-label="Удалить обсуждение"><svg class="i"><use href="#trash"/></svg></button>
+        </div>
+      </div>
+      <div class="th fold is-hover">
+        <button class="fold-btn" aria-expanded="false">
+          <svg class="i"><use href="#chev"/></svg>
+          <span class="lbl done">Решено</span>
+          <span class="first">Проверь, что id не пересекается с экшенами из product/actions.ts</span>
+          <span class="count">2 сообщения</span>
+        </button>
+        <div class="tools">
+          <button class="btn"><svg class="i"><use href="#undo"/></svg>Открыть снова</button>
+          <button class="ib armed" title="Нажмите ещё раз, чтобы удалить" aria-label="Нажмите ещё раз, чтобы удалить"><span>Нажмите ещё раз, чтобы удалить</span><svg class="i"><use href="#trash"/></svg></button>
+        </div>
+      </div>
+    </div></div>
+    <div class="row"><span class="n">41</span><span class="n">42</span><span class="c"><span class="k">export const</span> <span class="v">CLOSE_PRODUCT_ACTION_ID</span> = <span class="s">'close-product'</span>;</span></div>
+  </div>
+
+  <!-- ================= SPLIT ================= -->
+  <div class="sec" style="margin-top:34px">
+    <h2>Split — узкая колонка (480px)</h2>
+    <p>Половина «стало». a — сообщение изменяется на месте, пустой текст дал ошибку; b — удаление ответа взведено, пузырь не сжимается; c — шапка ожидания в одну строку, отправленное и новое сообщение — разные группы, фокус с клавиатуры на «Изменить»; d — «Приложить файл»: поле пути с подсказками.</p>
+  </div>
+  <div class="diff split">
+    <div class="row file2"><div class="file">было</div><div class="file">стало</div></div>
+    <div class="row"><span class="n">40</span><span class="c"><span class="k">export const</span> <span class="v">OPEN_CATALOG_LIST_ACTION_ID</span> = <span class="s">'open-catalog-list'</span>;</span><span class="n">40</span><span class="c"><span class="k">export const</span> <span class="v">OPEN_CATALOG_LIST_ACTION_ID</span> = <span class="s">'open-catalog-list'</span>;</span></div>
+    <div class="row"><span class="n empty"></span><span class="c empty"> </span><span class="n add">41</span><span class="c add"><span class="k">export const</span> <span class="v">OPEN_PRODUCT_DETAILS_ACTION_ID</span> = <mark class="q"><span class="s">'openProductDetails'</span></mark>;</span></div>
+
+    <!-- split a: edit in place -->
+    <div class="row note"><span></span><span></span><span class="n"></span><div class="cell">
+        <div class="th">
+          <div class="th-head">
+            <span class="lbl"><svg class="i"><use href="#clock"/></svg>Не отправлено</span>
+            <div class="th-acts">
+              <button class="btn"><svg class="i"><use href="#check"/></svg>Решено</button>
+              <button class="ib" title="Удалить обсуждение" aria-label="Удалить обсуждение"><svg class="i"><use href="#trash"/></svg></button>
+            </div>
+          </div>
+          <div class="msgs">
+            <div class="grp me">
+              <span class="sr">Вы</span>
+              <div class="m">
+                <div class="tools"><button class="ib" title="Изменить"><svg class="i"><use href="#pencil"/></svg></button><button class="ib" title="Удалить сообщение"><svg class="i"><use href="#trash"/></svg></button></div>
+                <div class="b"><div class="md"><p>Почему id не совпадает с именем константы? Остальные action id в этом файле в kebab-case.</p></div></div>
+              </div>
+              <div class="m editing">
+                <div class="cmp focus">
+                  <div class="ta empty"><span class="caret"></span>Сообщение, markdown</div>
+                  <div class="bar"><button class="btn" title="Сохранить (Enter)">Сохранить</button></div>
+                </div>
+                <div class="err"><svg class="i"><use href="#alert"/></svg>Напишите текст сообщения.</div>
+              </div>
+            </div>
+          </div>
+          <button class="reply">Ответить…</button>
+        </div>
+    </div></div>
+    <div class="row"><span class="n">41</span><span class="c"><span class="k">export const</span> <span class="v">CLOSE_PRODUCT_ACTION_ID</span> = <span class="s">'close-product'</span>;</span><span class="n">42</span><span class="c"><span class="k">export const</span> <span class="v">CLOSE_PRODUCT_ACTION_ID</span> = <span class="s">'close-product'</span>;</span></div>
+    <div class="row gap"><span class="n">⋯</span><span class="c"></span><span class="n">⋯</span><span class="c"></span></div>
+    <div class="row"><span class="n">56</span><span class="c">  <span class="f">useEffect</span>(() =&gt; {</span><span class="n">57</span><span class="c">  <span class="f">useEffect</span>(() =&gt; {</span></div>
+    <div class="row"><span class="n del">57</span><span class="c del">    <span class="p">setProduct</span>(<span class="k">await</span> <span class="f">load</span>(<span class="p">id</span>))</span><span class="n add">58</span><span class="c add">    <mark class="q"><span class="f">load</span>(<span class="p">id</span>)</mark>.<span class="f">then</span>(<span class="p">setProduct</span>)</span></div>
+
+    <!-- split b: armed delete on the agent's answer -->
+    <div class="row note"><span></span><span></span><span class="n"></span><div class="cell">
+        <div class="th">
+          <div class="th-head">
+            <span class="lbl done">Подтверждено</span>
+            <span class="lbl done">Исправлено</span>
+            <div class="th-acts">
+              <button class="btn"><svg class="i"><use href="#check"/></svg>Решено</button>
+              <button class="ib" title="Удалить обсуждение" aria-label="Удалить обсуждение"><svg class="i"><use href="#trash"/></svg></button>
+            </div>
+          </div>
+          <div class="msgs">
+            <div class="grp me">
+              <span class="sr">Вы</span>
+              <div class="m">
+                <div class="tools"><button class="ib" title="Удалить сообщение"><svg class="i"><use href="#trash"/></svg></button></div>
+                <div class="b"><div class="md"><p>Здесь гонка: <code>load()</code> может вернуться после размонтирования.<span class="meta" title="Агент ответил · 17 ноября 2026, 18:29">12 мин назад<svg class="i ok2" role="img" aria-label="Агент ответил"><use href="#check2"/></svg></span></p></div></div>
+              </div>
+            </div>
+            <div class="grp ag">
+              <div class="ava" title="Агент · claude"><svg class="i"><use href="#bot"/></svg></div>
+              <div class="stack">
+                <div class="m is-focus">
+                  <div class="b">
+                    <div class="who"><span class="name">Агент</span><span class="kind">· claude</span></div>
+                    <div class="md">
+                      <p>Да, гонка есть: промис резолвится после <code>unmount</code>, и <code>setProduct</code> пишет в размонтированный компонент.</p>
+                      <ul>
+                        <li>Добавил <code>AbortController</code> и отмену в cleanup эффекта.</li>
+                        <li><code>load()</code> теперь принимает <code>signal</code> вторым аргументом.</li>
+                      </ul>
+<pre><code><span class="k">const</span> <span class="v">ctrl</span> = <span class="k">new</span> <span class="f">AbortController</span>()
+<span class="f">load</span>(<span class="p">id</span>, <span class="p">ctrl</span>.<span class="p">signal</span>).<span class="f">then</span>(<span class="p">setProduct</span>)
+<span class="k">return</span> () =&gt; <span class="p">ctrl</span>.<span class="f">abort</span>()</code></pre>
+                    </div>
+                    <div class="imgs">
+                      <button class="thumb" title="Открыть screenshot.png"><svg viewBox="0 0 168 94" width="168" height="94"><use href="#shot"/></svg></button>
+                      <span class="meta" title="17 ноября 2026, 18:41">Только что</span>
+                    </div>
+                  </div>
+                  <div class="tools"><button class="ib armed" title="Нажмите ещё раз, чтобы удалить" aria-label="Нажмите ещё раз, чтобы удалить"><span class="say">Нажмите ещё раз, чтобы удалить</span><svg class="i"><use href="#trash"/></svg></button></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <button class="reply">Ответить…</button>
+        </div>
+    </div></div>
+    <div class="row"><span class="n">58</span><span class="c">  }, [<span class="p">id</span>])</span><span class="n">59</span><span class="c">  }, [<span class="p">id</span>])</span></div>
+    <div class="row gap"><span class="n">⋯</span><span class="c"></span><span class="n">⋯</span><span class="c"></span></div>
+    <div class="row"><span class="n">62</span><span class="c"><span class="k">export function</span> <span class="f">registerCatalogActions</span>() {</span><span class="n">64</span><span class="c"><span class="k">export function</span> <span class="f">registerCatalogActions</span>() {</span></div>
+    <div class="row"><span class="n empty"></span><span class="c empty"> </span><span class="n add">65</span><span class="c add">  <span class="f">registerAction</span>(<span class="v">OPEN_PRODUCT_DETAILS_ACTION_ID</span>, <mark class="q"><span class="p">openProductDetails</span></mark>)</span></div>
+
+    <!-- split c: waiting, narrow head, sent and new text as two groups -->
+    <div class="row note"><span></span><span></span><span class="n"></span><div class="cell">
+        <div class="th">
+          <div class="th-head">
+            <span class="lbl"><svg class="i"><use href="#check"/></svg>Отправлено, ответа нет</span>
+            <span class="lbl outdated" title="Код этих строк изменился после коммита 3f9c2a1">Устарела</span>
+            <div class="th-acts">
+              <button class="btn resend" title="Отправить снова" aria-label="Отправить снова"><svg class="i"><use href="#refresh"/></svg><span>Отправить снова</span></button>
+              <button class="btn"><svg class="i"><use href="#check"/></svg>Решено</button>
+              <button class="ib" title="Удалить обсуждение" aria-label="Удалить обсуждение"><svg class="i"><use href="#trash"/></svg></button>
+            </div>
+          </div>
+          <div class="msgs">
+            <div class="grp me">
+              <span class="sr">Вы</span>
+              <div class="m">
+                <div class="tools"><button class="ib" title="Удалить сообщение"><svg class="i"><use href="#trash"/></svg></button></div>
+                <div class="b"><div class="md"><p>Этот обработчик уже регистрируется в <code>product/actions.ts</code> — не будет двойного вызова?<span class="meta" title="Отправлено, ответа нет · 17 ноября 2026, 18:36">5 мин назад<svg class="i" role="img" aria-label="Отправлено, ответа нет"><use href="#check"/></svg></span></p></div></div>
+              </div>
+            </div>
+            <div class="grp me">
+              <span class="sr">Вы</span>
+              <div class="m is-focus">
+                <div class="tools"><button class="ib is-focus" title="Изменить"><svg class="i"><use href="#pencil"/></svg></button><button class="ib" title="Удалить сообщение"><svg class="i"><use href="#trash"/></svg></button></div>
+                <div class="b"><div class="md"><p>И посмотри тест на <code>registerCatalogActions</code>.<span class="meta" title="Не отправлено · 17 ноября 2026, 18:40">Только что<svg class="i" role="img" aria-label="Не отправлено"><use href="#clock"/></svg></span></p></div></div>
+              </div>
+            </div>
+          </div>
+          <button class="reply">Ответить…</button>
+        </div>
+    </div></div>
+    <div class="row"><span class="n">63</span><span class="c">}</span><span class="n">66</span><span class="c">}</span></div>
+    <div class="row gap"><span class="n">⋯</span><span class="c"></span><span class="n">⋯</span><span class="c"></span></div>
+    <div class="row"><span class="n">12</span><span class="c"><span class="k">export async function</span> <span class="f">fetchProduct</span>(<span class="p">id</span>: <span class="v">string</span>) {</span><span class="n">12</span><span class="c"><span class="k">export async function</span> <span class="f">fetchProduct</span>(<span class="p">id</span>: <span class="v">string</span>) {</span></div>
+    <div class="row"><span class="n empty"></span><span class="c empty"> </span><span class="n add">13</span><span class="c add">  <span class="k">const</span> <span class="v">timeout</span> = <mark class="q"><span class="num">3000</span></mark></span></div>
+
+    <!-- split d: Attach a file, the path field -->
+    <div class="row note"><span></span><span></span><span class="n"></span><div class="cell">
+        <div class="th">
+          <div class="th-head">
+            <span class="lbl"><svg class="i"><use href="#clock"/></svg>Не отправлено</span>
+            <div class="th-acts">
+              <button class="btn"><svg class="i"><use href="#check"/></svg>Решено</button>
+              <button class="ib" title="Удалить обсуждение" aria-label="Удалить обсуждение"><svg class="i"><use href="#trash"/></svg></button>
+            </div>
+          </div>
+          <div class="msgs">
+            <div class="grp me">
+              <span class="sr">Вы</span>
+              <div class="m">
+                <div class="tools"><button class="ib" title="Изменить"><svg class="i"><use href="#pencil"/></svg></button><button class="ib" title="Удалить сообщение"><svg class="i"><use href="#trash"/></svg></button></div>
+                <div class="b"><div class="md"><p>Вынеси таймаут в настройки.<span class="meta" title="Не отправлено · 17 ноября 2026, 18:38">3 мин назад<svg class="i" role="img" aria-label="Не отправлено"><use href="#clock"/></svg></span></p></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="cmp">
+            <div class="ta">Вот где он сейчас падает:</div>
+            <div class="bar">
+              <button class="ib on" title="Приложить файл" aria-label="Приложить файл"><svg class="i"><use href="#imgplus"/></svg></button>
+              <button class="btn" title="Сохранить (Enter)">Сохранить</button>
+            </div>
+          </div>
+          <div class="path">
+            <div class="field">shots/ti<span class="caret"></span></div>
+            <button class="btn">Готово</button>
+            <div class="suggest" role="listbox" aria-label="Путь до картинки: png, jpg, gif или webp">
+              <div class="on"><b>shots/ti</b>meout-before.png</div>
+              <div><b>shots/ti</b>meout-after.png</div>
+            </div>
+          </div>
+          <div class="hint">
+            <span><kbd>Enter</kbd>сохранить</span>
+            <span><kbd>Shift+Enter</kbd>перенос</span>
+            <span><kbd>Esc</kbd>отмена</span>
+            <span><kbd>Ctrl+V</kbd>картинка</span>
+          </div>
+        </div>
+    </div></div>
+    <div class="row"><span class="n">13</span><span class="c">  <span class="k">const</span> <span class="v">ctrl</span> = <span class="k">new</span> <span class="f">AbortController</span>()</span><span class="n">14</span><span class="c">  <span class="k">const</span> <span class="v">ctrl</span> = <span class="k">new</span> <span class="f">AbortController</span>()</span></div>
+  </div>
+</div>
+</body>
+</html>

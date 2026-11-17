@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Вариант C — Лента</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; background: var(--background, #0a0a0a); }
+
+.mock {
+  --m-bg: var(--background, #0a0a0a);
+  --m-card: var(--card, #171717);
+  --m-muted: var(--muted, #262626);
+  --m-muted-fg: var(--muted-foreground, #acacac);
+  --m-fg: var(--foreground, #fafafa);
+  --m-accent: var(--accent, #404040);
+  --m-accent-fg: var(--accent-foreground, #fafafa);
+  --m-border: var(--border, #ffffff12);
+  --m-input: var(--input, #ffffff26);
+  --m-primary: var(--primary, #e5e5e5);
+  --m-primary-fg: var(--primary-foreground, #171717);
+  --m-ring: var(--ring, #737373);
+  --m-danger: var(--destructive, #ff6467);
+  --m-radius: var(--radius, 10px);
+  --m-wait: #fbbf24;
+  --m-done: #4ade80;
+  --m-info: #7aa7ff;
+  /* Diff emulation only (the plugin's --code-fg / --code-num); nothing in the card uses them. */
+  --m-code: #d4d4d4;
+  --m-num: #858585;
+  --m-ui: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --m-mono: var(--font-mono, "JetBrains Mono", "JetBrainsMono Nerd Font", ui-monospace, monospace);
+  /* The card's plate as an opaque colour: markers cut the rail with a ring of it. */
+  --m-plate: color-mix(in srgb, var(--m-fg) 2.5%, var(--m-bg));
+  --m-frame: color-mix(in srgb, var(--m-fg) 11%, transparent);
+  --m-rail: color-mix(in srgb, var(--m-fg) 18%, transparent);
+  --m-focus: 0 0 0 3px color-mix(in srgb, var(--m-ring) 50%, transparent);
+  --cap: 680px;
+  max-width: 1100px;
+  padding: 28px 30px 36px;
+  color: var(--m-fg);
+  font: 13px/1.45 var(--m-ui);
+  letter-spacing: .01em;
+}
+
+.i { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- page ---------- */
+.page-title { margin: 0 0 4px; font-size: 16px; font-weight: 600; letter-spacing: 0; }
+.page-idea { margin: 0 0 26px; color: var(--m-muted-fg); }
+.section { margin: 0 0 10px; display: flex; align-items: baseline; gap: 10px; font-size: 12px; font-weight: 600; color: var(--m-muted-fg); }
+.section span { font-weight: 400; color: color-mix(in srgb, var(--m-muted-fg) 75%, transparent); }
+.section + .diff { margin-bottom: 30px; }
+
+/* ---------- diff ---------- */
+.diff { border: 1px solid var(--m-border); border-radius: 8px; overflow: hidden; background: var(--m-bg); }
+.diff-head { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border-bottom: 1px solid var(--m-border); background: var(--m-card); color: var(--m-muted-fg); font-size: 12px; }
+.diff-head b { color: var(--m-fg); font-weight: 500; }
+.diff-head .stat { margin-left: auto; font-family: var(--m-mono); font-size: 11px; }
+.diff-head .stat .a { color: var(--m-done); }
+.diff-head .stat .d { color: var(--m-danger); }
+.rows { padding: 4px 0; font: 13px/1.5 var(--m-mono); letter-spacing: 0; color: var(--m-code); }
+.unified .r { display: grid; grid-template-columns: 44px 44px minmax(0, 1fr); }
+.split .r { display: grid; grid-template-columns: 40px minmax(0, 1fr) 40px 480px; }
+.num { padding: 0 8px; text-align: right; color: var(--m-num); user-select: none; }
+.code { padding: 0 10px; white-space: pre; overflow: hidden; }
+.split .code { white-space: pre-wrap; overflow-wrap: anywhere; }
+.split .code:nth-child(2), .split .note-cell.old { border-right: 1px solid var(--m-border); }
+.add.code { background: color-mix(in srgb, var(--m-done) 8%, transparent); }
+.add.num { background: color-mix(in srgb, var(--m-done) 13%, transparent); }
+.del.code { background: color-mix(in srgb, var(--m-danger) 8%, transparent); }
+.del.num { background: color-mix(in srgb, var(--m-danger) 13%, transparent); }
+.dim { opacity: .45; }
+.k { color: #569cd6; } .c { color: #4fc1ff; } .s { color: #ce9178; } .p { color: var(--m-code); }
+.hl { background: color-mix(in srgb, var(--m-wait) 28%, transparent); border-radius: 2px; }
+
+/* A row of cards: in the code column, cards at the code text's left edge. */
+.note-cell { position: relative; padding: 6px 10px; font: 13px/1.45 var(--m-ui); letter-spacing: .01em; color: var(--m-fg); white-space: normal; overflow-wrap: anywhere; }
+.unified .note-cell { grid-column: 3; }
+.note-cell.gap0 { padding-top: 0; }
+
+/* Mock-only notes in the space the width cap leaves free. */
+.ann { position: absolute; top: 8px; left: calc(var(--cap) + 34px); right: 16px; padding-left: 10px; border-left: 1px dashed color-mix(in srgb, var(--m-muted-fg) 35%, transparent); color: color-mix(in srgb, var(--m-muted-fg) 80%, transparent); font-size: 11.5px; line-height: 1.45; }
+.ann b { color: var(--m-muted-fg); font-weight: 600; }
+.split-note { margin: 10px 2px 0; color: color-mix(in srgb, var(--m-muted-fg) 80%, transparent); font-size: 11.5px; }
+
+/* ---------- controls ---------- */
+.ib { display: inline-grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--m-muted-fg); font: inherit; }
+.ib .i { width: 16px; height: 16px; }
+.ib:hover, .ib.is-hover, .ib.on { background: var(--m-accent); color: var(--m-fg); }
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 1px solid var(--m-input); border-radius: 6px; background: color-mix(in srgb, var(--m-input) 30%, transparent); color: var(--m-fg); font: 500 12px/1 var(--m-ui); letter-spacing: .01em; white-space: nowrap; }
+.btn:hover { background: color-mix(in srgb, var(--m-input) 50%, transparent); }
+.btn.sm { height: 24px; padding: 0 8px; }
+:is(.ib, .btn, .fold, .field):focus-visible, :is(.ib, .btn, .fold, .field).is-focus { outline: none; box-shadow: var(--m-focus); }
+/* Delete armed by its first press: red until the second press, a blur or Esc; the icon stays where it was.
+   With its text it is a text button, so it takes the height of the text buttons of its row. */
+.ib.armed { width: auto; height: 28px; display: inline-flex; gap: 6px; padding: 0 6px 0 8px; background: color-mix(in srgb, var(--m-danger) 15%, transparent); color: var(--m-danger); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.fold-card .ib.armed, .ev .ib.armed { height: 24px; }
+
+.lbl { --tone: var(--m-muted-fg); display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border: 1px solid color-mix(in srgb, var(--tone) 45%, transparent); border-radius: 4px; background: color-mix(in srgb, var(--tone) 12%, transparent); color: color-mix(in srgb, var(--tone) 55%, var(--m-fg)); font-size: 11px; font-weight: 600; line-height: 16px; white-space: nowrap; }
+.lbl.done { --tone: var(--m-done); }
+.lbl.info { --tone: var(--m-info); }
+.lbl.wait { --tone: var(--m-wait); }
+.lbl.outdated { border-style: dashed; background: none; }
+
+/* ---------- the thread ---------- */
+.card { max-width: var(--cap); padding: 10px 12px 12px; border: 1px solid var(--m-frame); border-radius: 8px; background: var(--m-plate); }
+.card-head { display: flex; align-items: center; gap: 6px; min-height: 20px; margin-bottom: 10px; }
+
+/* The feed: a rail on the left, a marker per author turn, the text column right of it. Only messages are on it. */
+.feed { display: flex; flex-direction: column; gap: 12px; }
+.item { position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr); column-gap: 10px; }
+/* The same author again: closer, a dot on the rail instead of a marker. Only your messages group; an agent's answer never does. */
+.item.cont { margin-top: -8px; }
+.item:not(:last-child)::before { content: ""; position: absolute; left: 10.5px; top: 11px; bottom: -12px; width: 1px; background: var(--m-rail); }
+
+.mk { position: relative; z-index: 1; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; box-shadow: 0 0 0 3px var(--m-plate); }
+.mk.you { background: color-mix(in srgb, var(--m-fg) 12%, var(--m-plate)); color: var(--m-fg); }
+/* State hues as text: mixed with the foreground, as the labels do, so they hold in a light theme too. */
+.mk.agent { border: 1px solid color-mix(in srgb, var(--m-info) 45%, transparent); background: color-mix(in srgb, var(--m-info) 16%, var(--m-plate)); color: color-mix(in srgb, var(--m-info) 70%, var(--m-fg)); }
+.mk.done { border: 1px solid color-mix(in srgb, var(--m-done) 45%, transparent); background: color-mix(in srgb, var(--m-done) 14%, var(--m-plate)); color: color-mix(in srgb, var(--m-done) 70%, var(--m-fg)); }
+/* Not sent yet: your marker is dashed. Nothing else on the rail is. */
+.mk.draft { border: 1px dashed color-mix(in srgb, var(--m-fg) 40%, transparent); background: var(--m-plate); color: var(--m-muted-fg); }
+.mk.dot { background: none; box-shadow: none; }
+.mk.dot::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: color-mix(in srgb, var(--m-fg) 42%, var(--m-plate)); box-shadow: 0 0 0 3px var(--m-plate); }
+.mk.dot.draft { border: 0; }
+.mk.dot.draft::after { border: 1px solid color-mix(in srgb, var(--m-fg) 50%, transparent); background: var(--m-plate); }
+
+.body { position: relative; min-width: 0; margin: -3px -6px; padding: 3px 6px; border-radius: 6px; }
+.item:hover > .body, .item:focus-within > .body, .item.is-hover > .body, .item.is-focus > .body { background: color-mix(in srgb, var(--m-fg) 4%, transparent); }
+.item.editing > .body { background: none; }
+
+.meta { display: flex; flex-wrap: wrap; align-items: center; column-gap: 6px; min-height: 22px; color: var(--m-muted-fg); font-size: 12px; line-height: 22px; }
+.who { color: var(--m-fg); font-size: 13px; font-weight: 600; }
+.sep { color: color-mix(in srgb, var(--m-muted-fg) 60%, transparent); }
+
+/* The message's own buttons: right after its meta, shown on hover and on keyboard focus only. */
+.acts { display: inline-flex; align-items: center; gap: 2px; margin: -2px 0 -2px 2px; opacity: 0; }
+.item:hover > .body .acts, .item:focus-within > .body .acts, .item.is-hover > .body .acts, .item.is-focus > .body .acts { opacity: 1; }
+/* A message without meta has no line to put them on: they float over its first line's right end, its time first,
+   and take no width from the text while hidden. */
+.item.cont > .body > .acts { position: absolute; top: -5px; right: 2px; z-index: 2; height: 32px; margin: 0; padding: 0 2px 0 8px; border: 1px solid var(--m-frame); border-radius: 8px; background: var(--m-plate); box-shadow: 0 4px 12px rgb(0 0 0 / .28); }
+.acts .t { margin-right: 4px; color: var(--m-muted-fg); font-size: 12px; white-space: nowrap; }
+
+/* ---------- markdown ---------- */
+.md { color: var(--m-fg); }
+.md > * { margin: 0 0 6px; }
+.md > :last-child { margin-bottom: 0; }
+.md :is(ul, ol) { padding-left: 18px; }
+.md li + li { margin-top: 2px; }
+.md li::marker { color: var(--m-muted-fg); }
+.md blockquote { padding-left: 10px; border-left: 2px solid var(--m-input); color: var(--m-muted-fg); }
+.md code { padding: 1px 4px; border-radius: 4px; background: color-mix(in srgb, var(--m-fg) 8%, transparent); font: 12px/1 var(--m-mono); letter-spacing: 0; }
+.md pre { padding: 8px 10px; overflow: auto; border: 1px solid var(--m-border); border-radius: 6px; background: color-mix(in srgb, var(--m-fg) 4%, transparent); font: 12px/1.5 var(--m-mono); letter-spacing: 0; color: var(--m-fg); white-space: pre; }
+.md pre code { padding: 0; background: none; font: inherit; }
+.md :is(code, pre) { font-variant-ligatures: none; }
+.md a { color: var(--m-primary); text-underline-offset: 2px; }
+.imgs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.thumb { display: block; height: 96px; padding: 0; overflow: hidden; border: 1px solid var(--m-border); border-radius: 6px; background: none; }
+.thumb svg { display: block; height: 94px; width: auto; }
+
+/* ---------- the end of the feed: Reply… and the thread's buttons, in the text column ---------- */
+.reply { margin-top: 12px; padding-left: 32px; }
+.foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.field { flex: 1 1 200px; display: flex; align-items: center; height: 28px; padding: 0 10px; border: 1px solid var(--m-input); border-radius: 6px; background: color-mix(in srgb, var(--m-input) 30%, transparent); color: var(--m-muted-fg); font: 13px var(--m-ui); letter-spacing: .01em; text-align: left; }
+.field:hover { border-color: color-mix(in srgb, var(--m-ring) 80%, transparent); }
+.thread-acts { display: inline-flex; align-items: center; gap: 4px; height: 28px; flex: none; margin-left: auto; }
+
+/* The editor: in Reply…'s place, or in a message's text when it is changed. It takes the whole row; the thread's
+   buttons go under it, on the right, the error line on their left. */
+.composer { flex: 1 1 100%; min-width: 0; border: 1px solid var(--m-input); border-radius: 6px; background: color-mix(in srgb, var(--m-input) 30%, transparent); }
+.composer.is-focus, .composer:focus-within { border-color: var(--m-ring); box-shadow: var(--m-focus); }
+.composer .ta { min-height: 52px; padding: 6px 10px 2px; color: var(--m-fg); font: 13px/1.45 var(--m-ui); white-space: pre-wrap; }
+.caret { display: inline-block; width: 1px; height: 16px; margin-left: 1px; vertical-align: -3px; background: var(--m-fg); }
+.composer .bar { display: flex; align-items: center; gap: 6px; padding: 2px 8px 4px 3px; }
+.composer .bar.no-attach { padding-left: 10px; }
+.keys { flex: 1 1 auto; min-width: 0; color: var(--m-muted-fg); font-size: 12px; line-height: 20px; }
+.keys > span { white-space: nowrap; }
+kbd { padding: 0 4px; border: 1px solid var(--m-border); border-radius: 4px; background: color-mix(in srgb, var(--m-fg) 5%, transparent); color: var(--m-fg); font: 11px/16px var(--m-ui); }
+.err { flex: 1 1 160px; min-width: 0; color: var(--m-danger); font-size: 12px; line-height: 16px; }
+.item.editing .composer { margin-top: 2px; }
+
+/* Attach a file: the path field with suggestions, as the review skills' one. */
+.pathf { flex: 1 1 100%; display: flex; flex-direction: column; gap: 4px; }
+.pathf .in { display: flex; align-items: center; height: 28px; padding: 0 10px; border: 1px solid var(--m-ring); border-radius: 6px; background: color-mix(in srgb, var(--m-input) 30%, transparent); box-shadow: var(--m-focus); color: var(--m-fg); font: 12px var(--m-mono); letter-spacing: 0; }
+.sugg { padding: 4px 0; border: 1px solid var(--m-border); border-radius: 6px; }
+.sugg div { padding: 3px 10px; color: var(--m-fg); font: 12px/18px var(--m-mono); letter-spacing: 0; }
+.sugg div.on { background: var(--m-accent); }
+.sugg div .dir { color: var(--m-muted-fg); }
+.pathf .btn { align-self: flex-start; }
+
+/* ---------- a resolved thread ---------- */
+/* Folded: one line, as wide as the cards; Open again and Delete on hover and on keyboard focus. */
+.fold-card { display: flex; align-items: center; gap: 4px; max-width: var(--cap); height: 36px; padding: 0 6px 0 4px; border: 1px solid var(--m-frame); border-radius: 8px; background: var(--m-plate); }
+.fold { flex: 1 1 auto; display: flex; align-items: center; gap: 8px; min-width: 0; height: 26px; padding: 0 8px 0 12px; border: 0; border-radius: 6px; background: none; color: var(--m-fg); font: inherit; letter-spacing: inherit; text-align: left; }
+.fold:hover { background: color-mix(in srgb, var(--m-fg) 4%, transparent); }
+.fold > .i { color: var(--m-muted-fg); }
+.fold .first { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: color-mix(in srgb, var(--m-fg) 82%, transparent); }
+.fold .count { flex: none; color: var(--m-muted-fg); font-size: 12px; white-space: nowrap; }
+.fold-card .acts { flex: none; margin: 0; gap: 4px; }
+.fold-card:hover, .fold-card:focus-within, .fold-card.is-hover { border-color: color-mix(in srgb, var(--m-fg) 18%, transparent); }
+.fold-card:hover .acts, .fold-card:focus-within .acts, .fold-card.is-hover .acts { opacity: 1; }
+/* Unfolded: the same button heads the card (its chevron over the rail); pressing it folds the thread again. */
+.card-head > .fold { flex: 0 1 auto; margin: -3px -4px -3px -8px; }
+/* The last event on the rail: when it was resolved, with Open again and Delete. */
+.ev .meta { gap: 6px; }
+.ev .meta .btn { margin-left: 4px; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-drop" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M9 10h6"/><path d="M12 13V7"/><path d="M9 17h6"/></symbol>
+  <!-- A screenshot of a test run, for the thumbnail. -->
+  <symbol id="shot" viewBox="0 0 170 96">
+    <rect width="170" height="96" fill="#141414"/>
+    <rect width="170" height="14" fill="#1f1f1f"/>
+    <circle cx="8" cy="7" r="2.2" fill="#ff6467"/><circle cx="15" cy="7" r="2.2" fill="#fbbf24"/><circle cx="22" cy="7" r="2.2" fill="#4ade80"/>
+    <rect x="34" y="5" width="44" height="4" rx="2" fill="#3a3a3a"/>
+    <g fill="#4ade80"><rect x="8" y="22" width="6" height="4" rx="1"/><rect x="8" y="32" width="6" height="4" rx="1"/><rect x="8" y="42" width="6" height="4" rx="1"/><rect x="8" y="52" width="6" height="4" rx="1"/></g>
+    <g fill="#9a9a9a"><rect x="18" y="22" width="78" height="4" rx="2"/><rect x="18" y="32" width="96" height="4" rx="2"/><rect x="18" y="42" width="64" height="4" rx="2"/><rect x="18" y="52" width="88" height="4" rx="2"/></g>
+    <rect x="8" y="66" width="154" height="1" fill="#2c2c2c"/>
+    <rect x="8" y="74" width="34" height="5" rx="2" fill="#4ade80"/><rect x="46" y="74" width="52" height="5" rx="2" fill="#6b6b6b"/>
+    <rect x="8" y="84" width="60" height="4" rx="2" fill="#4a4a4a"/>
+  </symbol>
+</svg>
+
+<div class="mock">
+  <h1 class="page-title">Вариант C — Лента</h1>
+  <p class="page-idea">Обсуждение как лента событий (Linear, GitHub): линия слева связывает сообщения, у каждой смены автора — маркер, состояние — одна метка в шапке, кнопки сообщения — рядом с текстом и только по наведению или фокусу, кнопки обсуждения — в конце ленты.</p>
+
+  <!-- ===================== UNIFIED ===================== -->
+  <div class="section">Unified — широкая колонка <span>карточка не шире 680 px и стоит у левого края кода</span></div>
+  <div class="diff unified">
+    <div class="diff-head"><svg class="i"><use href="#i-file"/></svg><b>src/features/catalog/actions.ts</b><span class="stat"><span class="a">+3</span> <span class="d">−1</span></span></div>
+    <div class="rows">
+      <div class="r"><div class="num">40</div><div class="num">40</div><div class="code"><span class="k">export const</span> <span class="c">OPEN_CATALOG_DETAILS_ACTION_ID</span> <span class="p">=</span> <span class="s">'open-catalog-details'</span>;</div></div>
+      <div class="r"><div class="num">41</div><div class="num">41</div><div class="code"><span class="k">export const</span> <span class="c">CLOSE_CATALOG_DETAILS_ACTION_ID</span> <span class="p">=</span> <span class="s">'close-catalog-details'</span>;</div></div>
+      <div class="r"><div class="num add"></div><div class="num add">42</div><div class="code add"><span class="k">export const</span> <span class="c">OPEN_PRODUCT_DETAILS_ACTION_ID</span> <span class="p">=</span> <span class="s hl">'openProductDetails'</span>;</div></div>
+
+      <!-- a) not sent, at rest -->
+      <div class="r"><div></div><div></div><div class="note-cell">
+        <div class="card">
+          <div class="card-head"><span class="lbl">Не отправлено</span></div>
+          <div class="feed">
+            <div class="item">
+              <span class="mk you draft" title="Не отправлено"><svg class="i"><use href="#i-user"/></svg></span>
+              <div class="body">
+                <div class="meta"><span class="who">Вы</span><span class="sep">·</span><span title="17 ноября 2026, 14:32">Только что</span>
+                  <span class="acts"><button class="ib" title="Изменить" aria-label="Изменить"><svg class="i"><use href="#i-edit"/></svg></button><button class="ib" title="Удалить сообщение" aria-label="Удалить сообщение"><svg class="i"><use href="#i-drop"/></svg></button></span></div>
+                <div class="md"><p>Почему id не совпадает с именем константы? Остальные action id в этом файле в kebab-case.</p></div>
+              </div>
+            </div>
+            <div class="item cont">
+              <span class="mk dot draft" title="Не отправлено · 17 ноября 2026, 14:32"></span>
+              <div class="body">
+                <div class="md"><p>Проверь заодно, где он используется.</p></div>
+                <span class="acts"><span class="t" title="17 ноября 2026, 14:32">Только что</span><button class="ib" title="Изменить" aria-label="Изменить"><svg class="i"><use href="#i-edit"/></svg></button><button class="ib" title="Удалить сообщение" aria-label="Удалить сообщение"><svg class="i"><use href="#i-drop"/></svg></button></span>
+              </div>
+            </div>
+          </div>
+          <div class="reply foot">
+            <button class="field">Ответить…</button>
+            <span class="thread-acts"><button class="btn"><svg class="i"><use href="#i-check"/></svg>Решено</button><button class="ib" title="Удалить обсуждение" aria-label="Удалить обсуждение"><svg class="i"><use href="#i-drop"/></svg></button></span>
+          </div>
+        </div>
+        <div class="ann"><b>a · не отправлено, покой.</b> Одна метка состояния. Неотправленное — пунктирный маркер; больше пунктира на линии нет. Второе сообщение подряд — без заголовка, точкой. Линия кончается на последнем сообщении; «Ответить…», «Решено» и удаление — под ней, в колонке текста.</div>
+      </div></div>
+
+      <!-- b) answered, agent message hovered -->
+      <div class="r"><div></div><div></div><div class="note-cell">
+        <div class="card">
+          <div class="card-head"><span class="lbl done">Подтверждено</span><span class="lbl done">Исправлено</span></div>
+          <div class="feed">
+            <div class="item">
+              <span class="mk you" title="Отправлено"><svg class="i"><use href="#i-user"/></svg></span>
+              <div class="body">
+                <div class="meta"><span class="who">Вы</span><span class="sep">·</span><span title="17 ноября 2026, 14:26">6 мин назад</span>
+                  <span class="acts"><button class="ib" title="Удалить сообщение" aria-label="Удалить сообщение"><svg class="i"><use href="#i-drop"/></svg></button></span></div>
+                <div class="md"><p>Здесь гонка: <code>load()</code> может вернуться после размонтирования.</p></div>
+              </div>
+            </div>
+            <div class="item is-hover">
+              <span class="mk agent"><svg class="i"><use href="#i-bot"/></svg></span>
+              <div class="body">
+                <div class="meta"><span class="who">Агент</span><span class="sep">·</span><span>claude</span><span>подтвердил и исправил</span><span class="sep">·</span><span title="17 ноября 2026, 14:27">5 мин назад</span>
+                  <span class="acts"><button class="ib" title="Удалить сообщение" aria-label="Удалить сообщение"><svg class="i"><use href="#i-drop"/></svg></button></span></div>
+                <div class="md">
+                  <p>Да, гонка есть: <code>load()</code> резолвится после <code>unmount()</code>, и <code>setState</code> пишет в уже снятый компонент. Что сделал:</p>
+                  <ul><li>добавил <code>AbortController</code> и отмену в <code>onUnmount</code>;</li><li>ответ, пришедший после отмены, теперь игнорируется.</li></ul>
+                  <pre><code>const ctrl = new AbortController()
+onUnmount(() =&gt; ctrl.abort())
+const data = await load({ signal: ctrl.signal })</code></pre>
+                </div>
+                <div class="imgs"><button class="thumb" title="Открыть test-run.png"><svg viewBox="0 0 170 96" width="170" height="94"><use href="#shot"/></svg></button></div>
+              </div>
+            </div>
+          </div>
+          <div class="reply foot">
+            <button class="field">Ответить…</button>
+            <span class="thread-acts"><button class="btn"><svg class="i"><use href="#i-check"/></svg>Решено</button><button class="ib" title="Удалить обсуждение" aria-label="Удалить обсуждение"><svg class="i"><use href="#i-drop"/></svg></button></span>
+          </div>
+        </div>
+        <div class="ann"><b>b · ответ агента, курсор на нём.</b> Цвет — только у меток шапки. В строке автора вердикт словами, приглушённо: «подтвердил и исправил». Так видно, что сказал каждый ответ. Наведение подсвечивает сообщение, его кнопки встают сразу после времени.</div>
+      </div></div>
+
+      <!-- c) waiting; the message added after sending is being changed in place -->
+      <div class="r"><div></div><div></div><div class="note-cell">
+        <div class="card">
+          <div class="card-head"><span class="lbl">Отправлено, ответа нет</span><span class="lbl outdated" title="Код этих строк изменился после коммита 4f2a9c1">Устарела</span></div>
+          <div class="feed">
+            <div class="item">
+              <span class="mk you" title="Отправлено"><svg class="i"><use href="#i-user"/></svg></span>
+              <div class="body">
+                <div class="meta"><span class="who">Вы</span><span class="sep">·</span><span title="17 ноября 2026, 14:20">12 мин назад</span>
+                  <span class="acts"><button class="ib" title="Удалить сообщение" aria-label="Удалить сообщение"><svg class="i"><use href="#i-drop"/></svg></button></span></div>
+                <div class="md"><p>Тут <code>retry()</code> крутится без ограничения попыток.</p></div>
+              </div>
+            </div>
+            <div class="item cont editing">
+              <span class="mk dot draft" title="Не отправлено · 17 ноября 2026, 14:32"></span>
+              <div class="body">
+                <div class="meta"><span title="17 ноября 2026, 14:32">Только что</span><span class="sep">·</span><span>не отправлено</span></div>
+                <div class="composer is-focus">
+                  <div class="ta">И паузу между попытками тоже вынеси в константу, например `RETRY_DELAY_MS`<span class="caret"></span></div>
+                  <div class="bar no-attach"><span class="keys"><span><kbd>Enter</kbd> — сохранить</span> · <span><kbd>Shift+Enter</kbd> — новая строка</span> · <span><kbd>Esc</kbd> — отмена</span></span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="reply foot">
+            <button class="field">Ответить…</button>
+            <span class="thread-acts"><button class="btn"><svg class="i"><use href="#i-refresh"/></svg>Отправить снова</button><button class="btn"><svg class="i"><use href="#i-check"/></svg>Решено</button><button class="ib" title="Удалить обсуждение" aria-label="Удалить обсуждение"><svg class="i"><use href="#i-drop"/></svg></button></span>
+          </div>
+        </div>
+        <div class="ann"><b>c · ждёт ответа; дописанное меняется.</b> «Отправить снова» — только пока ждёт. Дописанное после отправки помечено «не отправлено» в строке времени. «Изменить» открывает поле на месте текста: строка времени остаётся, картинку при изменении не приложить (как сейчас).</div>
+      </div></div>
+
+      <!-- d) the reply editor open -->
+      <div class="r"><div></div><div></div><div class="note-cell">
+        <div class="card">
+          <div class="card-head"><span class="lbl wait">Нужно уточнение</span></div>
+          <div class="feed">
+            <div class="item">
+              <span class="mk you" title="Отправлено"><svg class="i"><use href="#i-user"/></svg></span>
+              <div class="body">
+                <div class="meta"><span class="who">Вы</span><span class="sep">·</span><span title="17 ноября 2026, 14:12">20 мин назад</span>
+                  <span class="acts"><button class="ib" title="Удалить сообщение" aria-label="Удалить сообщение"><svg class="i"><use href="#i-drop"/></svg></button></span></div>
+                <div class="md"><p>Зачем здесь <code>setTimeout(0)</code>?</p></div>
+              </div>
+            </div>
+            <div class="item">
+              <span class="mk agent"><svg class="i"><use href="#i-bot"/></svg></span>
+              <div class="body">
+                <div class="meta"><span class="who">Агент</span><span class="sep">·</span><span>codex</span><span>просит уточнить</span><span class="sep">·</span><span title="17 ноября 2026, 14:14">18 мин назад</span>
+                  <span class="acts"><button class="ib" title="Удалить сообщение" aria-label="Удалить сообщение"><svg class="i"><use href="#i-drop"/></svg></button></span></div>
+                <div class="md">
+                  <blockquote><p>Зачем здесь <code>setTimeout(0)</code>?</p></blockquote>
+                  <p>В файле два таких вызова: в <code>mount()</code> и в <code>refresh()</code>. О каком речь? См. <a href="#">историю коммита 4f2a9c1</a>.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="reply foot">
+            <div class="composer is-focus">
+              <div class="ta">В `refresh()` — тот, что сразу после `await save()`.<span class="caret"></span></div>
+              <div class="bar"><button class="ib" title="Приложить файл" aria-label="Приложить файл"><svg class="i"><use href="#i-image"/></svg></button><span class="keys"><span><kbd>Enter</kbd> — сохранить</span> · <span><kbd>Shift+Enter</kbd> — новая строка</span> · <span><kbd>Esc</kbd> — отмена</span> · <span><kbd>Ctrl+V</kbd> — вставить картинку</span></span></div>
+            </div>
+            <span class="thread-acts"><button class="btn"><svg class="i"><use href="#i-check"/></svg>Решено</button><button class="ib" title="Удалить обсуждение" aria-label="Удалить обсуждение"><svg class="i"><use href="#i-drop"/></svg></button></span>
+          </div>
+        </div>
+        <div class="ann"><b>d · пишется ответ.</b> Поле раскрывается на месте «Ответить…» на всю колонку текста; кнопки обсуждения уходят под него, вправо. Внизу поля — «Приложить файл» и клавиши; подсказка переносится, а не обрезается. Поле пути и ошибка — в split ниже.</div>
+      </div></div>
+
+      <!-- e) resolved, folded: the first hovered with delete armed, the second at rest -->
+      <div class="r"><div></div><div></div><div class="note-cell">
+        <div class="fold-card is-hover">
+          <button class="fold" aria-expanded="false"><svg class="i"><use href="#i-right"/></svg><span class="lbl done">Решено</span><span class="first">Нужен ли здесь экспорт? Его импортирует только ProductMenu.tsx</span><span class="count">2 сообщения</span></button>
+          <span class="acts"><button class="btn sm"><svg class="i"><use href="#i-undo"/></svg>Открыть снова</button><button class="ib armed is-focus" title="Нажмите ещё раз, чтобы удалить">Нажмите ещё раз, чтобы удалить<svg class="i"><use href="#i-drop"/></svg></button></span>
+        </div>
+        
+      </div></div>
+      <div class="r"><div></div><div></div><div class="note-cell gap0">
+        <div class="fold-card">
+          <button class="fold" aria-expanded="false"><svg class="i"><use href="#i-right"/></svg><span class="lbl done">Решено</span><span class="first">Переименовать в OPEN_PRODUCT_DETAILS?</span><span class="count">3 сообщения</span></button>
+          <span class="acts"><button class="btn sm"><svg class="i"><use href="#i-undo"/></svg>Открыть снова</button><button class="ib" title="Удалить обсуждение" aria-label="Удалить обсуждение"><svg class="i"><use href="#i-drop"/></svg></button></span>
+        </div>
+        <div class="ann" style="top:-34px"><b>e · решённые, свёрнуты.</b> Строка шириной с карточку, нажатие раскрывает. Кнопки — по наведению и фокусу; в первой удаление взведено.</div>
+      </div></div>
+
+      <!-- f) resolved, unfolded -->
+      <div class="r"><div></div><div></div><div class="note-cell">
+        <div class="card">
+          <div class="card-head"><button class="fold" aria-expanded="true" title="Свернуть"><svg class="i"><use href="#i-down"/></svg><span class="lbl done">Решено</span><span class="count">2 сообщения</span></button></div>
+          <div class="feed">
+            <div class="item">
+              <span class="mk you" title="Отправлено"><svg class="i"><use href="#i-user"/></svg></span>
+              <div class="body">
+                <div class="meta"><span class="who">Вы</span><span class="sep">·</span><span title="17 ноября 2026, 13:05">1 ч назад</span>
+                  <span class="acts"><button class="ib" title="Удалить сообщение" aria-label="Удалить сообщение"><svg class="i"><use href="#i-drop"/></svg></button></span></div>
+                <div class="md"><p>Почему тут нет проверки на пустой список?</p></div>
+              </div>
+            </div>
+            <div class="item">
+              <span class="mk agent"><svg class="i"><use href="#i-bot"/></svg></span>
+              <div class="body">
+                <div class="meta"><span class="who">Агент</span><span class="sep">·</span><span>claude</span><span>опроверг</span><span class="sep">·</span><span title="17 ноября 2026, 13:07">1 ч назад</span>
+                  <span class="acts"><button class="ib" title="Удалить сообщение" aria-label="Удалить сообщение"><svg class="i"><use href="#i-drop"/></svg></button></span></div>
+                <div class="md"><p>Пустой список сюда не доходит: <code>parties()</code> отфильтровывает его выше, в строке 18.</p></div>
+              </div>
+            </div>
+            <div class="item ev">
+              <span class="mk done"><svg class="i"><use href="#i-check"/></svg></span>
+              <div class="meta"><span class="who" style="font-weight:500">Решено</span><span class="sep">·</span><span title="17 ноября 2026, 13:20">40 мин назад</span><button class="btn sm"><svg class="i"><use href="#i-undo"/></svg>Открыть снова</button><button class="ib" title="Удалить обсуждение" aria-label="Удалить обсуждение"><svg class="i"><use href="#i-drop"/></svg></button></div>
+            </div>
+          </div>
+        </div>
+        <div class="ann" style="top:30px"><b>f · решённое, развёрнуто.</b> Шапка — та же кнопка строки (<code>aria-expanded=true</code>), нажатие сворачивает. Поля ответа нет; последнее событие на линии — «Решено» и его время (<code>resolvedAt</code>), рядом «Открыть снова» и удаление.</div>
+      </div></div>
+
+      <div class="r"><div class="num">42</div><div class="num">43</div><div class="code"><span class="k">export const</span> <span class="c">CLOSE_PRODUCT_DETAILS_ACTION_ID</span> <span class="p">=</span> <span class="s">'close-product-details'</span>;</div></div>
+      <div class="r"><div class="num">43</div><div class="num">44</div><div class="code"><span class="k">export const</span> <span class="c">SHOW_CATALOG_HISTORY_ACTION_ID</span> <span class="p">=</span> <span class="s">'show-catalog-history'</span>;</div></div>
+      <div class="r"><div class="num">44</div><div class="num">45</div><div class="code"><span class="k">export const</span> <span class="c">HIDE_CATALOG_HISTORY_ACTION_ID</span> <span class="p">=</span> <span class="s">'hide-catalog-history'</span>;</div></div>
+    </div>
+  </div>
+
+  <!-- ===================== SPLIT ===================== -->
+  <div class="section">Split — узкая колонка (480px) <span>a — у второго сообщения фокус с клавиатуры; b; d — открыто «Приложить файл», путь не найден</span></div>
+  <div class="diff split">
+    <div class="diff-head"><svg class="i"><use href="#i-file"/></svg><b>src/features/catalog/actions.ts</b><span class="stat"><span class="a">+3</span> <span class="d">−1</span></span></div>
+    <div class="rows">
+      <div class="r"><div class="num dim">40</div><div class="code dim"><span class="k">export const</span> <span class="c">OPEN_CATALOG_DETAILS_ACTION_ID</span> = <span class="s">'open-catalog-details'</span>;</div><div class="num">40</div><div class="code"><span class="k">export const</span> <span class="c">OPEN_CATALOG_DETAILS_ACTION_ID</span> = <span class="s">'open-catalog-details'</span>;</div></div>
+      <div class="r"><div class="num dim">41</div><div class="code dim"><span class="k">export const</span> <span class="c">CLOSE_CATALOG_DETAILS_ACTION_ID</span> = <span class="s">'close-catalog-details'</span>;</div><div class="num">41</div><div class="code"><span class="k">export const</span> <span class="c">CLOSE_CATALOG_DETAILS_ACTION_ID</span> = <span class="s">'close-catalog-details'</span>;</div></div>
+      <div class="r"><div class="num del dim">42</div><div class="code del dim"><span class="k">export const</span> <span class="c">OPEN_PRODUCT_ACTION_ID</span> = <span class="s">'open-product'</span>;</div><div class="num add">42</div><div class="code add"><span class="k">export const</span> <span class="c">OPEN_PRODUCT_DETAILS_ACTION_ID</span> = <span class="s hl">'openProductDetails'</span>;</div></div>
+
+      <!-- a) narrow, the grouped message focused from the keyboard -->
+      <div class="r"><div></div><div class="note-cell old"></div><div></div><div class="note-cell">
+        <div class="card">
+          <div class="card-head"><span class="lbl">Не отправлено</span></div>
+          <div class="feed">
+            <div class="item">
+              <span class="mk you draft" title="Не отправлено"><svg class="i"><use href="#i-user"/></svg></span>
+              <div class="body">
+                <div class="meta"><span class="who">Вы</span><span class="sep">·</span><span title="17 ноября 2026, 14:32">Только что</span>
+                  <span class="acts"><button class="ib" title="Изменить" aria-label="Изменить"><svg class="i"><use href="#i-edit"/></svg></button><button class="ib" title="Удалить сообщение" aria-label="Удалить сообщение"><svg class="i"><use href="#i-drop"/></svg></button></span></div>
+                <div class="md"><p>Почему id не совпадает с именем константы? Остальные action id в этом файле в kebab-case.</p></div>
+              </div>
+            </div>
+            <div class="item cont is-focus">
+              <span class="mk dot draft" title="Не отправлено · 17 ноября 2026, 14:32"></span>
+              <div class="body">
+                <div class="md"><p>Проверь заодно, где он используется.</p></div>
+                <span class="acts"><span class="t" title="17 ноября 2026, 14:32">Только что</span><button class="ib is-focus" title="Изменить" aria-label="Изменить"><svg class="i"><use href="#i-edit"/></svg></button><button class="ib" title="Удалить сообщение" aria-label="Удалить сообщение"><svg class="i"><use href="#i-drop"/></svg></button></span>
+              </div>
+            </div>
+          </div>
+          <div class="reply foot">
+            <button class="field">Ответить…</button>
+            <span class="thread-acts"><button class="btn"><svg class="i"><use href="#i-check"/></svg>Решено</button><button class="ib" title="Удалить обсуждение" aria-label="Удалить обсуждение"><svg class="i"><use href="#i-drop"/></svg></button></span>
+          </div>
+        </div>
+      </div></div>
+
+      <!-- b) narrow -->
+      <div class="r"><div></div><div class="note-cell old"></div><div></div><div class="note-cell gap0">
+        <div class="card">
+          <div class="card-head"><span class="lbl done">Подтверждено</span><span class="lbl done">Исправлено</span></div>
+          <div class="feed">
+            <div class="item">
+              <span class="mk you" title="Отправлено"><svg class="i"><use href="#i-user"/></svg></span>
+              <div class="body">
+                <div class="meta"><span class="who">Вы</span><span class="sep">·</span><span title="17 ноября 2026, 14:26">6 мин назад</span>
+                  <span class="acts"><button class="ib" title="Удалить сообщение" aria-label="Удалить сообщение"><svg class="i"><use href="#i-drop"/></svg></button></span></div>
+                <div class="md"><p>Здесь гонка: <code>load()</code> может вернуться после размонтирования.</p></div>
+              </div>
+            </div>
+            <div class="item">
+              <span class="mk agent"><svg class="i"><use href="#i-bot"/></svg></span>
+              <div class="body">
+                <div class="meta"><span class="who">Агент</span><span class="sep">·</span><span>claude</span><span>подтвердил и исправил</span><span class="sep">·</span><span title="17 ноября 2026, 14:27">5 мин назад</span>
+                  <span class="acts"><button class="ib" title="Удалить сообщение" aria-label="Удалить сообщение"><svg class="i"><use href="#i-drop"/></svg></button></span></div>
+                <div class="md">
+                  <p>Да, гонка есть: <code>load()</code> резолвится после <code>unmount()</code>, и <code>setState</code> пишет в уже снятый компонент. Что сделал:</p>
+                  <ul><li>добавил <code>AbortController</code> и отмену в <code>onUnmount</code>;</li><li>ответ, пришедший после отмены, теперь игнорируется.</li></ul>
+                  <pre><code>const ctrl = new AbortController()
+onUnmount(() =&gt; ctrl.abort())
+const data = await load({ signal: ctrl.signal })</code></pre>
+                </div>
+                <div class="imgs"><button class="thumb" title="Открыть test-run.png"><svg viewBox="0 0 170 96" width="170" height="94"><use href="#shot"/></svg></button></div>
+              </div>
+            </div>
+          </div>
+          <div class="reply foot">
+            <button class="field">Ответить…</button>
+            <span class="thread-acts"><button class="btn"><svg class="i"><use href="#i-check"/></svg>Решено</button><button class="ib" title="Удалить обсуждение" aria-label="Удалить обсуждение"><svg class="i"><use href="#i-drop"/></svg></button></span>
+          </div>
+        </div>
+      </div></div>
+
+      <!-- d) narrow: the editor with Attach a file open and a refused path -->
+      <div class="r"><div></div><div class="note-cell old"></div><div></div><div class="note-cell gap0">
+        <div class="card">
+          <div class="card-head"><span class="lbl wait">Нужно уточнение</span></div>
+          <div class="feed">
+            <div class="item">
+              <span class="mk you" title="Отправлено"><svg class="i"><use href="#i-user"/></svg></span>
+              <div class="body">
+                <div class="meta"><span class="who">Вы</span><span class="sep">·</span><span title="17 ноября 2026, 14:12">20 мин назад</span>
+                  <span class="acts"><button class="ib" title="Удалить сообщение" aria-label="Удалить сообщение"><svg class="i"><use href="#i-drop"/></svg></button></span></div>
+                <div class="md"><p>Зачем здесь <code>setTimeout(0)</code>?</p></div>
+              </div>
+            </div>
+            <div class="item">
+              <span class="mk agent"><svg class="i"><use href="#i-bot"/></svg></span>
+              <div class="body">
+                <div class="meta"><span class="who">Агент</span><span class="sep">·</span><span>codex</span><span>просит уточнить</span><span class="sep">·</span><span title="17 ноября 2026, 14:14">18 мин назад</span>
+                  <span class="acts"><button class="ib" title="Удалить сообщение" aria-label="Удалить сообщение"><svg class="i"><use href="#i-drop"/></svg></button></span></div>
+                <div class="md">
+                  <blockquote><p>Зачем здесь <code>setTimeout(0)</code>?</p></blockquote>
+                  <p>В файле два таких вызова: в <code>mount()</code> и в <code>refresh()</code>. О каком речь?</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="reply foot">
+            <div class="composer">
+              <div class="ta">В `refresh()` — тот, что сразу после `await save()`. Скрин ниже.</div>
+              <div class="bar"><button class="ib on" title="Приложить файл" aria-label="Приложить файл" aria-expanded="true"><svg class="i"><use href="#i-image"/></svg></button><span class="keys"><span><kbd>Enter</kbd> — сохранить</span> · <span><kbd>Shift+Enter</kbd> — новая строка</span> · <span><kbd>Esc</kbd> — отмена</span> · <span><kbd>Ctrl+V</kbd> — вставить картинку</span></span></div>
+            </div>
+            <div class="pathf">
+              <div class="in">docs/shots/refresh<span class="caret"></span></div>
+              <div class="sugg" role="listbox" aria-label="Путь до картинки: png, jpg, gif или webp"><div class="on"><span class="dir">docs/shots/</span>refresh-race.png</div><div><span class="dir">docs/shots/</span>refresh-timer.png</div></div>
+              <button class="btn">Готово</button>
+            </div>
+            <span class="err">Нет такого файла картинки: docs/shots/refresh.png</span>
+            <span class="thread-acts"><button class="btn"><svg class="i"><use href="#i-check"/></svg>Решено</button><button class="ib" title="Удалить обсуждение" aria-label="Удалить обсуждение"><svg class="i"><use href="#i-drop"/></svg></button></span>
+          </div>
+        </div>
+      </div></div>
+
+      <div class="r"><div class="num dim">43</div><div class="code dim"><span class="k">export const</span> <span class="c">CLOSE_PRODUCT_ACTION_ID</span> = <span class="s">'close-product'</span>;</div><div class="num">43</div><div class="code"><span class="k">export const</span> <span class="c">CLOSE_PRODUCT_DETAILS_ACTION_ID</span> = <span class="s">'close-product-details'</span>;</div></div>
+    </div>
+  </div>
+  <p class="split-note">В узкой колонке карточка занимает всю половину. Поле ответа и кнопки обсуждения помещаются в одну строку; открытый редактор берёт всю строку, кнопки уходят под него, слева от них — строка ошибки. Подсказка клавиш переносится по смысловым кускам.</p>
+</div>
+</body>
+</html>
