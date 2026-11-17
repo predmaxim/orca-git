@@ -85,11 +85,12 @@ export function authorOf(m: NoteMessage): string {
 export const GROUP_GAP_MS = 5 * 60_000
 
 /**
- * Whether `m` goes on in the group of `prev`, under its header: the same author, the same send (both unsent, or one `review`),
+ * Whether `m` goes on in the group of `prev`, under its header: the same author, the same send (both unsent, or one `review` and `sentAt`),
  * at most GROUP_GAP_MS later and not earlier.
  */
 export function continues(prev: NoteMessage | undefined, m: NoteMessage): boolean {
-  if (!prev || prev.author !== m.author || prev.review !== m.review || (prev.sentAt === undefined) !== (m.sentAt === undefined)) return false
+  // One send stamps one sentAt on all its messages, which stays when deleting its answer takes `review` off them.
+  if (!prev || prev.author !== m.author || prev.review !== m.review || prev.sentAt !== m.sentAt) return false
   const gap = m.at - prev.at
   return gap >= 0 && gap <= GROUP_GAP_MS
 }

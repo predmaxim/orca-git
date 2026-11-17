@@ -78,6 +78,9 @@ test('a message continues the group of the one before: same author, same send, a
   assert.equal(continues(u(0, { sentAt: 1, review: 'r1' }), u(1, { sentAt: 2, review: 'r2' })), false)
   assert.equal(continues(u(0, { sentAt: 1, review: 'r1' }), u(1, { sentAt: 1, review: 'r1' })), true)
   assert.equal(continues(u(0), { ...u(1), author: 'agent', review: 'r1' }), false)
+  // Deleting the agent's answers takes `review` off the messages of their sends; their sentAt still tells the sends apart.
+  assert.equal(continues(u(0, { sentAt: 1000 }), u(1, { sentAt: 130000 })), false)
+  assert.equal(continues(u(0, { sentAt: 1000 }), u(1, { sentAt: 1000 })), true)
 })
 test('the last answer of an answered thread leaves its verdict to the header; other answers show theirs', () => {
   const answer = { ...said('agent', 'yes', 'r'), verdict: 'confirmed' } as NoteMessage
