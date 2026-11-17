@@ -2107,15 +2107,18 @@ input[type='radio']:focus-visible {
   border-right: 1px solid var(--border);
 }
 
-/* A card is interface, not code: the panel's font on the panel's plate, no wider than reading needs. */
+/*
+ * A card is interface, not code: the panel's font on a plate a shade off the code it stands on, no wider than reading
+ * needs. Not --orca-card: Orca gives the Diff tab a card colour equal to its background, and the card vanished.
+ */
 .diff-lines .d-note {
   --rail: transparent;
   position: relative;
   max-width: 760px;
   margin: 6px 10px 10px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--input);
   border-radius: 8px;
-  background: var(--bg);
+  background: color-mix(in srgb, var(--fg) 5%, var(--code-bg));
   color: var(--fg);
   font: 13px/1.45 var(--font-ui);
   letter-spacing: 0.01em;
