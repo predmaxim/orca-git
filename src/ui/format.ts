@@ -2,7 +2,8 @@ import { getLocale, t, type MessageKey } from '../shared/i18n.ts'
 import type { BranchRef, CommitRow } from '../shared/protocol.ts'
 
 const pad = (n: number) => String(n).padStart(2, '0')
-const hhmm = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`
+/** A time of day as 14:05. */
+export const hhmm = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`
 
 /** Log dates: "Moments ago", "5 minutes ago", "Today 14:02", "Yesterday 09:12", then the date. */
 export function relativeDate(seconds: number, now = Date.now()): string {

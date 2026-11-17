@@ -5,12 +5,12 @@ import { carriedNotes, lastAnswer, MAX_BODY, MAX_IMAGES, MAX_QUOTE, MAX_REVIEW_S
 import { api, copyText, errorMessage, orca } from './api.ts'
 import type { DiffMode } from './diff.ts'
 import { h, icon, ICONS } from './dom.ts'
-import { fullDate, relativeDate, shortHash } from './format.ts'
+import { fullDate, hhmm, relativeDate, shortHash } from './format.ts'
 import { markRange } from './highlight.ts'
 import { disposeImages, thumbnail, uploadImage } from './images.ts'
 import { mdDom } from './markdown.ts'
 import { showMenu, showPopover, type MenuEntry } from './menu.ts'
-import { active, anchor, authorOf, coveredRange, notesText, pickSide, sideLines, unsent } from './notemodel.ts'
+import { active, anchor, continues, coveredRange, marksUnsent, notesText, pickSide, showsVerdict, sideLines, unsent, whereOf } from './notemodel.ts'
 import { browseDir, skillSuggestions } from './skillmodel.ts'
 
 export interface NotesView {
@@ -40,7 +40,7 @@ export interface NotesView {
 /** Where a note goes: everything of a draft but its text and images. */
 type Anchor = Omit<NoteDraft, 'body' | 'images'>
 /** `file`: the index of the file it was opened in, which a thread carried there is not tied to by its blob. */
-type Editor = { anchor: Anchor; id?: string; message?: string; start: string; images: NoteImage[]; sending: string[]; el: HTMLElement; area: HTMLTextAreaElement; error: HTMLElement; file: number; draft?: string }
+type Editor = { anchor: Anchor; id?: string; message?: string; start: string; images: NoteImage[]; sending: string[]; el: HTMLElement; area: HTMLTextAreaElement; error: HTMLElement; end: HTMLElement; file: number; draft?: string }
 
 /** An editor as the frame's localStorage keeps it, by `key`: Orca makes the Diff tab anew each time it is shown again. */
 type Draft = { key: string; anchor: Anchor; of?: { id: string; message?: string }; text: string; start: string; images: NoteImage[] }
@@ -105,8 +105,15 @@ function labels(n: ReviewNote): HTMLElement[] {
   const state = stateOf(n)
   const answer = lastAnswer(n)
   if (state === 'answered' && answer) return verdict(answer)
-  return state === 'resolved' ? [label('noteResolve', 'resolved')] : state === 'unsent' ? [label('noteUnsent')] : state === 'waiting' ? [label('noteSent')] : []
+  if (state === 'waiting') return [h('span', { class: 'd-label' }, icon('clock'), t('noteSent'))]
+  return state === 'resolved' ? [label('noteResolve', 'resolved')] : state === 'unsent' ? [label('noteUnsent')] : []
 }
+
+/** A key of the editor and what it does: Enter save. */
+const key = (name: string, what: MessageKey) => h('span', null, h('kbd', null, name), t(what))
+
+/** Where a note is, in the head of its card: "Line 40 · new". */
+const where = (n: Pick<ReviewNote, 'side' | 'start' | 'end'>) => h('span', { class: 'd-note-where' }, icon('note'), whereOf(n))
 
 const firstLine = (text: string) => text.split('\n', 1)[0]
 const lineSpan = (n: ReviewNote) => (n.start.line === n.end.line ? `${n.start.line}` : `${n.start.line}-${n.end.line}`)
@@ -547,9 +554,10 @@ export function mountNotes(options: {
     area.value = text
     const error = h('div', { class: 'd-note-error' })
     const strip = h('div', { class: 'd-note-images' })
-    const mine: Editor = { anchor: at, id: of?.id, message: of?.message, start, images, sending: [], el: h('div', { class: 'd-note-edit' }, area, strip, error), area, error, file: file ? files.indexOf(file) : -1 }
+    const end = h('span', { class: 'd-note-end' })
+    const mine: Editor = { anchor: at, id: of?.id, message: of?.message, start, images, sending: [], el: h('div', { class: 'd-note-edit' }, area, strip, error), area, error, end, file: file ? files.indexOf(file) : -1 }
     area.addEventListener('input', () => keepDraft(mine))
-    const attachButton = tool('image', 'imageAttach', () => {
+    const attachButton = tool('imagePlus', 'imageAttach', () => {
       if (field.parentNode) return picker.input.focus()
       error.before(field)
       picker.start()
@@ -563,6 +571,16 @@ export function mountNotes(options: {
       cancel: () => closeField()
     })
     const field = h('div', { class: 'notes-skill-field d-note-attach' }, picker.input, picker.list, picker.done)
+    // Under the field: Attach a file, what the keys do, and the thread's actions, which its card puts in `end`.
+    mine.el.append(
+      h(
+        'div',
+        { class: 'd-note-bar' },
+        editing ? null : attachButton,
+        h('span', { class: 'd-note-keys' }, key('Enter', 'noteKeySave'), key('Shift+Enter', 'noteKeyLine'), key('Esc', 'noteKeyCancel'), editing ? null : key('Ctrl+V', 'noteKeyImage')),
+        end
+      )
+    )
     // What the field said goes with it: it was about the path, which is gone.
     const closeField = () => {
       picker.stop()
@@ -570,7 +588,7 @@ export function mountNotes(options: {
       error.textContent = ''
       area.focus()
     }
-    /** The images, each with Remove unless the message is edited, then the ones being sent and Attach a file. */
+    /** The images, each with Remove unless the message is edited, then the ones being sent. */
     const draw = () => {
       strip.replaceChildren(
         ...mine.images.map((image) =>
@@ -598,8 +616,7 @@ export function mountNotes(options: {
                 )
           )
         ),
-        ...mine.sending.map((name) => h('span', { class: 'd-image' }, name)),
-        ...(editing ? [] : [attachButton])
+        ...mine.sending.map((name) => h('span', { class: 'd-image' }, name))
       )
       keepDraft(mine)
     }
@@ -699,25 +716,49 @@ export function mountNotes(options: {
     if (editor === open) keepDraft(open)
   }
 
-  /** A message: its author and time, an agent's verdict, Not sent on the user's own until it goes out and Edit until then, Delete. */
-  function message(n: ReviewNote, m: NoteMessage): HTMLElement {
+  /**
+   * A message: an avatar and a head with its author and time, the verdict its thread's label does not say and Not sent next to
+   * sent messages; one going on in the group of the one before (`prev`) has no head, its time shows in the gutter on hover or
+   * focus. Edit while it is the user's own and unsent, and Delete, show on hover or focus too.
+   */
+  function message(n: ReviewNote, m: NoteMessage, prev: NoteMessage | undefined, marks: boolean): HTMLElement {
     const draft = unsentOf(n).includes(m)
+    const cont = continues(prev, m)
+    const when = fullDate(m.at / 1000)
+    const author = m.author === 'user' ? [t('noteYou')] : [t('noteAgentPlain'), m.agent ? h('span', { class: 'd-note-kind' }, ` · ${m.agent}`) : null]
     return h(
       'div',
-      { class: `d-note-msg ${m.author}`, dataset: { id: m.id } },
+      { class: `d-note-msg ${m.author}${cont ? ' cont' : ''}${draft ? ' own-draft' : ''}`, dataset: { id: m.id } },
       h(
         'div',
-        { class: 'd-note-msg-head' },
-        h('span', { class: 'd-note-author' }, authorOf(m)),
-        h('span', { class: 'muted', title: fullDate(m.at / 1000) }, relativeDate(m.at / 1000)),
-        ...verdict(m),
-        draft ? h('span', { class: 'muted d-note-unsent' }, t('noteUnsent')) : null,
-        h('span', { class: 'spacer' }),
-        draft ? tool('edit', 'noteEdit', () => openEditor(n, { id: n.id, message: m.id }, m.body, m.images)) : null,
-        dropTool('noteDeleteMessage', () => void change(n.id, api.noteRemove(root, n.id, m.id)))
+        { class: 'd-note-gutter' },
+        cont
+          ? h('span', { class: 'd-note-clock', title: when }, hhmm(new Date(m.at)))
+          : h('span', { class: `d-note-avatar ${m.author}` }, icon(m.author === 'user' ? 'user' : 'bot'))
       ),
-      h('div', { class: 'md' }, mdDom(m.body, openLink)),
-      m.images?.length ? h('div', { class: 'd-note-images' }, ...m.images.map((image) => thumbnail(root, image))) : null
+      h(
+        'div',
+        { class: 'd-note-main' },
+        cont
+          ? null
+          : h(
+              'div',
+              { class: 'd-note-msg-head' },
+              h('span', { class: 'd-note-author' }, ...author),
+              h('span', { class: 'muted', title: when }, relativeDate(m.at / 1000)),
+              ...(showsVerdict(n, m) ? verdict(m) : []),
+              draft && marks ? h('span', { class: 'muted d-note-unsent' }, `· ${t('noteUnsent')}`) : null
+            ),
+        h('div', { class: 'md' }, mdDom(m.body, openLink)),
+        m.images?.length ? h('div', { class: 'd-note-images' }, ...m.images.map((image) => thumbnail(root, image))) : null
+      ),
+      h(
+        'div',
+        { class: 'd-note-tools' },
+        draft ? tool('edit', 'noteEdit', () => openEditor(n, { id: n.id, message: m.id }, m.body, m.images)) : null,
+        // The message lights up instead of the words on the button: they would cover its first line.
+        dropTool('noteDeleteMessage', () => void change(n.id, api.noteRemove(root, n.id, m.id)), false)
+      )
     )
   }
 
@@ -728,7 +769,10 @@ export function mountNotes(options: {
     found?.querySelector<HTMLElement>(selector)?.focus({ preventScroll: true })
   }
 
-  /** A thread: its state and buttons, its messages, and Reply… under them; a resolved one is one line until it is opened. */
+  /**
+   * A thread: where it is and its state, its messages, then Reply… and the thread's buttons in one row; the editor of a reply
+   * takes that row and the buttons go under its field. A resolved thread is one line until it is opened, and its head closes it again.
+   */
   function card(n: ReviewNote): HTMLElement {
     const resolved = n.resolvedAt !== undefined
     const mine = editor?.id === n.id ? editor : null
@@ -747,31 +791,58 @@ export function mountNotes(options: {
     }
     const toggle = resolved ? action('undo', 'noteReopen', () => resolve(false)) : action('check', 'noteResolve', () => resolve(true))
     toggle.classList.add('d-note-toggle')
+    const state = stateOf(n)
+    // Sending again takes the sent mark off the messages nobody answered, so they go with the next sending.
+    const resend = state === 'waiting' ? action('refresh', 'noteResend', () => void change(n.id, api.noteResend(root, n.id))) : null
+    resend?.classList.add('d-note-resend')
+    const actions = [resend, toggle, dropTool('noteDeleteThread', () => void remove([n.id]))]
+    // The rail on the left repeats the colour of the verdict the label says.
+    const verdictOf = state === 'answered' ? lastAnswer(n)?.verdict : undefined
+    const props = { class: `d-note${resolved ? ' resolved' : ''}${verdictOf ? ` verdict-${verdictOf}` : ''}`, dataset: { id: n.id } }
+    if (!open)
+      return h(
+        'div',
+        props,
+        h(
+          'div',
+          { class: 'd-note-head d-note-line' },
+          h(
+            'button',
+            { class: 'd-note-fold', 'aria-expanded': 'false', onclick: fold },
+            icon('chevronRight'),
+            ...labels(n),
+            h('span', { class: 'd-note-first' }, firstLine(n.messages[0]?.body ?? '')),
+            h('span', { class: 'muted' }, t('noteMessages', { count: n.messages.length }))
+          ),
+          ...actions
+        )
+      )
+    const head = resolved
+      ? h('button', { class: 'd-note-head d-note-fold', 'aria-expanded': 'true', onclick: fold }, icon('chevronDown'), where(n), ...labels(n))
+      : h('div', { class: 'd-note-head' }, where(n), ...labels(n))
+    const marks = marksUnsent(n)
+    // A reply being written stays in its thread, resolved meanwhile or not; a new one starts only in a thread not resolved.
+    const replying = mine && !mine.message ? mine : null
+    replying?.end.replaceChildren(...actions.filter((el) => el !== null))
     return h(
       'div',
-      { class: `d-note${resolved ? ' resolved' : ''}`, dataset: { id: n.id } },
+      props,
+      head,
       h(
         'div',
-        { class: 'd-note-head' },
-        ...(resolved
-          ? [
-              h(
-                'button',
-                { class: 'd-note-fold', 'aria-expanded': String(open), onclick: fold },
-                ...labels(n),
-                h('span', { class: 'd-note-first' }, firstLine(n.messages[0]?.body ?? '')),
-                h('span', { class: 'muted' }, t('noteMessages', { count: n.messages.length }))
-              )
-            ]
-          : [...labels(n), h('span', { class: 'spacer' })]),
-        // Sending again takes the sent mark off the messages nobody answered, so they go with the next sending.
-        stateOf(n) === 'waiting' ? action('refresh', 'noteResend', () => void change(n.id, api.noteResend(root, n.id))) : null,
-        toggle,
-        dropTool('noteDeleteThread', () => void remove([n.id]))
+        { class: 'd-note-body' },
+        ...n.messages.map((m, i) =>
+          mine?.message === m.id ? h('div', { class: 'd-note-msg editing' }, h('div', { class: 'd-note-gutter' }), mine.el) : message(n, m, n.messages[i - 1], marks)
+        )
       ),
-      ...(open ? n.messages.map((m) => (mine?.message === m.id ? mine.el : message(n, m))) : []),
-      // A reply being written stays in its thread, resolved meanwhile or not; a new one starts only in a thread not resolved.
-      mine && !mine.message ? mine.el : resolved ? null : h('button', { class: 'd-note-reply', onclick: () => openEditor(n, { id: n.id }) }, t('noteReply'))
+      replying
+        ? h('div', { class: 'd-note-foot editing' }, replying.el)
+        : h(
+            'div',
+            { class: 'd-note-foot' },
+            resolved ? null : h('button', { class: 'd-note-reply', onclick: () => openEditor(n, { id: n.id }) }, icon('reply'), h('span', null, t('noteReply'))),
+            ...actions
+          )
     )
   }
 
@@ -1112,7 +1183,9 @@ export function mountNotes(options: {
     rowsAfter(side, line, mode) {
       const rows = shown.filter((n) => n.side === side && n.end.line === line).map((n) => row(side, mode, card(n)))
       const open = editor
-      if (open && !open.id && open.anchor.side === side && open.anchor.end.line === line && open.anchor.blob === blobOf(side)) rows.push(row(side, mode, open.el))
+      // A new note's editor stands in a card of its own, headed with where it will be.
+      if (open && !open.id && open.anchor.side === side && open.anchor.end.line === line && open.anchor.blob === blobOf(side))
+        rows.push(row(side, mode, h('div', { class: 'd-note d-note-new' }, h('div', { class: 'd-note-head' }, where(open.anchor)), h('div', { class: 'd-note-foot editing' }, open.el))))
       return rows
     },
     mark(html, side, line, length) {
