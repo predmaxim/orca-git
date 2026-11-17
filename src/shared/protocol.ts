@@ -1,4 +1,5 @@
 // The sidebar/Diff tab <-> worker contract. Both sides import these types; nothing here runs.
+import type { WireDiff } from './diffwire.ts'
 
 export interface RepoInfo {
   root: string
@@ -102,7 +103,6 @@ export interface CommitDetails {
   committerEmail: string
   commitTime: number
   message: string
-  files: FileChange[]
   branches: string[]
 }
 
@@ -377,9 +377,9 @@ declare module 'orca' {
     'repo.watch': { input: { root: string }; output: { ok: boolean } }
     'log.page': { input: { root: string; filter: LogFilter; skip: number; limit?: number }; output: LogPage }
     'commit.details': { input: { root: string; hash: string }; output: CommitDetails }
-    'file.diff': { input: { root: string; hash: string; path: string; oldPath?: string; wholeFile?: boolean }; output: FileDiff }
+    'file.diff': { input: { root: string; hash: string; path: string; oldPath?: string; wholeFile?: boolean }; output: WireDiff }
     'selection.files': { input: { root: string; hashes: string[] }; output: SelectionFile[] }
-    'range.diff': { input: { root: string; from: string | null; to: string; path: string; oldPath?: string; wholeFile?: boolean }; output: FileDiff }
+    'range.diff': { input: { root: string; from: string | null; to: string; path: string; oldPath?: string; wholeFile?: boolean }; output: WireDiff }
     'patch.create': { input: { root: string; hashes: string[]; path?: string; overwrite?: boolean }; output: PatchResult }
     'action.check': { input: { root: string; kind: RewriteKind; hashes: string[] }; output: CheckResult }
     /** `id`: echoed in `action.done`, so a panel that stopped waiting knows its result. */

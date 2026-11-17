@@ -91,7 +91,13 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   when resolved). The marks are measured from the rows shown, so they follow wrapped lines and opened
   cards; a hover names the lines (and the note's first line), a click scrolls there. Jump between
   changes with F7 / Shift+F7 and between the files of the selection it was opened from with ← / → (keys or header buttons) or Alt+↑ /
-  Alt+↓ (counter "3/5 files"); the panel's Files section highlights the file the tab shows. Merge
+  Alt+↓ (counter "3/5 files"); a held key runs through the counter and loads the file it stops on when it
+  comes up, since Orca refuses a plugin more than 120 requests in 10 s; the panel's Files section highlights the file the tab shows. Orca builds
+  the tab anew each time it is shown again (another tab of its group was in front): it says "Loading…" until the
+  worker answers, then opens where it was scrolled to (same opening, file and Whole file; cards of notes that come in
+  after it above that place push it down), and a note being written comes back in its editor with its text and
+  images. Drafts stay in the frame's localStorage until saved or cancelled, the last ten per repository: one whose
+  file or thread the tab's new opening does not show waits for an opening that does. Merge
   commits are compared with their first parent. The review has its own group at the end of the header,
   after a divider: **Notes**, outlined, and **Send to an agent**, filled with Orca's primary color as the
   tab's main action, each with its count in a circle.
@@ -289,7 +295,10 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   `git fetch --unshallow` first.
 - Every git command the worker runs, where its input comes from and how it is checked is listed in
   [docs/git-safety.md](docs/git-safety.md).
-- **Refresh** re-reads the log and branches; **Fetch** runs
+- **Refresh** re-reads the log and branches, as many commits as were loaded (in pages of 2,000, the most a
+  worker answer holds); when it fails, the commits and branches read before stay and the banner says why. A
+  branch filter on a branch deleted or pruned outside the panel drops that branch, and HEAD takes the place of
+  the last one; **Fetch** runs
   `git -c fetch.parallel=2 fetch --all --no-prune --no-prune-tags` (so `fetch.prune`,
   `remote.<name>.prune` and `fetch.pruneTags` in your config delete neither remote branches nor local
   tags such as backups) and reports the result in the banner. It never asks for a password itself: it
@@ -301,6 +310,9 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   `SSH_AUTH_SOCK` either.
 - Live refresh when the repository changes (commits, checkouts, fetches, rebases from a terminal). A
   panel that moves to another repository stops watching the one before, unless another panel shows it.
+  It follows refs, HEAD and stopped operations, in a linked worktree too, not the index: `git status` in
+  another worktree (an agent's) reads nothing again. Orca stops an idle worker and its watcher with it; the
+  panel watches again when the next worker starts, and meanwhile refreshes when it gets the focus.
 
 ## Where it shows
 
@@ -462,7 +474,9 @@ keeps them all.
 ## Limitations
 
 - Local workspaces only: SSH, WSL and paired-host workspaces are not supported yet.
-- The diff viewer is read-only, and very large diffs are cut after 20,000 lines.
+- The diff viewer is read-only, and very large diffs are cut after 20,000 lines or 900,000 bytes of text,
+  whichever comes first: Orca refuses a worker's answer over 1 MiB. The worker sends a hunk's lines as one
+  string, since Orca also counts an answer of more than 10,000 objects as over that limit.
 - The Diff tab steps through the files around the one you clicked that fit in 900,000 bytes of JSON
   (about 3,200 files with 50-character paths, 1,400 renamed ones with 200-character paths): Orca refuses
   a worker's answer over 1 MiB. The panel sends only the selected commits and the clicked file, and the

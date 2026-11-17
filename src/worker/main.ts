@@ -11,6 +11,7 @@ import { checkBackup, checkReset, deleteBackup, runGuarded } from './backup.ts'
 import { checkRebaseOnto, fetchAll, runBranchAction } from './branchActions.ts'
 import { DIFF_ANCHOR, fitWindow, workspaceFor } from './diffTab.ts'
 import { buildFileTree, orderedFiles } from '../shared/filetree.ts'
+import { toWire } from '../shared/diffwire.ts'
 import { createGit, GitError, type Git } from './git.ts'
 import { readDetails, readLogPage, readRefs } from './log.ts'
 import { resolveRepo, toplevel } from './repo.ts'
@@ -332,14 +333,14 @@ export default function activate(orca: OrcaWorkerApi): void {
   handle('commit.details', async ({ root, hash }) => readDetails(await gitFor(root), hash))
 
   handle('file.diff', async ({ root, hash, path, oldPath, wholeFile }) =>
-    readFileDiff(await gitFor(root), hash, path, oldPath, Boolean(wholeFile))
+    toWire(await readFileDiff(await gitFor(root), hash, path, oldPath, Boolean(wholeFile)))
   )
 
   // shortcut: the answer has no window, and the blobs add 106 bytes a file: a selection of more than ~3 800 files (50-character paths) passes Orca's 1 MiB; split Files into pages when that is needed.
   handle('selection.files', async ({ root, hashes }) => readSelectionFiles(await gitFor(root), hashes))
 
   handle('range.diff', async ({ root, from, to, path, oldPath, wholeFile }) =>
-    readRangeDiff(await gitFor(root), from, to, path, oldPath, Boolean(wholeFile))
+    toWire(await readRangeDiff(await gitFor(root), from, to, path, oldPath, Boolean(wholeFile)))
   )
 
   handle('patch.create', async ({ root, hashes, path, overwrite }) =>
@@ -688,8 +689,8 @@ export default function activate(orca: OrcaWorkerApi): void {
       removeReview(key, review)
       return { ok: false, reason: refusal }
     }
-    // The messages the notes file marks NEW: one written since stays unsent.
-    const sent = new Map(notes.map((n) => [n.id, unsentOf(n).map((m) => m.id)]))
+    // The messages the notes file marks NEW, with their text: one written or edited since stays unsent.
+    const sent = new Map(notes.map((n) => [n.id, unsentOf(n)]))
     // Marked before the launch: a mark that failed after it would leave a running agent and unsent notes, which a second send would give to another agent.
     try {
       await markSent(orca.storage, key, sent, review, Date.now(), same?.agent ?? String(agent))

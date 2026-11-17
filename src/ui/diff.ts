@@ -27,8 +27,12 @@ export interface DiffOptions {
   onIndex(index: number): void
   /** Called when the note editor closes: saved, cancelled, or its thread gone. */
   onEditorClosed(): void
-  /** The id of a note to scroll to once, when the notes and the file are loaded. */
+  /** The id of a note to scroll to once, when the notes and the file are loaded; without one, a note being written in a frame before this one opens again. */
   reveal?: string
+  /** Where the first file shown is scrolled to instead of its top: Orca made the tab anew, and this is where the frame before left it. */
+  scroll?: number
+  /** Called as the file shown scrolls, with its index and whether it shows the whole file. */
+  onScroll(top: number, index: number, wholeFile: boolean): void
 }
 
 /** Highlight ranges for lines paired with a counterpart: only the changed middle is emphasised. */
@@ -154,6 +158,10 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { notes
   let diff: FileDiff | null = null
   let changes: HTMLElement[] = []
   let token = 0
+  /** A held key moved past files without loading them: the one shown loads when it comes up. */
+  let behind = false
+  /** Taken by the first load: a later one opens at the top. */
+  let restore = options.scroll
 
   const title = h('div', { class: 'diff-title' })
   const counter = h('span', { class: 'muted' })
@@ -276,20 +284,30 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { notes
     })
   }
 
-  /** Loads and shows the current file; true when it is shown, not overtaken by another load or failed. */
-  async function load(): Promise<boolean> {
-    const mine = ++token
+  /** Shows the current file's header over the loading note; a load still running for another file is dropped. */
+  function clear(): number {
     syncHeader()
     diff = null
     body.replaceChildren(h('div', { class: 'diff-note muted' }, t('diffLoading')))
     overview.set([])
+    return ++token
+  }
+
+  /** Loads and shows the current file; true when it is shown, not overtaken by another load or failed. */
+  async function load(): Promise<boolean> {
+    const mine = clear()
+    const top = restore
+    restore = undefined
     try {
       const result = await api.rangeDiff(root, files[index], wholeFile)
       if (mine !== token) return false
       diff = result
       render()
-      body.scrollTop = 0
-      if (wholeFile && changes.length) jump(1, -Infinity)
+      if (top !== undefined) body.scrollTop = top
+      else {
+        body.scrollTop = 0
+        if (wholeFile && changes.length) jump(1, -Infinity)
+      }
       return true
     } catch (error) {
       if (mine === token) body.replaceChildren(h('div', { class: 'diff-note error' }, errorMessage(error)))
@@ -297,9 +315,26 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { notes
     }
   }
 
-  function go(next: number): void {
+  /**
+   * Shows the file at `next`. A held key (`held`, the key's repeat) only moves the header: the file it stops on loads when the
+   * key comes up, not each one it passes; Orca refuses a plugin more than 120 requests in 10 s, the sidebar's included.
+   */
+  function go(next: number, held = false): void {
     if (next < 0 || next >= files.length || next === index) return
     index = next
+    if (held) {
+      clear()
+      behind = true
+      return
+    }
+    onIndex(index)
+    void load()
+  }
+
+  /** The key held over files came up, or the frame lost the keyboard before it did. */
+  function settle(): void {
+    if (!behind) return
+    behind = false
     onIndex(index)
     void load()
   }
@@ -335,8 +370,8 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { notes
     // Leave typing and open dialogs or menus alone; the file tree and commit list still get the shortcuts.
     if (event.defaultPrevented || target?.closest?.('input, textarea, select, [contenteditable], .overlay, .menu') || target?.isContentEditable) return
     const plain = !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
-    if ((event.altKey && event.key === 'ArrowUp') || (plain && event.key === 'ArrowLeft')) go(index - 1)
-    else if ((event.altKey && event.key === 'ArrowDown') || (plain && event.key === 'ArrowRight')) go(index + 1)
+    if ((event.altKey && event.key === 'ArrowUp') || (plain && event.key === 'ArrowLeft')) go(index - 1, event.repeat)
+    else if ((event.altKey && event.key === 'ArrowDown') || (plain && event.key === 'ArrowRight')) go(index + 1, event.repeat)
     else if (event.key === 'F7') jump(event.shiftKey ? -1 : 1)
     else if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.code === 'KeyA') {
       if (!notes.addFromSelection()) return
@@ -350,20 +385,26 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { notes
   }
 
   document.addEventListener('keydown', onKey)
+  document.addEventListener('keyup', settle)
+  addEventListener('blur', settle)
   container.replaceChildren(view)
+  body.addEventListener('scroll', () => diff && options.onScroll(body.scrollTop, index, wholeFile), { passive: true })
   const shown = load()
   void notes.load()
   // Once the file is shown, reveal finds it loaded and does not load it again; the notes view waits for its list itself.
   const id = options.reveal
-  if (id)
-    void shown.then((ok) => {
-      if (ok) notes.reveal(id)
-    })
+  void shown.then((ok) => {
+    if (!ok) return
+    if (id) notes.reveal(id)
+    else notes.restore()
+  })
   return {
     notes,
     dispose() {
       token++
       document.removeEventListener('keydown', onKey)
+      document.removeEventListener('keyup', settle)
+      removeEventListener('blur', settle)
       notes.dispose()
       overview.dispose()
     }

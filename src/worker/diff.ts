@@ -4,17 +4,20 @@ import { t } from '../shared/i18n.ts'
 
 /** Lines kept per file; beyond this the diff is marked truncated. */
 export const MAX_DIFF_LINES = 20_000
+/** UTF-8 bytes of line text kept per file: Orca refuses a worker's answer over 1 MiB, and a few long lines (minified code) pass it. */
+export const MAX_DIFF_BYTES = 900_000
 const INDEX = /^index ([0-9a-f]{40}|[0-9a-f]{64})\.\.([0-9a-f]{40}|[0-9a-f]{64})/
 const HUNK = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@ ?(.*)$/
 
 /** Parses the unified diff of a single file. */
-export function parseUnifiedDiff(stdout: string, maxLines = MAX_DIFF_LINES): Pick<FileDiff, 'binary' | 'truncated' | 'hunks' | 'oldBlob' | 'newBlob'> {
+export function parseUnifiedDiff(stdout: string, maxLines = MAX_DIFF_LINES, maxBytes = MAX_DIFF_BYTES): Pick<FileDiff, 'binary' | 'truncated' | 'hunks' | 'oldBlob' | 'newBlob'> {
   const hunks: DiffHunk[] = []
   let binary = false
   let truncated = false
   let oldBlob: string | undefined
   let newBlob: string | undefined
   let count = 0
+  let bytes = 0
   let hunk: DiffHunk | null = null
   let oldLine = 0
   let newLine = 0
@@ -41,11 +44,13 @@ export function parseUnifiedDiff(stdout: string, maxLines = MAX_DIFF_LINES): Pic
     if (line.startsWith('diff --git ')) break
     const kind = line[0]
     if (kind !== ' ' && kind !== '+' && kind !== '-') continue
-    if (++count > maxLines) {
+    const text = line.slice(1)
+    // The kind character and the LF each line takes in the answer count too.
+    bytes += Buffer.byteLength(text) + 2
+    if (++count > maxLines || bytes > maxBytes) {
       truncated = true
       break
     }
-    const text = line.slice(1)
     if (kind === ' ') hunk.lines.push({ kind, text, old: oldLine++, new: newLine++ })
     else if (kind === '-') hunk.lines.push({ kind, text, old: oldLine++ })
     else hunk.lines.push({ kind, text, new: newLine++ })

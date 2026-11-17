@@ -30,6 +30,8 @@ export interface NotesView {
   addFromSelection(): boolean
   /** When the open editor holds what the user typed or attached: shows it (its file first) with `reason` under it, and true. */
   hold(reason: string): boolean
+  /** Opens again the editor a frame before this one left with typed text, in its file, once the notes are loaded; call it once the file is shown. */
+  restore(): void
   /** The notes of the diff shown, oldest first. */
   visible(): ReviewNote[]
   dispose(): void
@@ -38,7 +40,12 @@ export interface NotesView {
 /** Where a note goes: everything of a draft but its text and images. */
 type Anchor = Omit<NoteDraft, 'body' | 'images'>
 /** `file`: the index of the file it was opened in, which a thread carried there is not tied to by its blob. */
-type Editor = { anchor: Anchor; id?: string; message?: string; start: string; images: NoteImage[]; sending: string[]; el: HTMLElement; area: HTMLTextAreaElement; error: HTMLElement; file: number }
+type Editor = { anchor: Anchor; id?: string; message?: string; start: string; images: NoteImage[]; sending: string[]; el: HTMLElement; area: HTMLTextAreaElement; error: HTMLElement; file: number; draft?: string }
+
+/** An editor as the frame's localStorage keeps it, by `key`: Orca makes the Diff tab anew each time it is shown again. */
+type Draft = { key: string; anchor: Anchor; of?: { id: string; message?: string }; text: string; start: string; images: NoteImage[] }
+/** Drafts kept per repository, the newest last: those of files another opening does not show wait for one that does. */
+const MAX_DRAFTS = 10
 
 /** Whether the editor holds text or images the user put there: another editor must not drop them. */
 const typed = (e: Editor) => e.area.value.trim() !== e.start || (e.message === undefined && e.images.length > 0) || e.sending.length > 0
@@ -293,6 +300,9 @@ export function mountNotes(options: {
   /** A list has been applied; until then a reveal waits in `pending`, as a load overtaken by a newer one applies none. */
   let applied = false
   let pending: string | null = null
+  /** restore() came before the first list: it runs when that is applied. */
+  let restoring = false
+  const draftsKey = `git-log.drafts.${root}`
   /** The agent chosen last, first in the menu. */
   let lastAgent = options.agent
 
@@ -379,6 +389,62 @@ export function mountNotes(options: {
       pending = null
       revealNote(id)
     }
+    if (applied && restoring) {
+      restoring = false
+      restoreDraft()
+    }
+  }
+
+  function readDrafts(): Draft[] {
+    try {
+      const list = JSON.parse(localStorage.getItem(draftsKey) ?? '[]')
+      return Array.isArray(list) ? list.filter((d) => d && typeof d.key === 'string' && typeof d.text === 'string' && typeof d.start === 'string' && d.anchor && Array.isArray(d.images)) : []
+    } catch {
+      return []
+    }
+  }
+
+  /** Puts `draft` in place of the one kept under its key, or takes that one out (null); the oldest go past MAX_DRAFTS. */
+  function writeDraft(key: string, draft: Draft | null): void {
+    try {
+      const list = [...readDrafts().filter((d) => d.key !== key), ...(draft ? [draft] : [])].slice(-MAX_DRAFTS)
+      if (list.length) localStorage.setItem(draftsKey, JSON.stringify(list))
+      else localStorage.removeItem(draftsKey)
+    } catch {
+      // A full or refused localStorage keeps no draft: the editor itself still holds the text.
+    }
+  }
+
+  /** Keeps what the editor holds for the next frame; one emptied again is forgotten. */
+  function keepDraft(e: Editor): void {
+    if (!typed(e)) {
+      if (e.draft) writeDraft(e.draft, null)
+      return
+    }
+    e.draft ??= Math.random().toString(36).slice(2)
+    writeDraft(e.draft, { key: e.draft, anchor: e.anchor, ...(e.id ? { of: { id: e.id, ...(e.message ? { message: e.message } : {}) } } : {}), text: e.area.value, start: e.start, images: e.images })
+  }
+
+  /**
+   * Opens again the newest editor a frame before this one kept, in the file of this tab that shows it. A draft whose file
+   * or thread this opening does not show (a list cut short leaves threads out) stays kept.
+   */
+  function restoreDraft(): void {
+    if (editor) return
+    for (const draft of readDrafts().reverse()) {
+      const thread = draft.of && notes.find((n) => n.id === draft.of!.id)
+      if (draft.of && !thread) continue
+      const index = thread ? shownIn(thread) : noteFileIndex(files, draft.anchor, -1)
+      if (index < 0) continue
+      options.show(index, false, () => {
+        if (editor) return
+        // The editor keeps its text again under a key of its own as it opens.
+        writeDraft(draft.key, null)
+        openEditor(draft.anchor, draft.of, draft.text, draft.images, draft.start)
+        if (editor) showEditor(editor)
+      })
+      return
+    }
   }
 
   /**
@@ -454,12 +520,11 @@ export function mountNotes(options: {
    * Opens the editor of a new note at `at`, of a reply to the thread `of.id`, or of its message `of.message` with its
    * `images`. A new note and a reply take images pasted or picked by path; an edit keeps the message's images as they are.
    */
-  function openEditor(at: Anchor, of?: { id: string; message?: string }, text = '', images: NoteImage[] = []): void {
+  function openEditor(at: Anchor, of?: { id: string; message?: string }, text = '', images: NoteImage[] = [], start = text): void {
     const open = editor
-    // What the user typed or attached is not dropped for another editor: the open one is shown instead. One out of view (another file) cannot be.
-    if (open && typed(open) && open.el.isConnected) {
-      open.el.scrollIntoView({ block: 'nearest' })
-      open.area.focus({ preventScroll: true })
+    // What the user typed or attached is not dropped for another editor: the open one is shown instead, its file first when it is in another.
+    if (open && typed(open)) {
+      showEditor(open)
       return
     }
     const editing = of?.message !== undefined
@@ -482,7 +547,8 @@ export function mountNotes(options: {
     area.value = text
     const error = h('div', { class: 'd-note-error' })
     const strip = h('div', { class: 'd-note-images' })
-    const mine: Editor = { anchor: at, id: of?.id, message: of?.message, start: text, images, sending: [], el: h('div', { class: 'd-note-edit' }, area, strip, error), area, error, file: file ? files.indexOf(file) : -1 }
+    const mine: Editor = { anchor: at, id: of?.id, message: of?.message, start, images, sending: [], el: h('div', { class: 'd-note-edit' }, area, strip, error), area, error, file: file ? files.indexOf(file) : -1 }
+    area.addEventListener('input', () => keepDraft(mine))
     const attachButton = tool('image', 'imageAttach', () => {
       if (field.parentNode) return picker.input.focus()
       error.before(field)
@@ -505,7 +571,7 @@ export function mountNotes(options: {
       area.focus()
     }
     /** The images, each with Remove unless the message is edited, then the ones being sent and Attach a file. */
-    const draw = () =>
+    const draw = () => {
       strip.replaceChildren(
         ...mine.images.map((image) =>
           h(
@@ -535,6 +601,8 @@ export function mountNotes(options: {
         ...mine.sending.map((name) => h('span', { class: 'd-image' }, name)),
         ...(editing ? [] : [attachButton])
       )
+      keepDraft(mine)
+    }
     /**
      * Attaches the image `get` stores while the message has room for one more; a refusal shows under the field. Nothing is
      * attached while the message is being saved: the save has taken its images already. True when attached.
@@ -572,6 +640,7 @@ export function mountNotes(options: {
 
   /** Forgets the open editor: an opening of the tab may wait for it. */
   function drop(): void {
+    if (editor?.draft) writeDraft(editor.draft, null)
     editor = null
     options.closed()
   }
@@ -606,6 +675,8 @@ export function mountNotes(options: {
     if (open.message && open.area.value.trim() === open.start) return closeEditor()
     saving = true
     open.error.textContent = ''
+    // A frame Orca drops before the answer would bring the draft back, and a second save would make the note twice.
+    if (open.draft) writeDraft(open.draft, null)
     try {
       const body = open.area.value
       const images = open.images.length ? open.images : undefined
@@ -624,6 +695,8 @@ export function mountNotes(options: {
     } finally {
       saving = false
     }
+    // Not saved: the draft is kept again.
+    if (editor === open) keepDraft(open)
   }
 
   /** A message: its author and time, an agent's verdict, Not sent on the user's own until it goes out and Edit until then, Delete. */
@@ -1071,6 +1144,10 @@ export function mountNotes(options: {
     load,
     reveal: revealNote,
     addFromSelection: add,
+    restore() {
+      if (applied) restoreDraft()
+      else restoring = true
+    },
     hold(reason) {
       const open = editor
       if (!open || !typed(open)) return false
