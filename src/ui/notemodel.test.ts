@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { DiffHunk, NoteMessage, ReviewNote } from '../shared/protocol.ts'
-import { active, anchor, coveredRange, fromBase64, notesText, pickSide, sideLines, toBase64, unsent, uploadParts } from './notemodel.ts'
+import { active, anchor, continues, coveredRange, fromBase64, GROUP_GAP_MS, marksUnsent, notesText, pickSide, showsVerdict, sideLines, toBase64, unsent, uploadParts, whereOf } from './notemodel.ts'
 
 const hunks: DiffHunk[] = [
   {
@@ -66,6 +66,37 @@ test('the Notes button counts the threads not resolved', () => {
   const resolved = { id: 'c', messages: [said('user', 'x', 'r'), said('agent', 'y', 'r')], resolvedAt: 2 } as ReviewNote
   assert.deepEqual(active([open, draft, resolved]), [open, draft])
   assert.deepEqual(unsent([open, draft, resolved]), [draft])
+})
+test('a message continues the group of the one before: same author, same send, at most 5 minutes later', () => {
+  const u = (at: number, extra: Partial<NoteMessage> = {}): NoteMessage => ({ id: String(at), author: 'user', body: 'x', at, ...extra })
+  assert.equal(continues(undefined, u(0)), false)
+  assert.equal(continues(u(0), u(GROUP_GAP_MS)), true)
+  assert.equal(continues(u(0), u(GROUP_GAP_MS + 1)), false)
+  // A clock set back starts a group: the time shown in the gutter would read as earlier than the header's.
+  assert.equal(continues(u(10), u(5)), false)
+  assert.equal(continues(u(0, { sentAt: 1, review: 'r1' }), u(1)), false)
+  assert.equal(continues(u(0, { sentAt: 1, review: 'r1' }), u(1, { sentAt: 2, review: 'r2' })), false)
+  assert.equal(continues(u(0, { sentAt: 1, review: 'r1' }), u(1, { sentAt: 1, review: 'r1' })), true)
+  assert.equal(continues(u(0), { ...u(1), author: 'agent', review: 'r1' }), false)
+})
+test('the last answer of an answered thread leaves its verdict to the header; other answers show theirs', () => {
+  const answer = { ...said('agent', 'yes', 'r'), verdict: 'confirmed' } as NoteMessage
+  const answered = { id: 'a', messages: [said('user', 'why?', 'r'), answer] } as ReviewNote
+  assert.equal(showsVerdict(answered, answer), false)
+  assert.equal(showsVerdict({ ...answered, messages: [...answered.messages, said('user', 'and?')] }, answer), true)
+  assert.equal(showsVerdict({ ...answered, resolvedAt: 2 }, answer), true)
+  assert.equal(showsVerdict(answered, answered.messages[0]), false)
+  const plain = said('agent', 'hm', 'r')
+  assert.equal(showsVerdict({ id: 'b', messages: [said('user', 'why?', 'r'), plain] } as ReviewNote, plain), false)
+})
+test('Not sent shows on messages only in a thread that also has sent ones', () => {
+  assert.equal(marksUnsent({ id: 'a', messages: [said('user', 'x'), said('user', 'y')] } as ReviewNote), false)
+  assert.equal(marksUnsent({ id: 'b', messages: [said('user', 'x', 'r'), said('user', 'y')] } as ReviewNote), true)
+  assert.equal(marksUnsent({ id: 'c', messages: [said('user', 'x', 'r'), said('agent', 'y', 'r')] } as ReviewNote), false)
+})
+test('where a note is: one line or a range, and its side', () => {
+  assert.equal(whereOf({ side: 'new', start: { line: 40, col: 0 }, end: { line: 40, col: 5 } }), 'Line 40 · new')
+  assert.equal(whereOf({ side: 'old', start: { line: 44, col: 2 }, end: { line: 46, col: 0 } }), 'Lines 44–46 · old')
 })
 test('all threads as markdown: every message under its author, in order', () => {
   const one = { path: 'a.ts', side: 'new', start: { line: 4, col: 0 }, end: { line: 4, col: 3 }, quote: 'foo', messages: [said('user', 'why?', 'r'), said('agent', 'because', 'r')] } as ReviewNote

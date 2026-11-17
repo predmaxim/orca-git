@@ -1,5 +1,5 @@
 import { t } from '../shared/i18n.ts'
-import { stateOf } from '../shared/notes.ts'
+import { lastAnswer, stateOf, unsentOf } from '../shared/notes.ts'
 import type { DiffHunk, DiffLine, NoteMessage, NotePoint, NoteSide, ReviewNote } from '../shared/protocol.ts'
 import type { DiffMode } from './diff.ts'
 
@@ -79,6 +79,35 @@ export function unsent(notes: ReviewNote[]): ReviewNote[] {
 /** Who wrote a message: You, or Agent with its kind when it is known. */
 export function authorOf(m: NoteMessage): string {
   return m.author === 'user' ? t('noteYou') : m.agent ? t('noteAgent', { agent: m.agent }) : t('noteAgentPlain')
+}
+
+/** The longest pause between two messages of one group, in ms. */
+export const GROUP_GAP_MS = 5 * 60_000
+
+/**
+ * Whether `m` goes on in the group of `prev`, under its header: the same author, the same send (both unsent, or one `review`),
+ * at most GROUP_GAP_MS later and not earlier.
+ */
+export function continues(prev: NoteMessage | undefined, m: NoteMessage): boolean {
+  if (!prev || prev.author !== m.author || prev.review !== m.review || (prev.sentAt === undefined) !== (m.sentAt === undefined)) return false
+  const gap = m.at - prev.at
+  return gap >= 0 && gap <= GROUP_GAP_MS
+}
+
+/** Whether a message shows its verdict: an agent's with one, unless it is the last answer of an answered thread, whose label says it. */
+export function showsVerdict(n: ReviewNote, m: NoteMessage): boolean {
+  return m.author === 'agent' && m.verdict !== undefined && !(stateOf(n) === 'answered' && lastAnswer(n) === m)
+}
+
+/** Whether the unsent messages say Not sent: only next to sent ones; when nothing went out, the thread's label says it. */
+export function marksUnsent(n: ReviewNote): boolean {
+  return unsentOf(n).length > 0 && n.messages.some((m) => m.author === 'user' && m.sentAt !== undefined)
+}
+
+/** Where a note is: "Line 40 · new" or "Lines 44–46 · old". */
+export function whereOf(n: Pick<ReviewNote, 'side' | 'start' | 'end'>): string {
+  const side = t(n.side === 'old' ? 'noteSideOld' : 'noteSideNew')
+  return n.start.line === n.end.line ? t('noteWhereLine', { line: n.start.line, side }) : t('noteWhereLines', { start: n.start.line, end: n.end.line, side })
 }
 
 /** Bytes of an image part: a multiple of 3, so its base64 has no padding and is the 60000 characters the worker takes. */
