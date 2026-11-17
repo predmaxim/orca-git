@@ -15,6 +15,7 @@ const trace = (what: string) =>
     .request('frame.trace', { line: `${frameId} ${what} | ${innerWidth}x${innerHeight} ${document.visibilityState} app=${JSON.stringify(document.getElementById('app')?.textContent?.slice(0, 40) ?? null)}`, locale: orca.locale })
     .catch(() => undefined)
 trace('start')
+;(globalThis as { __gitLogDiffStarted?: boolean }).__gitLogDiffStarted = true
 addEventListener('error', (event) => trace(`error ${event.message}`))
 addEventListener('unhandledrejection', (event) => trace(`rejection ${String(event.reason).slice(0, 120)}`))
 document.addEventListener('visibilitychange', () => trace('visibility'))
