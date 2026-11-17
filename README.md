@@ -119,23 +119,33 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   lines changed is not shown in that diff. A file that changes type (a file turned into a symlink or
   back) takes no notes and shows none, as it has none in the panel's Files section. A note is a
   **thread**, as in Azure DevOps pull requests: its card stands under the last selected line, in the half of its side in split, with the selected text
-  highlighted. On top, the thread's state (Resolved; Sent, no answer yet; Not sent; or the verdict of the
-  agent's last answer and Fixed), Send again while a send has no answer and **Resolved** (small outlined
-  buttons with an icon and a label; **Open again** in their place on a resolved thread), and Delete the
-  thread (an icon, as Edit and Delete of a message are). Below, the messages oldest first, each with its author (You, or Agent and its kind), its time
-  and a Delete button; the agent's messages stand on a tint and carry their own verdict and Fixed; your
-  messages not sent yet say Not sent and have Edit (sent text stays as the agent saw it). Deleting the
-  last message deletes the thread; an agent's answer you delete does not come back. Every Delete of a
-  thread or a message, here and in the Notes list, asks once more in place: the first press turns the
-  button red with "Press again to delete" (in the list, its tooltip says it), the second deletes; moving
-  the focus away, Esc or a redraw of the thread leaves it as it was. **Reply…** under the
-  messages opens the same editor as a new note; the reply stays unsent while the thread waits for an
-  answer. A resolved thread folds to one line (Resolved, the start of its first message and the count of
-  messages) that opens and closes on a click; it takes no reply and is not sent until **Open again**.
+  highlighted, and is no wider than 760 px, so its buttons stay next to its text. On top, where the note
+  is ("Line 40 · new") and the thread's state (Resolved; Sent, no answer yet; Not sent; or the verdict of
+  the agent's last answer and Fixed); once the agent has answered, a rail on the card's left repeats the
+  verdict's colour (yellow: it asks you; blue: answered or refuted; green: confirmed). Below, the messages
+  oldest first, each with an avatar, its author (You, or Agent and its kind) and its time; messages of
+  one author that follow one another within 5 minutes and went out with the same send (or are all unsent)
+  share one head, and their own time shows in the gutter on hover. An agent's message carries its verdict
+  and Fixed unless the thread's state already says it. Not sent shows on a message only when the thread
+  has sent ones too; otherwise the state says it. A message's Edit (only on your own messages not sent
+  yet: sent text stays as the agent saw it) and Delete show on hover or keyboard focus. At the bottom,
+  in one row: **Reply…**, Send again while a send has no answer, **Resolved** (**Open again** on a
+  resolved thread) and Delete the thread; in a card narrower than 520 px with Send again, Reply… takes a
+  line of its own. Deleting the last message deletes the thread; an agent's answer you delete does not
+  come back. Every Delete of a thread or a message, here and in the Notes list, asks once more in place:
+  the first press turns the button red, the second deletes; moving the focus away, Esc or a redraw of the
+  thread leaves it as it was. Delete the thread says "Press again to delete" on the button; a message's
+  Delete stays an icon and lights the whole message up red instead (its tooltip says it, as in the Notes
+  list), so the words cover nothing. **Reply…** opens the same editor as a new note in its place, with
+  Attach a file, the keys (Enter saves, Shift+Enter adds a line, Esc cancels, Ctrl+V pastes an image) and
+  the thread's buttons under the field; the reply stays unsent while the thread waits for an answer. A
+  resolved thread folds to one line (Resolved, the start of its first message and the count of messages)
+  that opens on a click; open, its head closes it again; it takes no reply and is not sent until
+  **Open again**.
   One editor is open at a time: typed text or attached images are not dropped for another one.
   **Images** go with a new note or a reply: paste one into the editor (Ctrl+V; text pasted with it goes in
   as text), or press **Attach a file**
-  (the image icon) for a path field that suggests the images and folders of the folder typed so far, with
+  (the image-plus icon under the field) for a path field that suggests the images and folders of the folder typed so far, with
   the keys of the skills' field below (a full path, `~/…` or from the repository root); closing the field
   clears what it said under it. A message takes up
   to 5 PNG, JPEG, GIF or WebP images of up to 5 MiB each; they stand under the field, each with × to take
