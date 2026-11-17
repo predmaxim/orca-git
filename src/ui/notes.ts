@@ -40,10 +40,12 @@ export interface NotesView {
 /** Where a note goes: everything of a draft but its text and images. */
 type Anchor = Omit<NoteDraft, 'body' | 'images'>
 /** `file`: the index of the file it was opened in, which a thread carried there is not tied to by its blob. */
-type Editor = { anchor: Anchor; id?: string; message?: string; start: string; images: NoteImage[]; sending: string[]; el: HTMLElement; area: HTMLTextAreaElement; error: HTMLElement; file: number; kept?: boolean }
+type Editor = { anchor: Anchor; id?: string; message?: string; start: string; images: NoteImage[]; sending: string[]; el: HTMLElement; area: HTMLTextAreaElement; error: HTMLElement; file: number; draft?: string }
 
-/** An editor as the frame's localStorage keeps it: Orca makes the Diff tab anew each time it is shown again. */
-type Draft = { anchor: Anchor; of?: { id: string; message?: string }; text: string; start: string; images: NoteImage[] }
+/** An editor as the frame's localStorage keeps it, by `key`: Orca makes the Diff tab anew each time it is shown again. */
+type Draft = { key: string; anchor: Anchor; of?: { id: string; message?: string }; text: string; start: string; images: NoteImage[] }
+/** Drafts kept per repository, the newest last: those of files another opening does not show wait for one that does. */
+const MAX_DRAFTS = 10
 
 /** Whether the editor holds text or images the user put there: another editor must not drop them. */
 const typed = (e: Editor) => e.area.value.trim() !== e.start || (e.message === undefined && e.images.length > 0) || e.sending.length > 0
@@ -300,7 +302,7 @@ export function mountNotes(options: {
   let pending: string | null = null
   /** restore() came before the first list: it runs when that is applied. */
   let restoring = false
-  const draftKey = `git-log.draft.${root}`
+  const draftsKey = `git-log.drafts.${root}`
   /** The agent chosen last, first in the menu. */
   let lastAgent = options.agent
 
@@ -393,42 +395,56 @@ export function mountNotes(options: {
     }
   }
 
-  /** Keeps what the editor holds for the next frame; one emptied again is forgotten, if it was this editor that kept one. */
-  function keepDraft(e: Editor): void {
+  function readDrafts(): Draft[] {
     try {
-      if (typed(e)) {
-        const draft: Draft = { anchor: e.anchor, ...(e.id ? { of: { id: e.id, ...(e.message ? { message: e.message } : {}) } } : {}), text: e.area.value, start: e.start, images: e.images }
-        localStorage.setItem(draftKey, JSON.stringify(draft))
-        e.kept = true
-      } else if (e.kept) {
-        localStorage.removeItem(draftKey)
-        e.kept = false
-      }
+      const list = JSON.parse(localStorage.getItem(draftsKey) ?? '[]')
+      return Array.isArray(list) ? list.filter((d) => d && typeof d.key === 'string' && typeof d.text === 'string' && typeof d.start === 'string' && d.anchor && Array.isArray(d.images)) : []
+    } catch {
+      return []
+    }
+  }
+
+  /** Puts `draft` in place of the one kept under its key, or takes that one out (null); the oldest go past MAX_DRAFTS. */
+  function writeDraft(key: string, draft: Draft | null): void {
+    try {
+      const list = [...readDrafts().filter((d) => d.key !== key), ...(draft ? [draft] : [])].slice(-MAX_DRAFTS)
+      if (list.length) localStorage.setItem(draftsKey, JSON.stringify(list))
+      else localStorage.removeItem(draftsKey)
     } catch {
       // A full or refused localStorage keeps no draft: the editor itself still holds the text.
     }
   }
 
-  /** The editor a frame before this one kept, in the file of this tab that shows it; a draft of a thread gone is forgotten. */
-  function restoreDraft(): void {
-    let draft: Draft | null = null
-    try {
-      draft = JSON.parse(localStorage.getItem(draftKey) ?? 'null')
-    } catch {
-      draft = null
+  /** Keeps what the editor holds for the next frame; one emptied again is forgotten. */
+  function keepDraft(e: Editor): void {
+    if (!typed(e)) {
+      if (e.draft) writeDraft(e.draft, null)
+      return
     }
-    if (!draft || editor || typeof draft.text !== 'string' || !draft.anchor) return
-    const thread = draft.of && notes.find((n) => n.id === draft.of!.id)
-    if (draft.of && !thread) return localStorage.removeItem(draftKey)
-    // Another opening of the tab may not have its file: the draft waits for one that has.
-    const index = thread ? shownIn(thread) : noteFileIndex(files, draft.anchor, -1)
-    if (index < 0) return
-    const kept = draft
-    options.show(index, false, () => {
-      if (editor) return
-      openEditor(kept.anchor, kept.of, kept.text, Array.isArray(kept.images) ? kept.images : [], typeof kept.start === 'string' ? kept.start : '')
-      if (editor) showEditor(editor)
-    })
+    e.draft ??= Math.random().toString(36).slice(2)
+    writeDraft(e.draft, { key: e.draft, anchor: e.anchor, ...(e.id ? { of: { id: e.id, ...(e.message ? { message: e.message } : {}) } } : {}), text: e.area.value, start: e.start, images: e.images })
+  }
+
+  /**
+   * Opens again the newest editor a frame before this one kept, in the file of this tab that shows it. A draft whose file
+   * or thread this opening does not show (a list cut short leaves threads out) stays kept.
+   */
+  function restoreDraft(): void {
+    if (editor) return
+    for (const draft of readDrafts().reverse()) {
+      const thread = draft.of && notes.find((n) => n.id === draft.of!.id)
+      if (draft.of && !thread) continue
+      const index = thread ? shownIn(thread) : noteFileIndex(files, draft.anchor, -1)
+      if (index < 0) continue
+      options.show(index, false, () => {
+        if (editor) return
+        // The editor keeps its text again under a key of its own as it opens.
+        writeDraft(draft.key, null)
+        openEditor(draft.anchor, draft.of, draft.text, draft.images, draft.start)
+        if (editor) showEditor(editor)
+      })
+      return
+    }
   }
 
   /**
@@ -624,7 +640,7 @@ export function mountNotes(options: {
 
   /** Forgets the open editor: an opening of the tab may wait for it. */
   function drop(): void {
-    if (editor?.kept) localStorage.removeItem(draftKey)
+    if (editor?.draft) writeDraft(editor.draft, null)
     editor = null
     options.closed()
   }
@@ -659,6 +675,8 @@ export function mountNotes(options: {
     if (open.message && open.area.value.trim() === open.start) return closeEditor()
     saving = true
     open.error.textContent = ''
+    // A frame Orca drops before the answer would bring the draft back, and a second save would make the note twice.
+    if (open.draft) writeDraft(open.draft, null)
     try {
       const body = open.area.value
       const images = open.images.length ? open.images : undefined
@@ -677,6 +695,8 @@ export function mountNotes(options: {
     } finally {
       saving = false
     }
+    // Not saved: the draft is kept again.
+    if (editor === open) keepDraft(open)
   }
 
   /** A message: its author and time, an agent's verdict, Not sent on the user's own until it goes out and Edit until then, Delete. */

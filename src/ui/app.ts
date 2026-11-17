@@ -400,10 +400,10 @@ async function reloadLog(keepCount = false): Promise<void> {
   }
   renderRows()
   const root = repo.root
-  // The row a Shift-click extends from, by its commit: new commits on top move it down.
-  const anchorHash = rows[anchor]?.hash
   // A refresh reloads as many rows as were shown, in pages: a worker answer holds at most 2000.
   const want = keepCount ? rows.length : 0
+  // The row a Shift-click extends from, by its commit, as a click during the reload left it: new commits on top move it down.
+  let anchorHash: string | undefined
   try {
     let page = await api.page(root, filter, 0, want > 300 ? Math.min(want, 2000) : undefined)
     let next = page.commits
@@ -411,10 +411,14 @@ async function reloadLog(keepCount = false): Promise<void> {
     while (token === loadToken && more && next.length < want) {
       page = await api.page(root, filter, next.length, Math.min(2000, want - next.length))
       const known = new Set(next.map((r) => r.hash))
-      next = next.concat(page.commits.filter((c) => !known.has(c.hash)))
+      const added = page.commits.filter((c) => !known.has(c.hash))
       more = page.hasMore && page.commits.length > 0
+      // New commits above moved the page onto rows already read: the rest comes with scrolling, as loadMore reads it.
+      if (!added.length) break
+      next = next.concat(added)
     }
     if (token !== loadToken) return
+    anchorHash = rows[anchor]?.hash
     rows = next
     hasMore = more
   } catch (error) {
@@ -531,7 +535,14 @@ async function refreshAll(): Promise<void> {
   refreshing = (async () => {
     if (!repo) return start()
     const root = repo.root
-    const result = await api.resolve(root).catch((error) => ({ ok: false as const, reason: errorMessage(error) }))
+    let result: RepoResult
+    try {
+      result = await api.resolve(root)
+    } catch (error) {
+      // The worker did not answer (a timeout, too many requests): the repository is still there, and so are its rows.
+      if (repo?.root === root) showBanner(t('refreshFailed', { error: errorMessage(error) }), 'error')
+      return
+    }
     // A workspace switch replaced the repository meanwhile: this answer is about the one it left.
     if (repo?.root !== root) return
     if (!result.ok) {
@@ -543,13 +554,12 @@ async function refreshAll(): Promise<void> {
     repo = { ...result.repo, workspaceId: repo.workspaceId }
     if (repo.operation) showOperationBanner()
     else if (wasOperation) hideBanner()
-    // Branches first: one gone from the branch filter leaves it (pruneFilter), and the log is read for what is left.
+    // Branches first: one gone from the branch filter leaves it (pruneFilter, which reloads for what is left), then the log.
+    // A jump waits for both, so it lands on the refreshed rows.
     const before = filter
-    await loadRefs()
-    if (filter !== before || repo?.root !== root) return
-    // A jump waits for this reload too, so it lands on the refreshed rows.
-    filterReload = reloadLog(true)
-    await filterReload
+    const reload = loadRefs().then(() => (filter === before && repo?.root === root ? reloadLog(true) : filterReload))
+    filterReload = reload
+    await reload
   })().finally(() => (refreshing = null))
   return refreshing
 }
@@ -1919,9 +1929,10 @@ let lastFocusRefresh = 0
 addEventListener('focus', () => {
   if (Date.now() - lastFocusRefresh < 3000) return
   lastFocusRefresh = Date.now()
-  // Without a repository (none in the workspace, or the worker failed to answer) the workspace is looked at again.
+  // Without a repository (none in the workspace, or the worker failed to answer) the workspace is looked at again; not while
+  // it offers a choice, whose button the focusing click is pressing.
   if (repo) scheduleRefresh(50)
-  else void start()
+  else if (!choices.length) void start()
 })
 
 renderEmpty()

@@ -94,9 +94,10 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   Alt+↓ (counter "3/5 files"); a held key runs through the counter and loads the file it stops on when it
   comes up, since Orca refuses a plugin more than 120 requests in 10 s; the panel's Files section highlights the file the tab shows. Orca builds
   the tab anew each time it is shown again (another tab of its group was in front): it says "Loading…" until the
-  worker answers, then opens at the place it was scrolled to (same opening, file and Whole file), and a note
-  being written comes back in its editor with its text and images (kept in the frame's localStorage until it is
-  saved or cancelled; a draft whose file the tab's new opening does not have waits for one that has). Merge
+  worker answers, then opens where it was scrolled to (same opening, file and Whole file; cards of notes that come in
+  after it above that place push it down), and a note being written comes back in its editor with its text and
+  images. Drafts stay in the frame's localStorage until saved or cancelled, the last ten per repository: one whose
+  file or thread the tab's new opening does not show waits for an opening that does. Merge
   commits are compared with their first parent. The review has its own group at the end of the header,
   after a divider: **Notes**, outlined, and **Send to an agent**, filled with Orca's primary color as the
   tab's main action, each with its count in a circle.

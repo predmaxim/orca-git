@@ -121,6 +121,7 @@ export async function outdatedAtHead(git: Git, notes: ReviewNote[], cache: Map<s
   const head = (await git.run(['rev-parse', '-q', '--verify', 'HEAD'])).stdout.trim()
   if (!hex(head)) return outdated
   const ancestors = new Map<string, boolean>()
+  let shallow: boolean | undefined
   const checked: ReviewNote[] = []
   for (const note of notes) {
     // A path is a line of cat-file's input.
@@ -132,8 +133,14 @@ export async function outdatedAtHead(git: Git, notes: ReviewNote[], cache: Map<s
         const result = await git.run(['merge-base', '--is-ancestor', note.rev, head])
         if (result.code !== 0 && result.code !== 1 && result.code !== 128) log(`notes of ${note.rev} not checked against HEAD: ${lastLines(result.stderr)}`)
         answer = result.code === 0
-        // Whether one commit is in the history of another never changes; a commit git does not know (128) may come with a fetch.
-        if (result.code === 0 || result.code === 1) ancestry.set(pair, answer)
+        // Whether one commit is in the history of another never changes, except "not" in a shallow clone, which a fetch can deepen;
+        // a commit git does not know (128) may come with a fetch too.
+        if (result.code === 1) shallow ??= (await git.run(['rev-parse', '--is-shallow-repository'])).stdout.trim() !== 'false'
+        if (result.code === 0 || (result.code === 1 && !shallow)) {
+          // shortcut: forgotten all at once past 10 000 pairs (a long-lived worker over many HEADs); keep the newest if that is ever slow.
+          if (ancestry.size >= 10_000) ancestry.clear()
+          ancestry.set(pair, answer)
+        }
       }
       ancestors.set(note.rev, answer)
     }
