@@ -5,7 +5,7 @@ import { changeBlocks, changedRange, splitRows, type ChangeKind } from './diffmo
 import { fileIcon } from './fileicons.ts'
 import { shortHash, statusName } from './format.ts'
 import { t } from '../shared/i18n.ts'
-import { highlightLines, languageFor, markRange } from './highlight.ts'
+import { highlightLines, languageFor, loadLanguage, markRange } from './highlight.ts'
 import { findKey, withKey } from './keys.ts'
 import { mountNotes, type NotesView } from './notes.ts'
 import { mountOverview, type OverviewMark } from './overview.ts'
@@ -299,7 +299,8 @@ export function mountDiff(container: HTMLElement, options: DiffOptions): { notes
     const top = restore
     restore = undefined
     try {
-      const result = await api.rangeDiff(root, files[index], wholeFile)
+      // The grammar loads with the diff: render() highlights with it, or shows the text plain when it failed.
+      const [result] = await Promise.all([api.rangeDiff(root, files[index], wholeFile), loadLanguage(languageFor(files[index].path))])
       if (mine !== token) return false
       diff = result
       render()

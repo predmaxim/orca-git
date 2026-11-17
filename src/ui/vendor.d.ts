@@ -2,6 +2,7 @@
 declare module '*/highlight/core.min.js' {
   const hljs: {
     registerLanguage(name: string, definition: unknown): void
+    getLanguage(name: string): unknown
     highlight(code: string, options: { language: string; ignoreIllegals?: boolean }): { value: string }
   }
   export default hljs

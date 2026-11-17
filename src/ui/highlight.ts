@@ -1,33 +1,70 @@
 import hljs from '../vendor/highlight/core.min.js'
-import typescript from '../vendor/highlight/languages/typescript.min.js'
-import javascript from '../vendor/highlight/languages/javascript.min.js'
-import json from '../vendor/highlight/languages/json.min.js'
-import yaml from '../vendor/highlight/languages/yaml.min.js'
-import bash from '../vendor/highlight/languages/bash.min.js'
-import shell from '../vendor/highlight/languages/shell.min.js'
-import css from '../vendor/highlight/languages/css.min.js'
-import scss from '../vendor/highlight/languages/scss.min.js'
-import less from '../vendor/highlight/languages/less.min.js'
-import xml from '../vendor/highlight/languages/xml.min.js'
-import markdown from '../vendor/highlight/languages/markdown.min.js'
-import python from '../vendor/highlight/languages/python.min.js'
-import go from '../vendor/highlight/languages/go.min.js'
-import rust from '../vendor/highlight/languages/rust.min.js'
-import java from '../vendor/highlight/languages/java.min.js'
-import kotlin from '../vendor/highlight/languages/kotlin.min.js'
-import csharp from '../vendor/highlight/languages/csharp.min.js'
-import php from '../vendor/highlight/languages/php.min.js'
-import ruby from '../vendor/highlight/languages/ruby.min.js'
-import sql from '../vendor/highlight/languages/sql.min.js'
-import dockerfile from '../vendor/highlight/languages/dockerfile.min.js'
-import ini from '../vendor/highlight/languages/ini.min.js'
-import makefile from '../vendor/highlight/languages/makefile.min.js'
-import nginx from '../vendor/highlight/languages/nginx.min.js'
-import diff from '../vendor/highlight/languages/diff.min.js'
-import plaintext from '../vendor/highlight/languages/plaintext.min.js'
+type Grammar = Parameters<typeof hljs.registerLanguage>[1]
+// Each loads when a file of its language is shown: a tab loads 23 files instead of 49 each time Orca makes it anew, and the
+// widest level of its module graph is 8, not 34. Orca answers 503 to a plugin past 32 requests at once, which fails the whole
+// graph (stablyai/orca#43532): the 26 grammars in it left the tab blank now and then.
+const GRAMMARS: Record<string, () => Promise<{ default: Grammar }>> = {
+  typescript: () => import('../vendor/highlight/languages/typescript.min.js'),
+  javascript: () => import('../vendor/highlight/languages/javascript.min.js'),
+  json: () => import('../vendor/highlight/languages/json.min.js'),
+  yaml: () => import('../vendor/highlight/languages/yaml.min.js'),
+  bash: () => import('../vendor/highlight/languages/bash.min.js'),
+  shell: () => import('../vendor/highlight/languages/shell.min.js'),
+  css: () => import('../vendor/highlight/languages/css.min.js'),
+  scss: () => import('../vendor/highlight/languages/scss.min.js'),
+  less: () => import('../vendor/highlight/languages/less.min.js'),
+  xml: () => import('../vendor/highlight/languages/xml.min.js'),
+  markdown: () => import('../vendor/highlight/languages/markdown.min.js'),
+  python: () => import('../vendor/highlight/languages/python.min.js'),
+  go: () => import('../vendor/highlight/languages/go.min.js'),
+  rust: () => import('../vendor/highlight/languages/rust.min.js'),
+  java: () => import('../vendor/highlight/languages/java.min.js'),
+  kotlin: () => import('../vendor/highlight/languages/kotlin.min.js'),
+  csharp: () => import('../vendor/highlight/languages/csharp.min.js'),
+  php: () => import('../vendor/highlight/languages/php.min.js'),
+  ruby: () => import('../vendor/highlight/languages/ruby.min.js'),
+  sql: () => import('../vendor/highlight/languages/sql.min.js'),
+  dockerfile: () => import('../vendor/highlight/languages/dockerfile.min.js'),
+  ini: () => import('../vendor/highlight/languages/ini.min.js'),
+  makefile: () => import('../vendor/highlight/languages/makefile.min.js'),
+  nginx: () => import('../vendor/highlight/languages/nginx.min.js'),
+  diff: () => import('../vendor/highlight/languages/diff.min.js'),
+  plaintext: () => import('../vendor/highlight/languages/plaintext.min.js')
+}
+/** The grammars a grammar hands parts of its text to (`subLanguage` in the vendor files), loaded with it. */
+const EMBEDS: Record<string, string[]> = {
+  typescript: ['css', 'xml'],
+  javascript: ['css', 'xml'],
+  xml: ['css', 'javascript'],
+  markdown: ['xml'],
+  dockerfile: ['bash'],
+  shell: ['bash'],
+  yaml: ['ruby']
+}
+const loaded = new Map<string, Promise<boolean>>()
 
-const LANGUAGES = { typescript, javascript, json, yaml, bash, shell, css, scss, less, xml, markdown, python, go, rust, java, kotlin, csharp, php, ruby, sql, dockerfile, ini, makefile, nginx, diff, plaintext }
-for (const [name, definition] of Object.entries(LANGUAGES)) hljs.registerLanguage(name, definition)
+/** Registers one grammar; false when it failed to load, and a later call tries again. */
+function loadGrammar(language: string): Promise<boolean> {
+  let done = loaded.get(language)
+  if (!done) {
+    done = GRAMMARS[language]().then(
+      (grammar) => (hljs.registerLanguage(language, grammar.default), true),
+      () => (loaded.delete(language), false)
+    )
+    loaded.set(language, done)
+  }
+  return done
+}
+
+/** Registers the grammar `language` and those it embeds, at any depth; true when it is there to highlight with, false for none or one that failed to load. */
+export async function loadLanguage(language: string | null): Promise<boolean> {
+  if (!language || !GRAMMARS[language]) return false
+  const all = new Set([language])
+  for (const name of all) for (const embed of EMBEDS[name] ?? []) all.add(embed)
+  // An embedded grammar that failed leaves its part plain: hljs skips a sub-language it does not know.
+  const [own] = await Promise.all([...all].map(loadGrammar))
+  return own
+}
 
 const MAX_LINES = 5000
 const MAX_LINE_LENGTH = 2000
@@ -55,7 +92,8 @@ const escapeHtml = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '
 
 /** HTML for each line; a token that runs over a line break is closed at its end and reopened on the next line. */
 export function highlightLines(lines: string[], language: string | null): string[] {
-  if (!language || lines.length > MAX_LINES || lines.some((line) => line.length > MAX_LINE_LENGTH)) return lines.map(escapeHtml)
+  // A grammar not loaded yet (loadLanguage) shows the text plain.
+  if (!language || !hljs.getLanguage(language) || lines.length > MAX_LINES || lines.some((line) => line.length > MAX_LINE_LENGTH)) return lines.map(escapeHtml)
   let html: string
   try {
     html = hljs.highlight(lines.join('\n'), { language, ignoreIllegals: true }).value

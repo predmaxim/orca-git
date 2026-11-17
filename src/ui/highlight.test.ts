@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { highlightLines, languageFor, markRange } from './highlight.ts'
+import { highlightLines, languageFor, loadLanguage, markRange } from './highlight.ts'
+
+await loadLanguage('typescript')
 
 test('a token spanning lines is closed and reopened on each line', () => {
   const out = highlightLines(['const a = `x', 'y`'], 'typescript')
@@ -35,4 +37,16 @@ test('languageFor maps extensions and well-known names', () => {
   assert.equal(languageFor('a/b.ts'), 'typescript')
   assert.equal(languageFor('Dockerfile'), 'dockerfile')
   assert.equal(languageFor('x.unknown'), null)
+})
+
+test('a grammar loads when asked for, with those it embeds; until then the text is plain', async () => {
+  assert.ok(!highlightLines(['def f(): pass'], 'python').join('').includes('<span'))
+  assert.equal(await loadLanguage('python'), true)
+  assert.ok(highlightLines(['def f(): pass'], 'python').join('').includes('hljs-keyword'))
+  // xml hands <script> to javascript and <style> to css: both come with it, at once.
+  assert.equal(await loadLanguage('xml'), true)
+  assert.ok(highlightLines(['<script>const a = 1</script>'], 'xml').join('').includes('hljs-keyword'))
+  assert.ok(highlightLines(['<style>a { color: red }</style>'], 'xml').join('').includes('hljs-selector-tag'))
+  assert.equal(await loadLanguage(null), false)
+  assert.equal(await loadLanguage('cobol'), false)
 })

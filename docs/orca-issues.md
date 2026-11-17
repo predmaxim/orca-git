@@ -4,6 +4,10 @@ Published 2026-11-11 (by the user's decision): 1 as a comment on stablyai/orca#1
 
 Published 2026-11-16 (by the user's decision): stablyai/orca#43189, plugin workers get no session environment (`XDG_RUNTIME_DIR`, `DBUS_SESSION_BUS_ADDRESS`, `SSH_AUTH_SOCK`), so git credential helpers on the session bus fail. The plugin's workaround (the user's decision, 2026-11-16: keep it marked and remove it once Orca fixes this): in `src/worker/launch.ts` `sessionRuntimeDir`, the `FolderStat` interface, its call in `gitEnv` and the `lstatSync` import (all marked `shortcut:` or next to it; `grep -n 43189 src`); its test `src/worker/sessionenv.test.ts`; the sentences in the README (Fetch) and `docs/git-safety.md` (Environment).
 
+Published 2026-11-17 (by the user's decision, after checking that both behaviors are deliberate in Orca's code and asking for a change that keeps their reason):
+- stablyai/orca#43532: Orca's `orca-plugin-frame` handler answers 503 past 32 requests in flight (`PLUGIN_FRAME_MAX_IN_FLIGHT`, `plugin-frame-protocol.ts`, kept to bound memory and open streams), and a module fetch that gets a 503 fails the frame's whole module graph. The Diff tab then stayed blank about 1 time in 15-20 it was shown (caught with a load trace on 2026-11-17). The plugin loads its highlight.js grammars with `import()` for the file shown (`src/ui/highlight.ts`), so its widest import level is 8. Nothing to remove when Orca fixes it: the lazy grammars also halve what each tab loads.
+- stablyai/orca#43533: a development folder plugin reloads on every change in the folder except `.git`, `.orca` and `node_modules`, so agents' git worktrees under `.claude/worktrees/` reload it (worker, panel and tab start again). Locally the plugin is loaded from a checkout nobody edits (see README "Development").
+
 ## 1. Plugin API: open a plugin's own view in an editor tab without a file
 
 **Problem.** A plugin can contribute a panel (sidebar) and a custom editor (a tab for a file type), but it cannot open a tab of its own. The only way to get a full-size view next to the other editor tabs is `editor.open` on a file that matches the custom editor's `extensions`.
