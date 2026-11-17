@@ -6,4 +6,7 @@
 main="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
 dev="$main-dev"
 [ "$(git rev-parse --abbrev-ref HEAD)" = main ] && [ -e "$dev/.git" ] || exit 0
+# Git hands its hooks the committing checkout's variables (GIT_INDEX_FILE=.git/index after a commit), which in the copy
+# would name its .git file; githooks(5) says to clear them before Git works in another working tree.
+unset $(git rev-parse --local-env-vars)
 git -C "$dev" checkout -q --detach main
