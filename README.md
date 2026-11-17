@@ -378,11 +378,23 @@ orca plugin shot local.git-log --editor <repo>/.orca-git-log.gitdiff   # the Dif
 orca plugin dev unload local.git-log   # back to the installed predmaxim.git-log, so two "Git" panels do not show
 ```
 
-To run the plugin from its checkout all the time, instead of an installed release: `orca plugin dev load .` in the
-checkout of `main`, then uninstall the released copy so only one "Git" panel shows. A change reaches Orca with
-`orca plugin dev reload .` once it is on `main`; new access asks for a new approval. Load it from `main`, not from a
-work-in-progress worktree: Orca runs whatever the folder holds. The folder plugin is `local.git-log`, with its own
-settings and its own stored notes, apart from those of `predmaxim.git-log`.
+To run the plugin from its source all the time, instead of an installed release, load it from a checkout of `main`
+that nobody edits, then uninstall the released copy so only one "Git" panel shows. Not from the checkout you or your
+agents work in: Orca reloads a development folder on every change in it except under `.git`, `.orca` and
+`node_modules` ([stablyai/orca#43533](https://github.com/stablyai/orca/issues/43533)), so an edit in an agent's
+worktree under `.claude/worktrees/`, or anything a tool writes into the repository, would start the worker, the panel
+and the Diff tab again, and they lose the selection, the scroll and the text being typed.
+
+```sh
+git worktree add --detach ~/Projects/orca-git-log-dev main
+orca plugin dev load ~/Projects/orca-git-log-dev     # prints a fingerprint, re-run with --approve <fingerprint>
+ln -s ../../scripts/sync-dev-copy.sh .git/hooks/post-commit
+ln -s ../../scripts/sync-dev-copy.sh .git/hooks/post-merge
+```
+
+The two hooks move that copy to `main` after each commit or merge on `main`, and Orca reloads the plugin then; new
+access asks for a new approval. The folder plugin is `local.git-log`, with its own settings and its own stored notes,
+apart from those of `predmaxim.git-log`; loading it from another folder keeps them.
 
 ### Release
 

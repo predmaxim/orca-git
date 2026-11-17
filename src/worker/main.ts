@@ -205,8 +205,6 @@ async function showDiff(root: string, hashes: string[], files: SelectionFile[], 
   }
   // An open tab reads the new state on this event; a new one reads it when it starts.
   orcaApi.panels.post('diff.show', { root })
-  // diagnostic, remove with frame.trace.
-  orcaApi.log(`diff open ${open} posted diff.show`)
   await keepDiff(root)
   return { ok: true }
 }
@@ -422,12 +420,6 @@ export default function activate(orca: OrcaWorkerApi): void {
   handle('diff.open', openDiff)
 
   handle('diff.focus', focusDiff)
-
-  // diagnostic, remove once the blank Diff tab is explained: a Diff frame's own account of its start, for `orca plugin logs`.
-  handle('frame.trace', ({ line }) => {
-    orca.log(`diff frame ${String(line).slice(0, 400)}`)
-    return null
-  })
 
   // Every read has the note to reveal, with the same `open`: the tab reveals it once per `open` (it may read twice, when it starts and on `diff.show`).
   handle('diff.state', async ({ root }) => {
