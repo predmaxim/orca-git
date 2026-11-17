@@ -89,6 +89,9 @@ export function createGit(root: string, gitPath = 'git'): Git {
           resolve({ ok: !error, code, stdout: String(stdout), stderr: note, ...(options.bytes ? { bytes: stdout } : {}), ...(stopped ? { stopped: true as const } : {}) })
         }
       )
+      // A git that exits before it reads its input (a broken config) makes the write fail with EPIPE: unheard, that error ends the worker.
+      // Its exit code already reports the failure.
+      child.stdin?.on('error', () => undefined)
       if (options.input !== undefined) child.stdin?.end(options.input)
     })
   return {

@@ -109,6 +109,12 @@ export async function placeNotes(git: Git, notes: ReviewNote[], files: Selection
  * another branch or of a rewritten commit, HEAD's file is no later version of its lines. None for a HEAD without commits, and
  * none of a pair of blobs git does not compare (`blobHunks`).
  */
+/**
+ * Whether a note's commit is in the history of a HEAD, by `<rev> <head>`, for every repository and call: without a commit-graph
+ * git walks the history for each, a second or more in a large repository, and every list of the notes asks again.
+ */
+const ancestry = new Map<string, boolean>()
+
 export async function outdatedAtHead(git: Git, notes: ReviewNote[], cache: Map<string, Hunk[] | null>): Promise<Set<string>> {
   const outdated = new Set<string>()
   // One commit for every check of the call, though HEAD may move meanwhile.
@@ -120,9 +126,16 @@ export async function outdatedAtHead(git: Git, notes: ReviewNote[], cache: Map<s
     // A path is a line of cat-file's input.
     if (note.side !== 'new' || !hex(note.blob) || !hex(note.rev) || /[\r\n]/.test(note.path)) continue
     if (!ancestors.has(note.rev)) {
-      const result = await git.run(['merge-base', '--is-ancestor', note.rev, head])
-      if (result.code !== 0 && result.code !== 1 && result.code !== 128) log(`notes of ${note.rev} not checked against HEAD: ${lastLines(result.stderr)}`)
-      ancestors.set(note.rev, result.code === 0)
+      const pair = `${note.rev} ${head}`
+      let answer = ancestry.get(pair)
+      if (answer === undefined) {
+        const result = await git.run(['merge-base', '--is-ancestor', note.rev, head])
+        if (result.code !== 0 && result.code !== 1 && result.code !== 128) log(`notes of ${note.rev} not checked against HEAD: ${lastLines(result.stderr)}`)
+        answer = result.code === 0
+        // Whether one commit is in the history of another never changes; a commit git does not know (128) may come with a fetch.
+        if (result.code === 0 || result.code === 1) ancestry.set(pair, answer)
+      }
+      ancestors.set(note.rev, answer)
     }
     if (ancestors.get(note.rev)) checked.push(note)
   }

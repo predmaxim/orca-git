@@ -180,7 +180,6 @@ test('log pages, filters, refs and details', async () => {
   assert.deepEqual(refs.users, ['Tester'])
   const details = await readDetails(git, hashes[1])
   assert.equal(details.message, 'c2\n\nbody 2')
-  assert.deepEqual(details.files, [{ status: 'A', path: 'f2.txt' }])
   assert.deepEqual(details.branches, ['main'])
 })
 

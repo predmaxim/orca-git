@@ -43,13 +43,16 @@ interface Prefs {
   noteAgent?: string
 }
 
-const prefs: Prefs = (() => {
+/** What localStorage keeps under `key` as JSON; null when nothing or not JSON. */
+function readJson<T>(key: string): T | null {
   try {
-    return { ...JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') }
+    return JSON.parse(localStorage.getItem(key) ?? 'null')
   } catch {
-    return {}
+    return null
   }
-})()
+}
+
+const prefs: Prefs = { ...readJson<Prefs>(PREFS_KEY) }
 
 const app = document.getElementById('app')!
 /** The repository this tab belongs to, from its anchor file. */
@@ -90,12 +93,17 @@ async function show(): Promise<void> {
     // The last opening whose note this tab scrolled to: a second read of it (diff.show, a reload of the frame) does not scroll again.
     const revealed = `git-log.revealed.${state.root}`
     const reveal = revealToDo(state, localStorage.getItem(revealed))
+    const wholeFile = Boolean(prefs.diffWholeFile)
+    // Orca makes the tab anew each time it is shown again: the same opening and file open where the frame before left them.
+    const place = `git-log.scroll.${state.root}`
+    const left = readJson<{ open?: string; index?: number; whole?: boolean; top?: number }>(place)
+    const scroll = !reveal && left?.open === state.open && left.index === state.index && left.whole === wholeFile && typeof left.top === 'number' ? left.top : undefined
     view = mountDiff(app, {
       root: state.root,
       files: state.files,
       index: state.index,
       mode: prefs.diffMode ?? (innerWidth < 1100 ? 'unified' : 'split'),
-      wholeFile: Boolean(prefs.diffWholeFile),
+      wholeFile,
       onPrefs: (mode, wholeFile) => {
         prefs.diffMode = mode
         prefs.diffWholeFile = wholeFile
@@ -113,7 +121,15 @@ async function show(): Promise<void> {
       onEditorClosed: () => {
         if (waiting) void show()
       },
-      reveal: reveal ?? undefined
+      reveal: reveal ?? undefined,
+      scroll,
+      onScroll: (top, index, whole) => {
+        try {
+          localStorage.setItem(place, JSON.stringify({ open: state.open, index, whole, top }))
+        } catch {
+          // A refused localStorage only costs the place.
+        }
+      }
     })
     shownOpen = state.open
     if (reveal) localStorage.setItem(revealed, state.open)
@@ -121,6 +137,8 @@ async function show(): Promise<void> {
 }
 
 async function start(): Promise<void> {
+  // Orca makes the frame anew each time the tab is shown again, and a stopped worker starts first: not a blank tab meanwhile.
+  app.replaceChildren(h('div', { class: 'diff-view' }, h('div', { class: 'diff-note muted' }, t('diffLoading'))))
   try {
     const anchor = JSON.parse((await orca.document!.get()).content.text ?? '{}')
     root = typeof anchor?.root === 'string' ? anchor.root : null

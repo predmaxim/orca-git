@@ -158,23 +158,6 @@ export async function readRefs(git: Git): Promise<RefsResult> {
   }
 }
 
-export function parseNameStatus(stdout: string): FileChange[] {
-  const tokens = stdout.split('\0')
-  const files: FileChange[] = []
-  for (let i = 0; i < tokens.length; ) {
-    const status = tokens[i++]?.trim()
-    if (!status) continue
-    if (status.startsWith('R') || status.startsWith('C')) {
-      const oldPath = tokens[i++]
-      const path = tokens[i++]
-      files.push({ status: status[0], path, oldPath })
-    } else {
-      files.push({ status: status[0], path: tokens[i++] })
-    }
-  }
-  return files
-}
-
 /** A file's change with the blobs of its two sides: none on a side the file does not exist on. */
 export interface RawChange extends FileChange {
   oldBlob?: string
@@ -208,9 +191,6 @@ export async function readDetails(git: Git, hash: string): Promise<CommitDetails
   const show = await git.out(['show', '-s', '-z', '--encoding=UTF-8', '--format=%H%x00%P%x00%an%x00%ae%x00%at%x00%cn%x00%ce%x00%ct%x00%B', hash, '--'])
   const [full, parents, author, email, at, committer, committerEmail, ct, message = ''] = show.split('\0')
   const parentList = parents ? parents.split(' ').filter(Boolean) : []
-  const diff = parentList.length > 1
-    ? await git.run(['diff', '--name-status', '-z', '-M', parentList[0], full, '--'])
-    : await git.run(['diff-tree', '--no-commit-id', '-r', '-M', '--name-status', '-z', '--root', full, '--'])
   // %(refname): the short name of a remote's HEAD is the remote's own name.
   const containing = await git.run(['for-each-ref', '--contains', full, '--count=50', '--format=%(refname)', 'refs/heads', 'refs/remotes'])
   return {
@@ -223,7 +203,6 @@ export async function readDetails(git: Git, hash: string): Promise<CommitDetails
     committerEmail,
     commitTime: Number(ct) || 0,
     message: message.replace(/\s+$/, ''),
-    files: diff.ok ? parseNameStatus(diff.stdout) : [],
     branches: containing.ok
       ? containing.stdout.split(/\r?\n/).filter((ref) => ref && !REMOTE_HEAD.test(ref)).map((ref) => ref.replace(/^refs\/(heads|remotes)\//, ''))
       : []

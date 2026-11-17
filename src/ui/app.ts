@@ -221,14 +221,18 @@ function hideBanner(): void {
   if (repo?.operation) showOperationBanner()
 }
 
+const operationText = (info: RepoInfo) => (info.autostashOnly ? t('autostashStuck') : t(info.todoOnly ? 'opTodoLeft' : 'operationBanner', { operation: info.operation ?? '' }))
+
+/** The banner of the stopped operation of the repository being left goes with it. */
+function leaveOperation(): void {
+  if (!repo?.operation || shownBanner?.[0] !== operationText(repo)) return
+  repo = null
+  hideBanner()
+}
+
 function showOperationBanner(): void {
   if (!repo?.operation) return
-  showBanner(
-    repo.autostashOnly ? t('autostashStuck') : t(repo.todoOnly ? 'opTodoLeft' : 'operationBanner', { operation: repo.operation }),
-    'info',
-    [],
-    true
-  )
+  showBanner(operationText(repo), 'info', [], true)
 }
 
 // ---------- Rows ----------
@@ -395,24 +399,40 @@ async function reloadLog(keepCount = false): Promise<void> {
     recompute()
   }
   renderRows()
-  const limit = keepCount && rows.length > 300 ? Math.min(rows.length, 2000) : undefined
+  const root = repo.root
+  // The row a Shift-click extends from, by its commit: new commits on top move it down.
+  const anchorHash = rows[anchor]?.hash
+  // A refresh reloads as many rows as were shown, in pages: a worker answer holds at most 2000.
+  const want = keepCount ? rows.length : 0
   try {
-    const page = await api.page(repo.root, filter, 0, limit)
+    let page = await api.page(root, filter, 0, want > 300 ? Math.min(want, 2000) : undefined)
+    let next = page.commits
+    let more = page.hasMore
+    while (token === loadToken && more && next.length < want) {
+      page = await api.page(root, filter, next.length, Math.min(2000, want - next.length))
+      const known = new Set(next.map((r) => r.hash))
+      next = next.concat(page.commits.filter((c) => !known.has(c.hash)))
+      more = page.hasMore && page.commits.length > 0
+    }
     if (token !== loadToken) return
-    rows = page.commits
-    hasMore = page.hasMore
+    rows = next
+    hasMore = more
   } catch (error) {
     if (token !== loadToken) return
-    rows = []
-    hasMore = false
-    loadError = errorMessage(error)
+    // A failed refresh keeps the rows it would have replaced: a moment old, they still say more than an empty list.
+    if (keepCount && rows.length) showBanner(t('refreshFailed', { error: errorMessage(error) }), 'error')
+    else {
+      rows = []
+      hasMore = false
+      loadError = errorMessage(error)
+    }
   }
   loading = false
   recompute()
   const before = selected.size
   for (const hash of [...selected]) if (!indexByHash.has(hash)) selected.delete(hash)
   cursor = selected.size ? Math.min(...[...selected].map((h) => indexByHash.get(h)!)) : -1
-  if (anchor >= rows.length) anchor = cursor
+  anchor = anchorHash !== undefined ? (indexByHash.get(anchorHash) ?? cursor) : anchor >= rows.length ? cursor : anchor
   renderRows()
   if (selected.size !== before) updateFiles()
   updateDetails()
@@ -473,15 +493,28 @@ async function loadRefs(): Promise<void> {
   try {
     const next = await api.refs(root)
     if (token !== refsToken || repo?.root !== root) return
+    if (refs) pruneFilter(refs, next)
     refs = next
     repo.head = next.head
   } catch (error) {
     if (token !== refsToken || repo?.root !== root) return
-    refs = null
+    // The branches shown stay: setRepo clears them for another repository.
     showBanner(t('refsFailed', { error: errorMessage(error) }), 'error')
   }
   renderTree()
   filterBar.update()
+}
+
+/**
+ * A branch filter on refs deleted or pruned elsewhere would fail every reload: refs `before` had and `after` has not leave
+ * it, and HEAD takes the place of the last one. A ref the panel itself just named (a rename) is in neither and stays.
+ */
+function pruneFilter(before: RefsResult, after: RefsResult): void {
+  const all = (refs: RefsResult) => new Set([...refs.locals, ...refs.remotes, ...refs.tags].map((ref) => ref.full))
+  const [had, has] = [all(before), all(after)]
+  const branches = filter.branches ?? []
+  const kept = branches.filter((ref) => has.has(ref) || !had.has(ref))
+  if (kept.length < branches.length) applyFilter({ branches: kept.length || !after.head.hash ? kept : ['HEAD'] })
 }
 
 let refreshing: Promise<void> | null = null
@@ -510,9 +543,13 @@ async function refreshAll(): Promise<void> {
     repo = { ...result.repo, workspaceId: repo.workspaceId }
     if (repo.operation) showOperationBanner()
     else if (wasOperation) hideBanner()
+    // Branches first: one gone from the branch filter leaves it (pruneFilter), and the log is read for what is left.
+    const before = filter
+    await loadRefs()
+    if (filter !== before || repo?.root !== root) return
     // A jump waits for this reload too, so it lands on the refreshed rows.
     filterReload = reloadLog(true)
-    await Promise.all([loadRefs(), filterReload])
+    await filterReload
   })().finally(() => (refreshing = null))
   return refreshing
 }
@@ -525,6 +562,7 @@ const scheduleRefresh = (delay = 200) => {
 
 function setRepo(next: RepoInfo): void {
   const same = repo?.root === next.root
+  if (!same) leaveOperation()
   repo = next
   loadError = null
   if (!same) {
@@ -569,23 +607,30 @@ async function start(): Promise<void> {
     if (mine !== startGen) return
     choices = !result.ok ? (result.choices ?? []) : []
     if (result.ok) setRepo(result.repo)
-    else {
-      repo = null
-      rows = []
-      refs = null
-      loadError = result.reason
-      selected.clear()
-      recompute()
-      renderTree()
-      renderRows()
-      updateFiles()
-      updateDetails()
-    }
+    else leaveRepo(result.reason)
   } catch (error) {
     if (mine !== startGen) return
-    loadError = errorMessage(error)
-    renderEmpty()
+    choices = []
+    leaveRepo(errorMessage(error))
   }
+}
+
+/** Shows `reason` instead of a repository: what the one before left (rows, a log page still loading, branches) goes. */
+function leaveRepo(reason: string): void {
+  leaveOperation()
+  repo = null
+  rows = []
+  refs = null
+  // An answer for the repository before must not draw its commits under the reason.
+  ++loadToken
+  loading = false
+  loadError = reason
+  selected.clear()
+  recompute()
+  renderTree()
+  renderRows()
+  updateFiles()
+  updateDetails()
 }
 
 // ---------- Filters ----------
@@ -1094,13 +1139,15 @@ function updateDetails(): void {
     return
   }
   if (hashes.join() === detailsKey) return reloadDetails()
-  detailsKey = hashes.join()
+  const shown = hashes.map((hash) => rows[indexByHash.get(hash)!]).filter(Boolean)
+  // Rows a reload has not brought back yet: the next call draws the list again instead of keeping a short one.
+  detailsKey = shown.length === hashes.length ? hashes.join() : ''
   expanded.clear()
   if (hashes.length === 1) expanded.add(hashes[0])
   const root = repo.root
   reloadDetails = renderCommitList(
     detailsPane,
-    hashes.map((hash) => rows[indexByHash.get(hash)!]).filter(Boolean),
+    shown,
     {
       expanded,
       load: (hash) => {
@@ -1843,8 +1890,11 @@ orca.plugin.on('action.done', ({ id, result }: { id: string; result: BranchActio
 // What the worker before this one ran is never posted: stop saying git is still running.
 orca.plugin.on('worker.started', () => {
   if (late.restart()) showBanner(t('workerRestarted'), 'error')
-  // A late fetch it kept the button off for is never posted either.
+  // A late fetch or push it kept the button off for is never posted either.
   fetchButton.disabled = false
+  pushButton.disabled = false
+  // The watcher went with the worker Orca stopped: the new one watches the repository again, or the log stops following it.
+  if (repo) void api.watch(repo.root).catch(() => undefined)
 })
 
 orca.plugin.on('repo.changed', ({ root }: { root: string }) => {
@@ -1869,7 +1919,9 @@ let lastFocusRefresh = 0
 addEventListener('focus', () => {
   if (Date.now() - lastFocusRefresh < 3000) return
   lastFocusRefresh = Date.now()
+  // Without a repository (none in the workspace, or the worker failed to answer) the workspace is looked at again.
   if (repo) scheduleRefresh(50)
+  else void start()
 })
 
 renderEmpty()

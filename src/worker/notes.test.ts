@@ -17,7 +17,7 @@ async function added(store: NoteStore): Promise<string> {
 const stored = async (store: NoteStore, id: string) => (await listNotes(store, '/r')).find((n) => n.id === id)!
 /** Sends what the notes `ids` hold unsent, as the worker does after it wrote the notes file. */
 const mark = async (store: NoteStore, ids: string[], review: string, now?: number) =>
-  markSent(store, '/r', new Map(await Promise.all(ids.map(async (id) => [id, unsentOf(await stored(store, id)).map((m) => m.id)] as const))), review, now)
+  markSent(store, '/r', new Map(await Promise.all(ids.map(async (id) => [id, unsentOf(await stored(store, id))] as const))), review, now)
 
 test('a note starts as a thread with the user\'s first message', async () => {
   const store = memory()
@@ -330,11 +330,21 @@ test('the list answers at most 900000 bytes of threads, leaving out resolved and
 test('a send marks the messages of the notes file, not one written after it', async () => {
   const store = memory()
   const id = await added(store)
-  const file = new Map([[id, unsentOf(await stored(store, id)).map((m) => m.id)]])
+  const file = new Map([[id, unsentOf(await stored(store, id))]])
   await replyNote(store, '/r', id, 'later', [], 7)
   await markSent(store, '/r', file, 'r1')
   assert.deepEqual((await stored(store, id)).messages.map((m) => m.review), ['r1', undefined])
   assert.equal(unsentOf(await stored(store, id)).length, 1)
+})
+
+test('a message edited after the notes file was written stays unsent: the agent got the text before the edit', async () => {
+  const store = memory()
+  const id = await added(store)
+  const file = new Map([[id, unsentOf(await stored(store, id))]])
+  const first = (await stored(store, id)).messages[0]
+  assert.ok((await editMessage(store, '/r', id, first.id, 'edited meanwhile')).ok)
+  await markSent(store, '/r', file, 'r1')
+  assert.deepEqual((await stored(store, id)).messages.map((m) => [m.body, m.review]), [['edited meanwhile', undefined]])
 })
 
 test('an answer needs its send; one thread refused does not undo the others', async () => {

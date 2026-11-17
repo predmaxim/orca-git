@@ -2,8 +2,9 @@ import { watch, type FSWatcher } from 'node:fs'
 import { relative, resolve, sep } from 'node:path'
 import type { Git } from './git.ts'
 
-// Only these paths (relative to a git dir) change what the log shows.
-const RELEVANT = /^(HEAD|ORIG_HEAD|FETCH_HEAD|MERGE_HEAD|CHERRY_PICK_HEAD|REVERT_HEAD|packed-refs|refs|rebase-merge|rebase-apply|worktrees)(\/|$)/
+// Only these paths (relative to a git dir) change what the log shows; a linked worktree has its own under worktrees/<name>,
+// next to its index, which a plain `git status` there rewrites.
+const RELEVANT = /^(worktrees\/[^/]+\/)?(HEAD|ORIG_HEAD|FETCH_HEAD|MERGE_HEAD|CHERRY_PICK_HEAD|REVERT_HEAD|packed-refs|refs|rebase-merge|rebase-apply)(\/|$)/
 
 export function isRelevant(file: string | null): boolean {
   if (!file) return true

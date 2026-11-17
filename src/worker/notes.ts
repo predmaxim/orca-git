@@ -239,10 +239,14 @@ async function changeAll(store: NoteStore, root: string, change: (note: ReviewNo
   return true
 }
 
-/** Marks the messages of the user `sent` names (note id → message ids: what went into the notes file) as gone out with `review` to the agent of that kind; one written since stays unsent. */
-export function markSent(store: NoteStore, root: string, sent: Map<string, string[]>, review: string, now = Date.now(), agent?: string): Promise<void> {
+/**
+ * Marks the messages of the user `sent` names (note id → the messages as the notes file has them) as gone out with `review` to
+ * the agent of that kind; one written since, or edited since the file was written, stays unsent: the agent got other text.
+ */
+export function markSent(store: NoteStore, root: string, sent: Map<string, NoteMessage[]>, review: string, now = Date.now(), agent?: string): Promise<void> {
   return serial(async () => {
-    const ours = (n: ReviewNote, m: NoteMessage) => m.author === 'user' && m.sentAt === undefined && (sent.get(n.id) ?? []).includes(m.id)
+    const inFile = (n: ReviewNote, m: NoteMessage) => (sent.get(n.id) ?? []).some((w) => w.id === m.id && w.body === m.body && imageIds(w) === imageIds(m))
+    const ours = (n: ReviewNote, m: NoteMessage) => m.author === 'user' && m.sentAt === undefined && inFile(n, m)
     await changeAll(store, root, (n) => (n.messages.some((m) => ours(n, m)) ? { ...n, messages: n.messages.map((m) => (ours(n, m) ? { ...m, review, sentAt: now, ...(agent ? { agent } : {}) } : m)) } : n))
   })
 }

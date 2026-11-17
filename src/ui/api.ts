@@ -29,6 +29,7 @@ import type {
   RewriteKind,
   SelectionFile
 } from '../shared/protocol.ts'
+import { fromWire } from '../shared/diffwire.ts'
 
 interface Disposable {
   dispose(): void
@@ -75,10 +76,10 @@ export const api = {
     call('log.page', { root, filter, skip, ...(limit ? { limit } : {}) }, LONG),
   details: (root: string, hash: string): Promise<CommitDetails> => call('commit.details', { root, hash }),
   diff: (root: string, hash: string, file: FileChange, wholeFile: boolean): Promise<FileDiff> =>
-    call('file.diff', { root, hash, path: file.path, ...(file.oldPath ? { oldPath: file.oldPath } : {}), wholeFile }, LONG),
+    call('file.diff', { root, hash, path: file.path, ...(file.oldPath ? { oldPath: file.oldPath } : {}), wholeFile }, LONG).then(fromWire),
   selectionFiles: (root: string, hashes: string[]): Promise<SelectionFile[]> => call('selection.files', { root, hashes }, LONG),
   rangeDiff: (root: string, file: SelectionFile, wholeFile: boolean): Promise<FileDiff> =>
-    call('range.diff', { root, from: file.from, to: file.to, path: file.path, ...(file.oldPath ? { oldPath: file.oldPath } : {}), wholeFile }, LONG),
+    call('range.diff', { root, from: file.from, to: file.to, path: file.path, ...(file.oldPath ? { oldPath: file.oldPath } : {}), wholeFile }, LONG).then(fromWire),
   patch: (root: string, hashes: string[], path?: string, overwrite = false): Promise<PatchResult> =>
     call('patch.create', { root, hashes, ...(path ? { path, overwrite } : {}) }, LONG),
   check: (root: string, kind: RewriteKind, hashes: string[]): Promise<CheckResult> =>
@@ -100,7 +101,8 @@ export const api = {
   focusDiff: (root: string): Promise<{ ok: boolean; reason?: string }> => call('diff.focus', { root }),
   diffState: (root: string): Promise<DiffTabState | null> => call('diff.state', { root }),
   diffIndex: (root: string, index: number): Promise<{ ok: boolean }> => call('diff.index', { root, index }),
-  notes: (root: string): Promise<{ notes: ReviewNote[]; warning?: string }> => call('notes.list', { root }),
+  /** git compares the notes with HEAD for it: in a large repository that takes longer than Orca's default 30 s. */
+  notes: (root: string): Promise<{ notes: ReviewNote[]; warning?: string }> => call('notes.list', { root }, LONG),
   /** Opens the Diff tab on the commit whose own diff shows the note `id`; git searches the history for it. */
   notesOpen: (root: string, id: string): Promise<{ ok: boolean; reason?: string }> => call('notes.open', { root, id }, LONG),
   /** Per file, the notes of other versions of it carried to it and the outdated ones; at most 100 files. git compares blobs for it. */
@@ -116,7 +118,7 @@ export const api = {
   notesDeleteAll: (root: string): Promise<{ ok: boolean; reason?: string }> => call('notes.delete', { root, all: true }),
   notesAgent: (root: string): Promise<{ agent: string | null }> => call('notes.agent', { root }),
   notesSend: (root: string, ids: string[], agent?: string): Promise<{ ok: true; review: string; to: 'same' | 'new' } | { ok: false; reason: string }> =>
-    call('notes.send', { root, ids, agent }),
+    call('notes.send', { root, ids, agent }, LONG),
   skills: (root: string): Promise<{ skills: string[] }> => call('skills.list', { root }),
   skillsSet: (root: string, skills: string[]): Promise<{ ok: true; skills: string[] } | { ok: false; reason: string }> => call('skills.set', { root, skills }),
   skillsBrowse: (root: string, dir: string): Promise<{ dirs: string[]; files: string[] }> => call('skills.browse', { root, dir }),
