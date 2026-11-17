@@ -2213,7 +2213,8 @@ button.d-note-head:hover {
   height: 16px;
 }
 
-.d-note-fold {
+/* The folded line's button; an opened thread's head is a button too, and keeps the head's padding and divider. */
+.d-note-line > .d-note-fold {
   flex: 1;
   min-width: 0;
   display: flex;
@@ -2396,6 +2397,8 @@ button.d-note-head:hover {
 /* Reply… and the thread's buttons in one row, where reading ends. */
 .d-note-foot {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
   gap: 6px;
   padding: 6px 12px 12px;
@@ -2406,8 +2409,9 @@ button.d-note-head:hover {
 }
 
 /* Reply… looks like the field it opens. */
+/* Never narrower than its words: the buttons go to the next line first (an armed Delete the thread is wide). */
 .d-note-reply {
-  flex: 1;
+  flex: 1 1 160px;
   min-width: 0;
   display: flex;
   align-items: center;
@@ -2429,8 +2433,16 @@ button.d-note-head:hover {
 }
 
 .d-note-reply .icon {
+  flex: none;
   width: 14px;
   height: 14px;
+}
+
+.d-note-reply > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* A narrow card with Send again: Reply… takes a line of its own over the buttons. */
@@ -2490,7 +2502,7 @@ button.d-note-head:hover {
   display: none;
 }
 
-/* A state: a tint of its colour, the border a stronger one, as the notices are; the text takes the colour too. */
+/* A state: a tint of its colour, the border a stronger one, as the notices are. */
 .d-label {
   --tone: var(--muted-fg);
   display: inline-flex;
@@ -2500,14 +2512,18 @@ button.d-note-head:hover {
   border: 1px solid color-mix(in srgb, var(--tone) 45%, transparent);
   border-radius: var(--radius-xs);
   background: color-mix(in srgb, var(--tone) 12%, transparent);
-  color: color-mix(in srgb, var(--tone) 80%, var(--fg));
   font-size: 11px;
   font-weight: 600;
   line-height: 16px;
   white-space: nowrap;
 }
 
-:root.light .d-label {
+/* In a card the text takes the colour too; the Notes list's rows keep theirs, which their hover plate is made for. */
+.d-note .d-label {
+  color: color-mix(in srgb, var(--tone) 80%, var(--fg));
+}
+
+:root.light .d-note .d-label {
   color: color-mix(in srgb, var(--tone) 40%, var(--fg));
 }
 

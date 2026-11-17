@@ -109,11 +109,11 @@ function labels(n: ReviewNote): HTMLElement[] {
   return state === 'resolved' ? [label('noteResolve', 'resolved')] : state === 'unsent' ? [label('noteUnsent')] : []
 }
 
-/** A key of the editor and what it does: Enter save. */
-const key = (name: string, what: MessageKey) => h('span', null, h('kbd', null, name), t(what))
+/** A key of the editor and what it does: Enter save. The spaces are for the field's description, which reads this line; the flex gaps draw them. */
+const key = (name: string, what: MessageKey) => h('span', null, h('kbd', null, name), ' ', t(what), ' ')
 
 /** Where a note is, in the head of its card: "Line 40 · new". */
-const where = (n: Pick<ReviewNote, 'side' | 'start' | 'end'>) => h('span', { class: 'd-note-where' }, icon('note'), whereOf(n))
+const where = (n: Pick<ReviewNote, 'side' | 'start' | 'end'>) => h('span', { class: 'd-note-where' }, icon('noteText'), whereOf(n))
 
 const firstLine = (text: string) => text.split('\n', 1)[0]
 const lineSpan = (n: ReviewNote) => (n.start.line === n.end.line ? `${n.start.line}` : `${n.start.line}-${n.end.line}`)
@@ -540,6 +540,8 @@ export function mountNotes(options: {
       rows: 3,
       maxLength: MAX_BODY,
       placeholder: t('notePlaceholder'),
+      // The keys line under the field says what Enter and Esc do; one editor is open at a time, so the id is unique.
+      'aria-describedby': 'd-note-keys',
       onkeydown: (event: KeyboardEvent) => {
         if (event.isComposing || (event.key !== 'Enter' && event.key !== 'Escape')) return
         // The tab's own keys stay out of the editor.
@@ -577,7 +579,7 @@ export function mountNotes(options: {
         'div',
         { class: 'd-note-bar' },
         editing ? null : attachButton,
-        h('span', { class: 'd-note-keys' }, key('Enter', 'noteKeySave'), key('Shift+Enter', 'noteKeyLine'), key('Esc', 'noteKeyCancel'), editing ? null : key('Ctrl+V', 'noteKeyImage')),
+        h('span', { class: 'd-note-keys', id: 'd-note-keys' }, key('Enter', 'noteKeySave'), key('Shift+Enter', 'noteKeyLine'), key('Esc', 'noteKeyCancel'), editing ? null : key('Ctrl+V', 'noteKeyImage')),
         end
       )
     )
@@ -832,7 +834,10 @@ export function mountNotes(options: {
         'div',
         { class: 'd-note-body' },
         ...n.messages.map((m, i) =>
-          mine?.message === m.id ? h('div', { class: 'd-note-msg editing' }, h('div', { class: 'd-note-gutter' }), mine.el) : message(n, m, n.messages[i - 1], marks)
+          mine?.message === m.id
+            ? h('div', { class: 'd-note-msg editing' }, h('div', { class: 'd-note-gutter' }), mine.el)
+            : // After the message being edited a group starts again: the editor took the place of its head.
+              message(n, m, mine?.message === n.messages[i - 1]?.id ? undefined : n.messages[i - 1], marks)
         )
       ),
       replying
