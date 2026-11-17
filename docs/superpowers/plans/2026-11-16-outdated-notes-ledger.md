@@ -28,7 +28,7 @@ Task 4: complete (commits 26d14bf..cda7ea0, review clean; open 0; 4 minors defer
 Task 5: complete (commits cda7ea0..9caa9e8, review clean; open 0; 2 minors deferred)
 Final review: Workflow wf_7bb55095-314 (generic script /tmp/final-review-generic.js; 4 lenses for this branch, 2 verifiers per finding, one fix wave, one scoped re-review). An earlier start (w3da4xua0) was stopped at once: its texts named the other branch.
 Final review (wf_7bb55095-314): 4 Important confirmed (send snapshot vs git wait; notes of an unmerged branch carried/outdated on unrelated commits; README outdated claim for old side; parseHunks split on CR/U+2028/U+2029), 0 refuted; 8 must-fix minors (failed notes.place drops carried cards; README carried-in-place claim; Notes list label hides path; GIT_DIFF_OPTS; maxBuffer rerun; worker log of refused notes.place). One fix wave 9caa9e8..d88a38d; scoped re-review: 12 addressed, 0 open.
-Open user decision (item 2): notes are carried to / marked outdated on every version of their file except one in the history of the note's commit, other branches included — documented in README and spec rule 3; narrowing is the user's call.
+Open user decision (item 2): notes are carried to / marked outdated on every version of their file except one in the history of the note's commit, other branches included — documented in README and spec rule 3; narrowing is the user's call. Decided 2026-11-17: keep it as is (the user's answer «а»).
 Controller check at d88a38d: orca plugin test . 429 pass; validate 0; check 0; tsc non-node 14 (= baseline); mixed-EOL files untouched.
 
 ## Deferred minors (task reviews)
