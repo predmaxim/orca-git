@@ -99,6 +99,24 @@ export async function readLogPage(git: Git, filter: LogFilter, skip: number, lim
   return { commits, hasMore }
 }
 
+/** How many rows must load to show the requested commits that still occur after `skip` in this log.
+ * A rebased-away selection can be missing from a huge history. Scan just hashes inside git's worker, in bounded batches.
+ */
+export async function selectionDepth(git: Git, filter: LogFilter, skip: number, hashes: string[], signal: AbortSignal): Promise<number> {
+  const missing = new Set(hashes)
+  const batch = 32_000
+  let depth = skip
+  while (missing.size) {
+    signal.throwIfAborted()
+    const output = await git.out(['log', '--format=%H', `--skip=${skip}`, `-n${batch}`, ...logArgs(filter)])
+    const page = output.trimEnd().split('\n').filter((hash) => HASH.test(hash))
+    for (const [i, hash] of page.entries()) if (missing.delete(hash)) depth = skip + i + 1
+    if (page.length < batch) break
+    skip += page.length
+  }
+  return depth
+}
+
 export async function readHead(git: Git): Promise<{ branch: string | null; hash: string | null }> {
   const [branch, hash] = await Promise.all([
     git.run(['symbolic-ref', '-q', '--short', 'HEAD']),

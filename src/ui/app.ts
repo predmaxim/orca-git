@@ -15,6 +15,7 @@ import { reachableFrom, refLabels, relativeDate, fullDate, shortHash } from './f
 import { computeGraph, graphSvg, NARROW_LANE_WIDTH, ROW_HEIGHT, TWO_LINE_NODE_Y, TWO_LINE_ROW_HEIGHT, type GraphRow } from './graph.ts'
 import { showMenu, type MenuEntry } from './menu.ts'
 import { mountPanelKeys } from './panelkeys.ts'
+import { readView, writeView, type PanelView } from './panelview.ts'
 import { createColumn, normalizeSections, type SectionId, type SectionPrefs } from './sections.ts'
 import { pickLocale, setLocale, t } from '../shared/i18n.ts'
 
@@ -65,6 +66,8 @@ let loadError: string | null = null
 let choices: WorkspaceChoice[] = []
 let filter: LogFilter = {}
 const selected = new Set<string>()
+/** A fresh frame has no log rows yet. Keep the saved selection until its rows arrive or the user makes a new choice. */
+let pendingView: PanelView | null = null
 let anchor = -1
 let cursor = -1
 const collapsed = new Set(prefs.collapsed)
@@ -389,6 +392,19 @@ viewport.addEventListener('scroll', renderRows, { passive: true })
 
 // ---------- Loading ----------
 
+function rememberView(): void {
+  if (!repo) return
+  const hashes = pendingView?.hashes ?? selectedHashes()
+  writeView(repo.root, {
+    filter,
+    hashes,
+    anchor: pendingView ? pendingView.anchor : rows[anchor]?.hash ?? null,
+    cursor: pendingView ? pendingView.cursor : rows[cursor]?.hash ?? null,
+    depth: pendingView?.depth ?? hashes.reduce((n, hash) => Math.max(n, (indexByHash.get(hash) ?? -1) + 1), 0),
+    file: currentFile
+  })
+}
+
 async function reloadLog(keepCount = false): Promise<void> {
   if (!repo) return
   const token = ++loadToken
@@ -401,30 +417,54 @@ async function reloadLog(keepCount = false): Promise<void> {
   renderRows()
   const root = repo.root
   // A refresh reloads as many rows as were shown, in pages: a worker answer holds at most 2000.
-  const want = keepCount ? rows.length : 0
-  // The row a Shift-click extends from, by its commit, as a click during the reload left it: new commits on top move it down.
+  const restore = pendingView
+  const refreshCount = keepCount ? rows.length : 0
+  const hint = Math.max(refreshCount, restore?.depth ?? 0)
   let anchorHash: string | undefined
+  let cursorHash: string | undefined
   try {
-    let page = await api.page(root, filter, 0, want > 300 ? Math.min(want, 2000) : undefined)
+    let page = await api.page(root, filter, 0, hint > 300 ? Math.min(hint, 2000) : undefined)
+    if (token !== loadToken) return
     let next = page.commits
     let more = page.hasMore
-    while (token === loadToken && more && next.length < want) {
+    const known = new Set(next.map((r) => r.hash))
+    const located = new Set<string>()
+    let depth = 0
+    while (token === loadToken && more) {
+      const restoring = restore && pendingView === restore
+      const want = Math.max(refreshCount, restoring || keepCount ? depth : 0)
+      if (next.length >= want) {
+        const wanted = restoring ? restore.hashes : keepCount ? selected : []
+        const missing = [...wanted].filter((hash) => !known.has(hash) && !located.has(hash))
+        if (!missing.length) break
+        // Keep the first page usable while git looks for a saved SHA. A refresh keeps its old rows until it can replace them.
+        if (restoring && !keepCount) {
+          rows = next
+          hasMore = more
+          recompute()
+          renderRows()
+        }
+        for (const hash of missing) located.add(hash)
+        depth = await api.selectionDepth(root, filter, next.length, missing)
+        continue
+      }
       page = await api.page(root, filter, next.length, Math.min(2000, want - next.length))
-      const known = new Set(next.map((r) => r.hash))
       const added = page.commits.filter((c) => !known.has(c.hash))
       more = page.hasMore && page.commits.length > 0
       // New commits above moved the page onto rows already read: the rest comes with scrolling, as loadMore reads it.
       if (!added.length) break
+      for (const row of added) known.add(row.hash)
       next = next.concat(added)
     }
     if (token !== loadToken) return
     anchorHash = rows[anchor]?.hash
+    cursorHash = rows[cursor]?.hash
     rows = next
     hasMore = more
   } catch (error) {
     if (token !== loadToken) return
     // A failed refresh keeps the rows it would have replaced: a moment old, they still say more than an empty list.
-    if (keepCount && rows.length) showBanner(t('refreshFailed', { error: errorMessage(error) }), 'error')
+    if (keepCount && rows.length && !restore) showBanner(t('refreshFailed', { error: errorMessage(error) }), 'error')
     else {
       rows = []
       hasMore = false
@@ -433,12 +473,32 @@ async function reloadLog(keepCount = false): Promise<void> {
   }
   loading = false
   recompute()
+  if (restore && pendingView === restore) {
+    if (!loadError) {
+      pendingView = null
+      selected.clear()
+      for (const hash of restore.hashes) if (indexByHash.has(hash)) selected.add(hash)
+      const first = selectedHashes()[0]
+      cursor = indexByHash.get(restore.cursor ?? '') ?? indexByHash.get(first) ?? -1
+      anchor = indexByHash.get(restore.anchor ?? '') ?? cursor
+      sizer.style.height = `${(rows.length + (hasMore ? 1 : 0)) * rowH}px`
+      if (cursor >= 0) ensureVisible(cursor)
+      updateFiles(true)
+      rememberView()
+    }
+    renderRows()
+    updateDetails()
+    return
+  }
   const before = selected.size
   for (const hash of [...selected]) if (!indexByHash.has(hash)) selected.delete(hash)
-  cursor = selected.size ? Math.min(...[...selected].map((h) => indexByHash.get(h)!)) : -1
+  cursor = indexByHash.get(cursorHash ?? '') ?? indexByHash.get(selectedHashes()[0]) ?? -1
   anchor = anchorHash !== undefined ? (indexByHash.get(anchorHash) ?? cursor) : anchor >= rows.length ? cursor : anchor
   renderRows()
-  if (selected.size !== before) updateFiles()
+  if (selected.size !== before) {
+    updateFiles()
+    if (!loadError) rememberView()
+  }
   updateDetails()
 }
 
@@ -497,7 +557,7 @@ async function loadRefs(): Promise<void> {
   try {
     const next = await api.refs(root)
     if (token !== refsToken || repo?.root !== root) return
-    if (refs) pruneFilter(refs, next)
+    pruneFilter(refs, next)
     refs = next
     repo.head = next.head
   } catch (error) {
@@ -513,12 +573,13 @@ async function loadRefs(): Promise<void> {
  * A branch filter on refs deleted or pruned elsewhere would fail every reload: refs `before` had and `after` has not leave
  * it, and HEAD takes the place of the last one. A ref the panel itself just named (a rename) is in neither and stays.
  */
-function pruneFilter(before: RefsResult, after: RefsResult): void {
+function pruneFilter(before: RefsResult | null, after: RefsResult): void {
   const all = (refs: RefsResult) => new Set([...refs.locals, ...refs.remotes, ...refs.tags].map((ref) => ref.full))
-  const [had, has] = [all(before), all(after)]
+  const had = before ? all(before) : null
+  const has = all(after)
   const branches = filter.branches ?? []
-  const kept = branches.filter((ref) => has.has(ref) || !had.has(ref))
-  if (kept.length < branches.length) applyFilter({ branches: kept.length || !after.head.hash ? kept : ['HEAD'] })
+  const kept = branches.filter((ref) => ref === 'HEAD' || has.has(ref) || (had && !had.has(ref)))
+  if (kept.length < branches.length) applyFilter({ branches: kept.length || !after.head.hash ? kept : ['HEAD'] }, true)
 }
 
 let refreshing: Promise<void> | null = null
@@ -570,12 +631,15 @@ const scheduleRefresh = (delay = 200) => {
   changeTimer = setTimeout(() => void refreshAll(), delay)
 }
 
-function setRepo(next: RepoInfo): void {
+function setRepo(next: RepoInfo, requestedCommit = false): void {
   const same = repo?.root === next.root
-  if (!same) leaveOperation()
+  if (!same) {
+    ++revealGen
+    leaveOperation()
+  }
   repo = next
   loadError = null
-  if (!same) {
+  if (!same || requestedCommit) {
     // The old repository's branches would lend the new HEAD their upstream counts until loadRefs answers.
     refs = null
     selected.clear()
@@ -585,15 +649,26 @@ function setRepo(next: RepoInfo): void {
     updateFiles()
     repoNotes = []
     loadNotes(next.root)
-    // A repository opens on HEAD in the branch tree, as a click on it does.
-    filter = { ...filter, branches: ['HEAD'] }
+    // Workflow explicitly opens a commit on HEAD or any branch, independent of a saved search.
+    pendingView = requestedCommit ? null : readView(next.root)
+    filter = pendingView ? { ...pendingView.filter } : { branches: ['HEAD'] }
+    if (prefs.regex) filter.regex = true
+    if (prefs.matchCase) filter.matchCase = true
+    clearTimeout(searchTimer)
+    searchInput.value = filter.text ?? ''
+    treeSearch.value = ''
+    revealed = null
+    currentFile = pendingView?.file ?? null
+    filterBar.update()
+    renderTree()
+    updateDetails()
     viewport.scrollTop = 0
     document.title = t('docTitle', { name: next.name })
     void api.watch(next.root).catch(() => undefined)
   }
   if (next.operation) showOperationBanner()
   void loadRefs()
-  filterReload = reloadLog(same)
+  filterReload = reloadLog(same && !requestedCommit)
 }
 
 /** Counts start() calls: a quick second switch can be answered before the first. */
@@ -606,7 +681,7 @@ async function start(): Promise<void> {
     if (mine !== startGen) return
     if (reveal) {
       choices = []
-      setRepo(reveal.repo)
+      setRepo(reveal.repo, true)
       return void revealCommit(reveal.hash)
     }
     let result: RepoResult = await api.resolve()
@@ -627,8 +702,10 @@ async function start(): Promise<void> {
 
 /** Shows `reason` instead of a repository: what the one before left (rows, a log page still loading, branches) goes. */
 function leaveRepo(reason: string): void {
+  ++revealGen
   leaveOperation()
   repo = null
+  pendingView = null
   rows = []
   refs = null
   // An answer for the repository before must not draw its commits under the reason.
@@ -648,12 +725,14 @@ function leaveRepo(reason: string): void {
 /** The reload the latest filter change started; a jump waits for it so it lands on the new rows. */
 let filterReload: Promise<void> = Promise.resolve()
 
-function applyFilter(change: Partial<LogFilter>): void {
+function applyFilter(change: Partial<LogFilter>, keepPending = false): void {
+  if (!keepPending) pendingView = null
   filter = { ...filter, ...change }
   for (const key of Object.keys(filter) as (keyof LogFilter)[]) {
     const value = filter[key]
     if (value === undefined || value === '' || (Array.isArray(value) && !value.length)) delete filter[key]
   }
+  rememberView()
   filterBar.update()
   renderTree()
   filterReload = reloadLog()
@@ -846,8 +925,10 @@ function ensureVisible(index: number): void {
 }
 
 function selectionChanged(): void {
+  pendingView = null
   renderRows()
   updateFiles()
+  rememberView()
   updateDetails()
 }
 
@@ -1075,6 +1156,7 @@ function setAllFolders(open: boolean): void {
 function openFile(index: number, note?: string): void {
   if (!repo || index < 0 || index >= selectionFiles.length) return
   currentFile = selectionFiles[index].path
+  rememberView()
   drawFiles()
   const root = repo.root
   void openTab(() => api.openDiff(root, filesHashes, selectionFiles[index], note))
@@ -1086,7 +1168,7 @@ function openNoteCommit(id: string): void {
   if (root) void openTab(() => api.notesOpen(root, id))
 }
 
-function updateFiles(): void {
+function updateFiles(revealCurrent = false): void {
   const token = ++filesToken
   const hashes = selectedHashes()
   selectionFiles = []
@@ -1111,12 +1193,17 @@ function updateFiles(): void {
       openFolders.clear()
       for (const path of dirPaths(fileTree)) openFolders.add(path)
       // The open file stays open when the new selection still changes it.
-      if (!selectionFiles.some((file) => file.path === currentFile)) currentFile = null
+      if (currentFile && !selectionFiles.some((file) => file.path === currentFile)) {
+        currentFile = null
+        rememberView()
+      }
       filesSection.setSummary(t('filesCount', { count: files.length }))
       // A new selection's files start at the top: the redraw keeps the place the old tree was scrolled to.
       filesPane.firstElementChild?.scrollTo(0, 0)
-      if (files.length) drawFiles()
-      else renderFilesNote('')
+      if (files.length) {
+        drawFiles()
+        if (revealCurrent && currentFile) filesPane.querySelector('.ft-row.current')?.scrollIntoView({ block: 'nearest' })
+      } else renderFilesNote('')
     })
     .catch((error) => {
       if (token !== filesToken) return
@@ -1778,6 +1865,7 @@ async function openTab(open: () => Promise<{ ok: boolean; reason?: string }>): P
 function markCurrentFile(path: string): void {
   if (!selectionFiles.some((file) => file.path === path)) return
   currentFile = path
+  rememberView()
   for (const dir of dirPaths(fileTree)) if (path.startsWith(`${dir}/`)) openFolders.add(dir)
   drawFiles()
   filesPane.querySelector('.ft-row.current')?.scrollIntoView({ block: 'nearest' })

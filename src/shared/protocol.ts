@@ -376,6 +376,7 @@ declare module 'orca' {
     'repo.refs': { input: { root: string }; output: RefsResult }
     'repo.watch': { input: { root: string }; output: { ok: boolean } }
     'log.page': { input: { root: string; filter: LogFilter; skip: number; limit?: number }; output: LogPage }
+    'log.selectionDepth': { input: { root: string; filter: LogFilter; skip: number; hashes: string[] }; output: number }
     'commit.details': { input: { root: string; hash: string }; output: CommitDetails }
     'file.diff': { input: { root: string; hash: string; path: string; oldPath?: string; wholeFile?: boolean }; output: WireDiff }
     'selection.files': { input: { root: string; hashes: string[] }; output: SelectionFile[] }

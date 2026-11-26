@@ -74,6 +74,8 @@ export const api = {
   watch: (root: string): Promise<{ ok: boolean }> => call('repo.watch', { root }),
   page: (root: string, filter: LogFilter, skip: number, limit?: number): Promise<LogPage> =>
     call('log.page', { root, filter, skip, ...(limit ? { limit } : {}) }, LONG),
+  selectionDepth: (root: string, filter: LogFilter, skip: number, hashes: string[]): Promise<number> =>
+    call('log.selectionDepth', { root, filter, skip, hashes }, LONG),
   details: (root: string, hash: string): Promise<CommitDetails> => call('commit.details', { root, hash }),
   diff: (root: string, hash: string, file: FileChange, wholeFile: boolean): Promise<FileDiff> =>
     call('file.diff', { root, hash, path: file.path, ...(file.oldPath ? { oldPath: file.oldPath } : {}), wholeFile }, LONG).then(fromWire),

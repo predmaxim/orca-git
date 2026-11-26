@@ -45,8 +45,9 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
 - **Filters**: text or hash (with regex `.*` and match case `Cc`) in a search across the full width of the
   Commits section; Branch, User, Date and Paths in a row under it.
 - **Branch tree**: HEAD, Local, Remote and Tags, with branches grouped into folders by prefix (`feature/`,
-  `fix/`); search by name. A repository opens with HEAD selected, so the log shows the current branch. Click a branch to filter the log by it (click again to clear and show all branches), double-click
-  to jump to its commit. Right-click for checkout, new branch from it, rename,
+  `fix/`); search by name. A worktree first opens on HEAD. When you return or reopen the panel, it restores
+  that worktree's filters, selected commits and highlighted file. Click a branch to filter the log by it
+  (click again to show all branches), or double-click to jump to its commit. Right-click for checkout, new branch from it, rename,
   delete (local only; an unmerged branch asks first), merge into the current branch and rebase the
   current branch onto it. The keys of the Files tree below work here too; Enter filters by the branch.
 - **Files of the selection**: the changed files of all selected commits as a folder tree with status

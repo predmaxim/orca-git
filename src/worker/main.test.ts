@@ -78,6 +78,23 @@ test('resolves the focused workspace, pages the log and runs an action', async (
   }
 })
 
+test('locating a saved selection counts only the filtered log and skips vanished hashes', async () => {
+  const root = fixture()
+  try {
+    const worker = await mountWorker(main, { host: host(root) })
+    const [head, middle, oldest] = sh(root, 'rev-list', 'HEAD').split('\n')
+    const missing = 'f'.repeat(40)
+    const locate = (hashes: string[], skip = 0, filter = {}) => worker.request('log.selectionDepth', { root, filter, hashes, skip })
+    assert.equal(await locate([head, oldest, missing], 1), 3)
+    assert.equal(await locate([head, missing], 1), 1)
+    assert.equal(await locate([middle, missing], 0, { paths: ['two.txt'] }), 1)
+    assert.equal(await locate([oldest], 0, { paths: ['two.txt'] }), 0)
+    await worker.deactivate()
+  } finally {
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
+})
+
 test('action.run and branch.run check the HEAD the dialog showed and make the backup first', async () => {
   const root = fixture()
   try {

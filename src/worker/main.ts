@@ -13,7 +13,7 @@ import { DIFF_ANCHOR, fitWindow, workspaceFor } from './diffTab.ts'
 import { buildFileTree, orderedFiles } from '../shared/filetree.ts'
 import { toWire } from '../shared/diffwire.ts'
 import { createGit, GitError, type Git } from './git.ts'
-import { readDetails, readLogPage, readRefs } from './log.ts'
+import { readDetails, readLogPage, readRefs, selectionDepth } from './log.ts'
 import { resolveRepo, toplevel } from './repo.ts'
 import { takeReveal } from './reveal.ts'
 import { readFileDiff } from './diff.ts'
@@ -329,6 +329,10 @@ export default function activate(orca: OrcaWorkerApi): void {
     const size = Math.min(2000, Math.max(1, Number.isFinite(pageSize) ? Math.floor(pageSize) : 300))
     return readLogPage(await gitFor(root), filter ?? {}, Math.max(0, Math.floor(Number(skip) || 0)), size)
   })
+
+  handle('log.selectionDepth', async ({ root, filter, skip, hashes }, { signal }) =>
+    selectionDepth(await gitFor(root), filter, Math.max(0, Math.floor(Number(skip) || 0)), hashes, signal)
+  )
 
   handle('commit.details', async ({ root, hash }) => readDetails(await gitFor(root), hash))
 
