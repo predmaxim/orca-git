@@ -45,8 +45,7 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
 - **Filters**: text or hash (with regex `.*` and match case `Cc`) in a search across the full width of the
   Commits section; Branch, User, Date and Paths in a row under it.
 - **Branch tree**: HEAD, Local, Remote and Tags, with branches grouped into folders by prefix (`feature/`,
-  `fix/`); search by name. A worktree first opens on HEAD. When you return or reopen the panel, it restores
-  that worktree's filters, selected commits and highlighted file. Click a branch to filter the log by it
+  `fix/`); search by name. Click a branch to filter the log by it
   (click again to show all branches), or double-click to jump to its commit. Right-click for checkout, new branch from it, rename,
   delete (local only; an unmerged branch asks first), merge into the current branch and rebase the
   current branch onto it. The keys of the Files tree below work here too; Enter filters by the branch.
@@ -324,6 +323,23 @@ editor tab, and a right-click menu to rewrite history. The interface follows Orc
   It follows refs, HEAD and stopped operations, in a linked worktree too, not the index: `git status` in
   another worktree (an agent's) reads nothing again. Orca stops an idle worker and its watcher with it; the
   panel watches again when the next worker starts, and meanwhile refreshes when it gets the focus.
+
+## Returning to a worktree
+
+Each worktree has its own Git panel selection, including linked worktrees of the same repository. For example,
+filter worktree A to a topic branch, select two commits and open a changed file. Switch to worktree B for the
+first time and the log opens on HEAD with no commits selected. Return to A or reopen its panel and both commits
+are selected again. The Files section scrolls to the highlighted file. Press Enter on the file to reopen its diff.
+
+- The saved filters include branches, the applied commit search, users, dates and paths. An explicit choice to show all
+  branches is remembered too.
+- Commits are restored by hash. New commits at the top can move a selection to a later page. If a branch has been
+  deleted, the panel keeps the surviving branch filters and falls back to HEAD when the last one disappears and
+  HEAD has a commit. Only commits still in the filtered history are selected. The file highlight clears if the
+  restored selection no longer changes that file.
+- When Workflow’s **Show the commit in Git** command opens the panel, it searches HEAD and then all branches for the
+  requested commit, even if a saved filter would hide it. If the panel is already visible, it can pick up the
+  request at its next start within 30 seconds. [How another program opens a commit](docs/reveal.md)
 
 ## Where it shows
 

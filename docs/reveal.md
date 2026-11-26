@@ -24,8 +24,9 @@ not on screen. So the request waits in a file, and the panel takes it when Orca 
 3. The program then shows the panel: `orca plugin open <plugin key> --panel log` (the key of an installed copy is
    `<publisher>.git-log`, of a development copy `local.git-log`).
 4. The panel, when it starts, takes the request (the file is removed whatever it holds), opens the repository at `root`
-   and selects the commit: on the history of HEAD first, else among every branch; a commit that is in neither gets
-   the usual «not in the log» note. A request older than 30 seconds, malformed, or naming a commit the repository does
+   and starts with the HEAD filter and an empty search. This lets the request select a commit even if the worktree's
+   saved filters would hide it. The panel looks on HEAD first and then among all branches. A commit that is in
+   neither gets the usual «not in the log» note. A request older than 30 seconds, malformed, or naming a commit the repository does
    not have is dropped.
 
 A panel already on screen is not started again by `orca plugin open`, so it takes the request only at its next start,
