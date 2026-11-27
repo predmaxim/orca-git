@@ -1083,6 +1083,7 @@ input[type='radio'] {
 
 .details {
   overflow: auto;
+  font-family: Inter, var(--font-ui);
   user-select: text;
 }
 
@@ -1097,17 +1098,29 @@ input[type='radio'] {
 
 .cl-list {
   flex: none;
-  padding: 2px 0 6px;
+  display: grid;
+  gap: 8px;
+  padding: 4px 6px 8px;
+}
+
+.cl-item {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--fg) 3%, var(--bg));
 }
 
 .cl-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  margin: 1px 6px;
-  padding: 0 8px 0 4px;
-  border-radius: var(--radius-sm);
+  width: 100%;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  align-items: start;
+  gap: 2px 7px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  text-align: start;
   cursor: pointer;
   user-select: none;
 }
@@ -1122,48 +1135,88 @@ input[type='radio'] {
 }
 
 .cl-chevron {
-  flex: none;
   display: flex;
+  margin-top: 2px;
   color: var(--muted-fg);
 }
 
-.cl-subject {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.cl-chevron .icon {
+  width: 14px;
+  height: 14px;
 }
 
-.cl-author {
-  flex: none;
-  max-width: 35%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.cl-subject {
+  font-weight: 600;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cl-head[aria-expanded='true'] .cl-subject {
+  cursor: text;
+  user-select: text;
+}
+
+.cl-summary {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.cl-head[aria-expanded='true'] .cl-summary {
+  display: none;
 }
 
 .cl-body {
   display: grid;
-  gap: 2px;
-  padding: 4px 12px 8px 30px;
+  gap: 10px;
+  padding: 0 10px 10px 31px;
   overflow-wrap: anywhere;
 }
 
 .cl-message {
+  max-width: 76ch;
+  line-height: 1.6;
   white-space: pre-wrap;
-  margin-bottom: 6px;
+}
+
+.cl-metadata {
+  display: grid;
+  grid-template-columns: fit-content(28%) minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.cl-metadata dt {
+  color: var(--muted-fg);
+}
+
+.cl-metadata dd {
+  margin: 0;
 }
 
 .hash-link {
+  padding: 0;
+  border: 0;
   border-radius: var(--radius-xs);
+  background: transparent;
   color: var(--primary);
   cursor: pointer;
-  text-decoration: none;
 }
 
 .hash-link:hover {
   text-decoration: underline;
+}
+
+.hash-link:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: 2px;
 }
 
 .status-letter {

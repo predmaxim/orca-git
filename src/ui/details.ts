@@ -16,27 +16,35 @@ export function renderPlaceholder(container: HTMLElement, text: string): void {
   container.replaceChildren(h('div', { class: 'cl-note' }, text))
 }
 
-function renderBody(d: CommitDetails, host: CommitListHost): HTMLElement {
-  const parents = d.parents.map((p, i) => h('span', null, i ? ', ' : '', h('a', { class: 'hash-link mono', title: p, onclick: () => host.select(p) }, shortHash(p))))
-  const more = d.branches.length >= 50 ? '+' : ''
+function renderBody(d: CommitDetails, subject: string, host: CommitListHost): HTMLElement {
+  const [firstLine, ...lines] = d.message.split(/\r?\n/)
+  const message = firstLine === subject ? lines.join('\n').replace(/^[ \t]*\n/, '') : d.message
+  const parents = d.parents.map((p, i) => h('span', null, i ? ', ' : '', h('button', { type: 'button', class: 'hash-link mono', title: p, onclick: () => host.select(p) }, shortHash(p))))
+  const count = d.branches.length
+  const separateCommitter = d.committer !== d.author || d.commitTime !== d.authorTime
   return h(
     'div',
     { class: 'cl-body' },
-    h('div', { class: 'cl-message mono' }, d.message),
-    h('div', null, h('strong', null, d.author), ' ', h('span', { class: 'muted' }, `<${d.email}>`)),
-    h('div', { class: 'muted' }, fullDate(d.authorTime)),
-    d.committer !== d.author || d.commitTime !== d.authorTime
-      ? h('div', { class: 'muted' }, t('detailsCommittedBy', { name: d.committer, date: fullDate(d.commitTime) }))
-      : null,
-    parents.length ? h('div', null, h('span', { class: 'muted' }, `${t('detailsParents', { count: parents.length })}: `), ...parents) : null,
+    message ? h('div', { class: 'cl-message' }, message) : null,
     h(
-      'div',
-      null,
-      d.branches.length
-        ? h('span', null, h('span', { class: 'muted' }, `${t('detailsBranches', { count: d.branches.length, n: `${d.branches.length}${more}` })}: `), d.branches.join(', '))
-        : h('span', { class: 'muted' }, t('detailsNoBranches'))
-    ),
-    h('div', { class: 'mono muted' }, d.hash)
+      'dl',
+      { class: 'cl-metadata' },
+      h('dt', null, t('colAuthor')),
+      h(
+        'dd',
+        null,
+        h('div', null, h('strong', null, d.author), ' ', h('span', { class: 'muted' }, `<${d.email}>`)),
+        h('div', { class: 'muted' }, fullDate(d.authorTime))
+      ),
+      separateCommitter ? h('dt', null, t('detailsCommitter')) : null,
+      separateCommitter ? h('dd', null, d.committer, h('div', { class: 'muted' }, fullDate(d.commitTime))) : null,
+      parents.length ? h('dt', null, t('detailsParents', { count: parents.length })) : null,
+      parents.length ? h('dd', null, ...parents) : null,
+      h('dt', null, count ? t('detailsBranches', { count, n: count >= 50 ? `${count}+` : String(count) }) : t('sectionBranches')),
+      h('dd', null, count ? d.branches.join(', ') : h('span', { class: 'muted' }, t('detailsNoBranches'))),
+      h('dt', null, t('colHash')),
+      h('dd', { class: 'mono' }, d.hash)
+    )
   )
 }
 
@@ -48,14 +56,14 @@ export function renderCommitList(container: HTMLElement, commits: CommitRow[], h
   const reloads: (() => void)[] = []
   const rows = commits.map((commit) => {
     const chevron = h('span', { class: 'cl-chevron' })
-    const body = h('div', { class: 'cl-slot' })
+    const title = h('span', { class: 'cl-subject' }, commit.subject || t('detailsUntitled'))
+    const body = h('div', { class: 'cl-slot', id: `commit-details-${commit.hash}` })
     const head = h(
       'div',
-      { class: 'cl-head', tabindex: '0', role: 'button' },
+      { class: 'cl-head', role: 'button', tabindex: 0, 'aria-controls': body.id },
       chevron,
-      h('span', { class: 'mono muted' }, shortHash(commit.hash)),
-      h('span', { class: 'cl-subject', title: commit.subject }, commit.subject),
-      h('span', { class: 'cl-author muted' }, commit.author)
+      title,
+      h('span', { class: 'cl-summary muted' }, h('span', { class: 'mono' }, shortHash(commit.hash)), commit.author)
     )
     let loaded = false
     /** The details drawn in the body, as JSON; the latest load wins. */
@@ -69,19 +77,19 @@ export function renderCommitList(container: HTMLElement, commits: CommitRow[], h
       if (!open || loaded) return
       loaded = true
       const mine = ++loads
-      if (!drawn) body.replaceChildren(h('div', { class: 'muted' }, t('diffLoading')))
+      if (!drawn) body.replaceChildren(h('div', { class: 'cl-note', role: 'status' }, t('diffLoading')))
       host.load(commit.hash).then(
         (details) => {
           const json = JSON.stringify(details)
           if (mine !== loads || json === drawn) return
           drawn = json
-          body.replaceChildren(renderBody(details, host))
+          body.replaceChildren(renderBody(details, commit.subject, host))
         },
         (error) => {
           if (mine !== loads) return
           loaded = false
           drawn = ''
-          body.replaceChildren(h('div', { class: 'muted' }, error instanceof Error ? error.message : String(error)))
+          body.replaceChildren(h('div', { class: 'cl-note' }, error instanceof Error ? error.message : String(error)))
         }
       )
     }
@@ -94,21 +102,28 @@ export function renderCommitList(container: HTMLElement, commits: CommitRow[], h
       show()
       host.onToggle()
     }
-    head.addEventListener('click', toggle)
+    head.addEventListener('click', (event) => {
+      const selection = document.getSelection()
+      if (title.contains(event.target as Node) && selection?.type === 'Range' && title.contains(selection.anchorNode)) return
+      toggle()
+    })
     head.addEventListener('keydown', (event) => {
-      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-        if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
-        const heads = Array.from(container.querySelectorAll<HTMLElement>('.cl-head'))
-        // Past the first or last row the key scrolls as before, so a long open message stays readable.
-        const next = heads[heads.indexOf(head) + (event.key === 'ArrowDown' ? 1 : -1)]
-        if (!next) return
-        next.focus()
-      } else if (event.key === 'Enter' || event.key === ' ') toggle()
-      else return
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        toggle()
+        return
+      }
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+      const heads = Array.from(container.querySelectorAll<HTMLElement>('.cl-head'))
+      // Past the first or last row the key scrolls as before, so a long open message stays readable.
+      const next = heads[heads.indexOf(head) + (event.key === 'ArrowDown' ? 1 : -1)]
+      if (!next) return
+      next.focus()
       event.preventDefault()
     })
     show()
-    return h('div', { class: 'cl-item' }, head, body)
+    return h('article', { class: 'cl-item' }, head, body)
   })
   container.replaceChildren(h('div', { class: 'cl-list' }, ...rows))
   return () => reloads.forEach((reload) => reload())

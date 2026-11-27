@@ -6,6 +6,8 @@ const hash = (n) => n.toString(16).padStart(40, '0')
 const topic = 'refs/heads/topic'
 const longSubject = 'Keep commit titles readable when the Git Log sidebar gets narrower'
 const unbrokenSubject = 'VeryLongCommitSubjectWithoutAnySpaces'.repeat(4)
+const subjectAt = (index) => [longSubject, unbrokenSubject][index] ?? 'commit ' + index
+const detailsMessage = 'Show the changed paths in the sidebar.\n\n  Preserve indented examples.'
 const repo = (root) => ({ root, workspaceId: root, name: 'project', head: { hash: hash(0), branch: 'main' }, operation: null, todoOnly: false, autostashOnly: false })
 const context = () => ({ context: { workspaceId: root, branch: 'main', displayName: 'project' } })
 
@@ -29,14 +31,23 @@ window.bridge = () => {
           if (arg.filter.branches?.includes(topic) && !branches.includes('topic')) throw Error('missing ref')
           const total = arg.filter.text ? 1 : count + shift
           const length = Math.min(arg.limit ?? 48, total - arg.skip)
-          const commits = Array.from({ length }, (_, i) => ({ hash: hash(arg.skip + i < shift ? 9000 : arg.skip + i - shift), parents: [], author: 'A', committer: 'A', authorTime: 1, commitTime: 1, email: 'a@e', refs: [], subject: [longSubject, unbrokenSubject][arg.skip + i] ?? 'commit ' + (arg.skip + i) }))
+          const commits = Array.from({ length }, (_, i) => ({ hash: hash(arg.skip + i < shift ? 9000 : arg.skip + i - shift), parents: [], author: 'A', committer: 'A', authorTime: 1, commitTime: 1, email: 'a@e', refs: [], subject: subjectAt(arg.skip + i) }))
           return { commits, hasMore: arg.skip + length < total }
         }
         if (name === 'selection.files') {
           if (holdFiles) { const wait = holdFiles; holdFiles = null; await wait }
           return ['a.ts', ...Array.from({ length: 60 }, (_, i) => 'src/a' + i + '.ts'), 'src/chosen.ts'].map((path) => ({ path, status: 'A', from: null, to: arg.hashes[0] }))
         }
-        if (name === 'commit.details') return { ...repo(arg.root), hash: arg.hash, parents: [], branches: [], authorTime: 1, commitTime: 1 }
+        if (name === 'commit.details') {
+          const index = Number.parseInt(arg.hash, 16)
+          const hasBody = index === 54
+          return {
+            hash: arg.hash, author: 'A', email: 'a@e', authorTime: 1,
+            committer: hasBody ? 'B' : 'A', committerEmail: hasBody ? 'b@e' : 'a@e', commitTime: hasBody ? 2 : 1,
+            parents: hasBody ? [hash(53), hash(52)] : [], branches: hasBody ? ['main', 'topic'] : [],
+            message: hasBody ? `${subjectAt(index + shift)}\n\n${detailsMessage}` : subjectAt(index + shift)
+          }
+        }
         if (name === 'diff.open') { openCount++; return { ok: true } }
         if (name === 'notes.list') return { notes: [] }
         if (name === 'repo.watch') return { ok: true }
@@ -115,6 +126,21 @@ async function run() {
   await until(() => $('.row[data-index="54"]'), 'second page visible')
   mouse(54); mouse(56, true)
   await until(() => selected() === '54,56' && file('src/chosen.ts'), 'multi-select shows its files')
+  const [firstDetail, nextDetail] = [...doc.querySelectorAll('.cl-head')]
+  expect(firstDetail.getAttribute('aria-expanded') === 'false' && nextDetail.getAttribute('aria-expanded') === 'false', 'multi-selection initially folds the descriptions')
+  firstDetail.click()
+  await until(() => $('.cl-message'), 'the first description opens separately')
+  expect($('.cl-message').textContent === detailsMessage, 'the authored body keeps paragraph breaks without repeating the title')
+  const metadata = $('.cl-metadata')
+  expect(metadata?.textContent.includes('main, topic') && metadata.textContent.includes(hash(54)), 'branches and full hash are grouped as metadata')
+  expect([...metadata.querySelectorAll('dt')].some((term) => term.textContent === 'Committer' && term.nextElementSibling.textContent.startsWith('B')), 'a different committer has a separate field')
+  expect(metadata.querySelectorAll('.hash-link').length === 2, 'parent commits remain actionable')
+  firstDetail.focus()
+  firstDetail.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+  expect(doc.activeElement === nextDetail, 'arrow keys move between description headers')
+  nextDetail.click()
+  await until(() => nextDetail.parentElement.querySelector('.cl-metadata'), 'a subject-only commit shows its metadata')
+  expect(!nextDetail.parentElement.querySelector('.cl-message'), 'a subject-only commit has no empty message block')
   file('src/chosen.ts').click()
   expect(openCount === 1, 'opening the file reaches the diff')
   switchTo(b)
