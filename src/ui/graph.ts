@@ -86,8 +86,6 @@ export const LANE_WIDTH = 14
 /** The narrow commits column packs the lanes closer; the head's ring (r 4.2) still fits a lane. */
 export const NARROW_LANE_WIDTH = 10
 export const ROW_HEIGHT = 24
-/** A narrow commits column shows author and date under the message, with air between commits as Orca's list rows have. */
-export const TWO_LINE_ROW_HEIGHT = 62
 /** There the node sits level with the message: 6px above its line (styles.css `.row.two .stack`), half its first 19px line. */
 export const TWO_LINE_NODE_Y = 15.5
 

@@ -12,7 +12,7 @@ import { append, h, icon } from './dom.ts'
 import { createFilterBar } from './filters.ts'
 import { KEYS, withKey, type KeyScope } from './keys.ts'
 import { reachableFrom, refLabels, relativeDate, fullDate, shortHash } from './format.ts'
-import { computeGraph, graphSvg, NARROW_LANE_WIDTH, ROW_HEIGHT, TWO_LINE_NODE_Y, TWO_LINE_ROW_HEIGHT, type GraphRow } from './graph.ts'
+import { computeGraph, graphSvg, NARROW_LANE_WIDTH, ROW_HEIGHT, TWO_LINE_NODE_Y, type GraphRow } from './graph.ts'
 import { showMenu, type MenuEntry } from './menu.ts'
 import { mountPanelKeys } from './panelkeys.ts'
 import { readView, writeView, type PanelView } from './panelview.ts'
@@ -148,28 +148,77 @@ function onSections(): void {
   if (detailsStale) updateDetails()
 }
 
-// The visible rows depend on the log's own height, which the section splitters change too.
-// Below 520 px the log stacks the message and metadata; the row height follows so scrolling stays consistent.
 const TWO_LINE_BELOW = 520
-let rowH = ROW_HEIGHT
-function fitRowHeight(): void {
+const NARROW_ROW_ESTIMATE = 53
+let narrow = false
+let narrowWidth = 0
+let narrowHeights = new WeakMap<CommitRow, number>()
+let rowOffsets = [0]
+let pendingScroll: ({ index: number; commit: CommitRow } & ({ offset: number } | { reveal: boolean })) | null = null
+
+function rowTop(index: number): number {
+  return narrow ? rowOffsets[index] ?? rowOffsets[rowOffsets.length - 1] : index * ROW_HEIGHT
+}
+
+function rowAt(top: number): number {
+  if (!narrow) return Math.max(0, Math.floor(top / ROW_HEIGHT))
+  let first = 0
+  let last = rows.length
+  while (first < last) {
+    const middle = Math.ceil((first + last) / 2)
+    if (rowOffsets[middle] <= top) first = middle
+    else last = middle - 1
+  }
+  return first
+}
+
+function updateRowOffsets(): void {
+  if (!narrow) return
+  rowOffsets = [0]
+  let top = 0
+  for (const row of rows) {
+    top += narrowHeights.get(row) ?? NARROW_ROW_ESTIMATE
+    rowOffsets.push(top)
+  }
+}
+
+function sizeLog(): void {
+  sizer.style.height = `${rowTop(rows.length) + (hasMore ? ROW_HEIGHT : 0)}px`
+}
+
+function restoreScroll(index: number, offset: number): void {
+  const top = rowTop(index)
+  viewport.scrollTop = top + Math.min(offset, Math.max(0, rowTop(index + 1) - top - 1))
+}
+
+function restoreAfterLayout(index: number, offset: number): void {
+  sizeLog()
+  restoreScroll(index, offset)
+  const commit = rows[index]
+  // The estimated row may be shorter than the measured row, so restore the offset again once it is drawn.
+  pendingScroll = narrow && commit ? { index, commit, offset } : null
+}
+
+function fitRows(fontChanged = false): void {
   // offsetWidth includes the scrollbar, so the mode never changes the measured width; the gap is hysteresis.
   const width = viewport.offsetWidth
-  const narrow = width > 0 && (rowH === TWO_LINE_ROW_HEIGHT ? width < TWO_LINE_BELOW + 20 : width < TWO_LINE_BELOW)
-  const next = narrow ? TWO_LINE_ROW_HEIGHT : ROW_HEIGHT
-  if (next !== rowH) {
-    const firstRow = viewport.scrollTop / rowH
-    rowH = next
-    logPane.classList.toggle('two-line', next === TWO_LINE_ROW_HEIGHT)
-    viewport.style.setProperty('--row-h', `${rowH}px`)
-    // Grow the sizer now, or scrollTop is clamped to the old scroll height.
-    sizer.style.height = `${(rows.length + (hasMore ? 1 : 0)) * rowH}px`
-    viewport.scrollTop = firstRow * rowH
+  if (!width) return
+  const next = width < TWO_LINE_BELOW + (narrow ? 20 : 0)
+  if (next !== narrow || (next && (fontChanged || narrowWidth !== viewport.clientWidth))) {
+    const index = rowAt(viewport.scrollTop)
+    const offset = viewport.scrollTop - rowTop(index)
+    narrow = next
+    logPane.classList.toggle('two-line', narrow)
+    narrowWidth = viewport.clientWidth
+    narrowHeights = new WeakMap()
+    updateRowOffsets()
+    restoreAfterLayout(index, offset)
   }
   renderRows()
 }
 // Hiding the header resizes the viewport, so apply on the next frame to avoid a resize loop.
-new ResizeObserver(() => requestAnimationFrame(fitRowHeight)).observe(viewport)
+new ResizeObserver(() => requestAnimationFrame(() => fitRows())).observe(viewport)
+document.fonts.addEventListener('loadingdone', () => fitRows(true))
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v))
 
@@ -243,6 +292,7 @@ function showOperationBanner(): void {
 function recompute(): void {
   indexByHash = new Map(rows.map((row, i) => [row.hash, i]))
   graph = computeGraph(rows, isFiltered())
+  updateRowOffsets()
   reachable = reachableFrom(repo?.head.hash ?? null, rows)
   mainline = []
   for (let i = indexByHash.get(repo?.head.hash ?? ''); i !== undefined; i = indexByHash.get(rows[i].parents[0] ?? '')) {
@@ -309,23 +359,26 @@ function pick(choice: WorkspaceChoice): void {
   void start()
 }
 
+function rowGraph(index: number, head: boolean, dim: boolean, height = ROW_HEIGHT): string {
+  return graphSvg(graph[index], {
+    head, dim, height,
+    merge: rows[index].parents.length > 1,
+    ...(narrow ? { nodeY: TWO_LINE_NODE_Y, laneWidth: NARROW_LANE_WIDTH } : {})
+  })
+}
+
 function rowElement(index: number): HTMLElement {
   const commit = rows[index]
   const isHead = commit.hash === repo?.head.hash
   const dim = !isFiltered() && reachable.size > 0 && !reachable.has(commit.hash)
   const labels = refLabels(commit.refs, repo?.head.branch ?? null)
   const subject = h('div', { class: 'cell subject' })
-  const twoLine = rowH === TWO_LINE_ROW_HEIGHT
-  subject.innerHTML = graphSvg(graph[index], {
-    head: isHead,
-    dim,
-    merge: commit.parents.length > 1,
-    height: rowH,
-    ...(twoLine ? { nodeY: TWO_LINE_NODE_Y, laneWidth: NARROW_LANE_WIDTH } : {})
-  })
-  const line = twoLine ? h('div', { class: 'line' }) : subject
-  if (twoLine) subject.append(h('div', { class: 'stack' }, line, h('div', { class: 'meta' }, `${commit.author} \u00b7 ${relativeDate(commit.authorTime)}`)))
-  line.append(h('span', { class: 'text', title: twoLine ? commit.subject : undefined }, commit.subject))
+  // Reserve the lanes' width while the narrow row lays out its text and sets its own height.
+  if (narrow) subject.append(h('div', { class: 'graph', style: `width:${graph[index].width * NARROW_LANE_WIDTH}px` }))
+  else subject.innerHTML = rowGraph(index, isHead, dim)
+  const line = narrow ? h('div', { class: 'line' }) : subject
+  if (narrow) subject.append(h('div', { class: 'stack' }, line, h('div', { class: 'meta' }, `${commit.author} \u00b7 ${relativeDate(commit.authorTime)}`)))
+  line.append(h('span', { class: 'text', title: narrow ? commit.subject : undefined }, commit.subject))
   if (labels.length) {
     line.append(
       h(
@@ -346,14 +399,14 @@ function rowElement(index: number): HTMLElement {
   return h(
     'div',
     {
-      class: `row ${twoLine ? 'two' : 'columns'}${selected.has(commit.hash) ? ' selected' : ''}${dim ? ' dim' : ''}${isHead ? ' head' : ''}${index === Math.max(cursor, 0) ? ' cursor' : ''}`,
-      style: `top:${index * rowH}px`,
+      class: `row ${narrow ? 'two' : 'columns'}${selected.has(commit.hash) ? ' selected' : ''}${dim ? ' dim' : ''}${isHead ? ' head' : ''}${index === Math.max(cursor, 0) ? ' cursor' : ''}`,
+      style: `top:${rowTop(index)}px`,
       dataset: { index: String(index) },
       role: 'row',
       'aria-selected': String(selected.has(commit.hash))
     },
     subject,
-    ...(twoLine ? [] : [h(
+    ...(narrow ? [] : [h(
       'div',
       {
         class: `cell author${refs?.me && commit.author === refs.me ? ' me' : ''}`,
@@ -374,15 +427,42 @@ function renderRows(): void {
     renderQueued = false
     const top = viewport.scrollTop
     const height = viewport.clientHeight || 600
-    const first = Math.max(0, Math.floor(top / rowH) - 10)
-    const last = Math.min(rows.length, Math.ceil((top + height) / rowH) + 10)
-    sizer.style.height = `${(rows.length + (hasMore ? 1 : 0)) * rowH}px`
-    const children: HTMLElement[] = []
-    for (let i = first; i < last; i++) children.push(rowElement(i))
-    if (hasMore && last >= rows.length) {
-      children.push(h('div', { class: 'loading-more', style: `top:${rows.length * rowH}px` }, icon('loader', 'spin')))
-    }
+    const visible = rowAt(top)
+    const first = Math.max(0, visible - 10)
+    const last = Math.min(rows.length, rowAt(top + height) + 11)
+    const children = Array.from({ length: last - first }, (_, i) => rowElement(first + i))
+    sizeLog()
     sizer.replaceChildren(...children)
+    if (narrow && viewport.clientWidth && children.length) {
+      const offset = top - rowTop(visible)
+      // Read all browser heights before writing the corrected positions and graph geometry.
+      const heights = children.map((row) => row.getBoundingClientRect().height)
+      let changed = false
+      heights.forEach((height, i) => {
+        const commit = rows[first + i]
+        if ((narrowHeights.get(commit) ?? NARROW_ROW_ESTIMATE) !== height) changed = true
+        narrowHeights.set(commit, height)
+      })
+      if (changed) {
+        updateRowOffsets()
+        sizeLog()
+      }
+      children.forEach((row, i) => {
+        const index = first + i
+        row.style.top = `${rowTop(index)}px`
+        row.querySelector('.graph')!.outerHTML = rowGraph(index, row.classList.contains('head'), row.classList.contains('dim'), heights[i])
+      })
+      if (changed) restoreScroll(visible, offset)
+    }
+    if (hasMore && last >= rows.length) {
+      sizer.append(h('div', { class: 'loading-more', style: `top:${rowTop(rows.length)}px` }, icon('loader', 'spin')))
+    }
+    const target = pendingScroll
+    pendingScroll = null
+    if (target && rows[target.index] === target.commit) {
+      if ('offset' in target) restoreScroll(target.index, target.offset)
+      else alignRow(target.index, target.reveal)
+    }
     renderEmpty()
     if (hasMore && !loading && !loadError && last >= rows.length - 40) void loadMore()
   })
@@ -422,6 +502,7 @@ async function reloadLog(keepCount = false): Promise<void> {
   const hint = Math.max(refreshCount, restore?.depth ?? 0)
   let anchorHash: string | undefined
   let cursorHash: string | undefined
+  let firstVisible: { hash: string; offset: number } | undefined
   try {
     let page = await api.page(root, filter, 0, hint > 300 ? Math.min(hint, 2000) : undefined)
     if (token !== loadToken) return
@@ -459,6 +540,12 @@ async function reloadLog(keepCount = false): Promise<void> {
     if (token !== loadToken) return
     anchorHash = rows[anchor]?.hash
     cursorHash = rows[cursor]?.hash
+    if (keepCount && narrow) {
+      const top = viewport.scrollTop
+      const index = rowAt(top)
+      const commit = rows[index]
+      if (commit) firstVisible = { hash: commit.hash, offset: top - rowTop(index) }
+    }
     rows = next
     hasMore = more
   } catch (error) {
@@ -473,6 +560,10 @@ async function reloadLog(keepCount = false): Promise<void> {
   }
   loading = false
   recompute()
+  if (firstVisible) {
+    const index = indexByHash.get(firstVisible.hash)
+    if (index !== undefined) restoreAfterLayout(index, firstVisible.offset)
+  }
   if (restore && pendingView === restore) {
     if (!loadError) {
       pendingView = null
@@ -481,7 +572,6 @@ async function reloadLog(keepCount = false): Promise<void> {
       const first = selectedHashes()[0]
       cursor = indexByHash.get(restore.cursor ?? '') ?? indexByHash.get(first) ?? -1
       anchor = indexByHash.get(restore.anchor ?? '') ?? cursor
-      sizer.style.height = `${(rows.length + (hasMore ? 1 : 0)) * rowH}px`
       if (cursor >= 0) ensureVisible(cursor)
       updateFiles(true)
       rememberView()
@@ -918,10 +1008,19 @@ function selectedHashes(): string[] {
   return [...selected].sort((a, b) => (indexByHash.get(a) ?? 0) - (indexByHash.get(b) ?? 0))
 }
 
-function ensureVisible(index: number): void {
-  const top = index * rowH
-  if (top < viewport.scrollTop) viewport.scrollTop = top
-  else if (top + rowH > viewport.scrollTop + viewport.clientHeight) viewport.scrollTop = top + rowH - viewport.clientHeight
+function alignRow(index: number, reveal: boolean): void {
+  const top = rowTop(index)
+  const bottom = rowTop(index + 1)
+  if (reveal) viewport.scrollTop = Math.max(0, top - viewport.clientHeight / 3)
+  else if (top < viewport.scrollTop) viewport.scrollTop = top
+  else if (bottom > viewport.scrollTop + viewport.clientHeight) viewport.scrollTop = bottom - viewport.clientHeight
+}
+
+function ensureVisible(index: number, reveal = false): void {
+  sizeLog()
+  alignRow(index, reveal)
+  const commit = rows[index]
+  pendingScroll = narrow && !narrowHeights.has(commit) ? { index, commit, reveal } : null
 }
 
 function selectionChanged(): void {
@@ -983,7 +1082,7 @@ async function jumpTo(hash: string, focus = true, current = () => true): Promise
     return
   }
   selectOnly(index)
-  viewport.scrollTop = Math.max(0, index * rowH - viewport.clientHeight / 3)
+  ensureVisible(index, true)
   if (focus) viewport.focus({ preventScroll: true })
 }
 
@@ -1015,7 +1114,12 @@ viewport.addEventListener('contextmenu', (event) => {
 
 viewport.addEventListener('keydown', (event) => {
   const mod = event.ctrlKey || event.metaKey
-  const page = Math.max(1, Math.floor(viewport.clientHeight / rowH) - 1)
+  const pageTarget = (direction: -1 | 1) => {
+    const height = viewport.clientHeight
+    if (!narrow) return cursor + direction * Math.max(1, Math.floor(height / ROW_HEIGHT) - 1)
+    const target = rowAt(rowTop(Math.max(0, cursor)) + direction * height) - direction
+    return direction > 0 ? Math.max(cursor + 1, target) : Math.min(cursor - 1, target)
+  }
   const move = (to: number) => {
     to = clamp(to, 0, rows.length - 1)
     if (event.shiftKey) selectRange(to, mod)
@@ -1029,10 +1133,10 @@ viewport.addEventListener('keydown', (event) => {
       move(cursor < 0 ? 0 : cursor - 1)
       break
     case 'PageDown':
-      move(cursor + page)
+      move(pageTarget(1))
       break
     case 'PageUp':
-      move(cursor - page)
+      move(pageTarget(-1))
       break
     case 'Home':
       move(0)
@@ -1940,7 +2044,7 @@ function areaMenu(id: SectionId) {
     // A selection whose rows are not there yet: the log is reloading after a filter changed.
     if (!entries && selected.size) return t('logLoading')
     const rect = viewport.getBoundingClientRect()
-    return entries && { entries, x: rect.left + 40, y: rect.top + Math.max(0, (cursor + 1) * rowH - viewport.scrollTop), restore: viewport }
+    return entries && { entries, x: rect.left + 40, y: rect.top + Math.max(0, rowTop(cursor + 1) - viewport.scrollTop), restore: viewport }
   }
   if (id !== 'branches') return null
   const row = document.activeElement

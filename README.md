@@ -345,7 +345,7 @@ are selected again. The Files section scrolls to the highlighted file. Press Ent
 
 - **Right sidebar panel** "Git", the plugin's only view: the Branches, Commits, Files and Details
   sections in one column. In a narrow column the message wraps to two lines, with the full text on hover.
-  The smaller, muted author and date sit below it, and the graph's node aligns with the first line.
+  Each row fits its message and the smaller, muted author and date below it. The graph's node aligns with the first line.
   Its lanes are 10 px apart in this layout.
 - **A commit shown from another program**: the Workflow plugin's «Показать коммит в Git» opens this panel on the
   repository of a task's commit and selects the commit in Commits. The request waits in a private file the panel
@@ -568,6 +568,8 @@ The diff is highlighted with [highlight.js](https://highlightjs.org) 11.12.0 (BS
 Review notes and the agent's answers are markdown, read with the lexer of [marked](https://marked.js.org) 18.2.0 (MIT): the one file `lib/marked.esm.js` byte for byte in `src/vendor/marked/` (license next to it). Only the lexer is used; `src/ui/markdown.ts` turns its tokens into DOM nodes, never into HTML.
 
 Interface icons are [Lucide](https://lucide.dev) (ISC), the bodies of 35 icons from `lucide-static` 0.469.0 inlined in `src/ui/dom.ts` with the license notice.
+
+The commit list uses [Inter 4.1](https://github.com/rsms/inter/releases/tag/v4.1) (SIL Open Font License), bundled with its license in `src/vendor/inter/`.
 
 ## License
 

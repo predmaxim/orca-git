@@ -1,10 +1,10 @@
 // Only the Orca host/worker boundary is faked. Clicks, file trees, log pages and frame reloads use the actual panel.
 const a = '/project', b = '/worktrees/project'
-let shift = 0, reveal = null, count = 70
+let shift = 0, reveal = null, count = 70, pageRequests = 0
 let root = a, branches = ['main', 'topic'], openCount = 0, panel, listeners, holdFiles, holdPage
 const hash = (n) => n.toString(16).padStart(40, '0')
 const topic = 'refs/heads/topic'
-const longSubject = 'Keep the full commit subject readable when the Git Log sidebar gets narrower'
+const longSubject = 'Keep commit titles readable when the Git Log sidebar gets narrower'
 const unbrokenSubject = 'VeryLongCommitSubjectWithoutAnySpaces'.repeat(4)
 const repo = (root) => ({ root, workspaceId: root, name: 'project', head: { hash: hash(0), branch: 'main' }, operation: null, todoOnly: false, autostashOnly: false })
 const context = () => ({ context: { workspaceId: root, branch: 'main', displayName: 'project' } })
@@ -24,6 +24,7 @@ window.bridge = () => {
           return i < count + shift ? Math.max(depth, i + 1) : depth
         }, arg.skip)
         if (name === 'log.page') {
+          pageRequests++
           if (holdPage) { const wait = holdPage; holdPage = null; await wait }
           if (arg.filter.branches?.includes(topic) && !branches.includes('topic')) throw Error('missing ref')
           const total = arg.filter.text ? 1 : count + shift
@@ -70,16 +71,41 @@ const restore = () => branchIs(topic) && selected() === '54,56' && file('src/cho
 async function run() {
   mount()
   await until(() => branchIs('HEAD') && $('.row'), 'first opening on HEAD')
+  const doc = panel.contentDocument
+  await doc.fonts.ready
+  expect(doc.defaultView.getComputedStyle($('.row .text')).fontFamily.startsWith('Inter'), 'commit titles use the WebStorm UI font')
+  expect([...doc.fonts].some((font) => font.family === 'Inter' && font.status === 'loaded'), 'the bundled Inter font loads')
   panel.style.width = '320px'
   await until(() => $('.row.two'), 'narrow commit layout')
-  const shortTitle = $('.row[data-index="2"] .text')
+  const shortRow = $('.row[data-index="2"]')
+  const shortHeight = shortRow.offsetHeight
+  const shortTitle = shortRow.querySelector('.text')
+  const bottomPadding = (row) => row.getBoundingClientRect().bottom - row.querySelector('.meta').getBoundingClientRect().bottom
   for (const index of [0, 1]) {
     const row = $(`.row[data-index="${index}"]`)
     const title = row.querySelector('.text')
     expect(title.clientHeight >= shortTitle.clientHeight * 2, 'long titles wrap to a second line in narrow mode')
     expect(title.title === title.textContent, 'the full narrow title is available on hover')
-    expect(row.querySelector('.meta').getBoundingClientRect().bottom <= row.getBoundingClientRect().bottom, 'author and date fit beneath the wrapped title')
+    expect(row.offsetHeight - shortHeight === title.clientHeight - shortTitle.clientHeight, 'only wrapping makes the commit row taller')
+    expect(bottomPadding(row) >= 9 && bottomPadding(row) === bottomPadding(shortRow), 'wrapped and short commits have the same space beneath their metadata')
+    const graphEnd = row.querySelector('.graph').getBoundingClientRect().bottom
+    expect(Math.abs(graphEnd - row.nextElementSibling.getBoundingClientRect().top) < 0.1, 'the graph reaches the next row regardless of height')
   }
+  const viewport = $('.viewport')
+  viewport.scrollTop = $('.row[data-index="1"]').offsetTop + 60
+  const firstVisible = () => [...viewport.querySelectorAll('.row')].find((row) => row.getBoundingClientRect().bottom > viewport.getBoundingClientRect().top)
+  expect(firstVisible()?.dataset.index === '1', 'wrapped row starts at the top of the viewport')
+  await until(() => !shortRow.isConnected, 'scroll renders rows')
+  const beforeRefresh = firstVisible()
+  const requestsBeforeRefresh = pageRequests
+  listeners['repo.changed']({ root })
+  await until(() => pageRequests > requestsBeforeRefresh && !beforeRefresh.isConnected, 'refreshed commit rows')
+  expect(firstVisible()?.dataset.index === '1' && viewport.scrollTop - firstVisible().offsetTop === 60, 'refresh keeps the same commit and offset in view')
+  panel.style.width = '515px'
+  const firstRow = () => $('.row[data-index="0"]')
+  await until(() => firstRow()?.offsetHeight === shortHeight, 'a title that fits after widening gives back the extra space')
+  expect(firstRow().classList.contains('two'), 'widening can reflow a title while staying in narrow mode')
+  expect(firstVisible()?.dataset.index === '1' && viewport.scrollTop - firstVisible().offsetTop === 60, 'reflow keeps the previously first visible commit in place')
   panel.style.width = '800px'
   await until(() => $('.row.columns'), 'return to the wide commit layout')
   expect($('.row[data-index="1"] .text').clientHeight === $('.row[data-index="2"] .text').clientHeight, 'wide titles use one line')

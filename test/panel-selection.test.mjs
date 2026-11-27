@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-test('the Git panel restores each worktree through navigation and a fresh frame', async (t) => {
+test('the Git panel reflows commits and restores each worktree through navigation and a fresh frame', async (t) => {
   const chromium = process.env.CHROMIUM_BIN || 'chromium'
   if (!nodeModule.stripTypeScriptTypes || spawnSync(chromium, ['--version']).status !== 0) {
     return t.skip('requires Chromium and Node with TypeScript stripping')
@@ -24,6 +24,8 @@ test('the Git panel restores each worktree through navigation and a fresh frame'
         result.resolve(message)
       } else if (path === '/') {
         res.end('<script type="module" src="/test/panel-selection.js"></script>')
+      } else if (path === '/src/vendor/inter/InterVariable.woff2') {
+        res.writeHead(200, { 'content-type': 'font/woff2' }).end(await readFile(new URL('..' + path, import.meta.url)))
       } else if (path === '/test/panel-selection.js' || /^\/src\/(?:[\w-]+\/)*[\w.-]+\.(?:js|ts|html|css|svg)$/.test(path)) {
         let source = await readFile(new URL('..' + path, import.meta.url), 'utf8')
         if (path.endsWith('.ts')) source = nodeModule.stripTypeScriptTypes(source)
