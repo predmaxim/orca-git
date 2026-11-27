@@ -4,6 +4,8 @@ let shift = 0, reveal = null, count = 70
 let root = a, branches = ['main', 'topic'], openCount = 0, panel, listeners, holdFiles, holdPage
 const hash = (n) => n.toString(16).padStart(40, '0')
 const topic = 'refs/heads/topic'
+const longSubject = 'Keep the full commit subject readable when the Git Log sidebar gets narrower'
+const unbrokenSubject = 'VeryLongCommitSubjectWithoutAnySpaces'.repeat(4)
 const repo = (root) => ({ root, workspaceId: root, name: 'project', head: { hash: hash(0), branch: 'main' }, operation: null, todoOnly: false, autostashOnly: false })
 const context = () => ({ context: { workspaceId: root, branch: 'main', displayName: 'project' } })
 
@@ -26,7 +28,7 @@ window.bridge = () => {
           if (arg.filter.branches?.includes(topic) && !branches.includes('topic')) throw Error('missing ref')
           const total = arg.filter.text ? 1 : count + shift
           const length = Math.min(arg.limit ?? 48, total - arg.skip)
-          const commits = Array.from({ length }, (_, i) => ({ hash: hash(arg.skip + i < shift ? 9000 : arg.skip + i - shift), parents: [], author: 'A', committer: 'A', authorTime: 1, commitTime: 1, email: 'a@e', refs: [], subject: 'commit ' + (arg.skip + i) }))
+          const commits = Array.from({ length }, (_, i) => ({ hash: hash(arg.skip + i < shift ? 9000 : arg.skip + i - shift), parents: [], author: 'A', committer: 'A', authorTime: 1, commitTime: 1, email: 'a@e', refs: [], subject: [longSubject, unbrokenSubject][arg.skip + i] ?? 'commit ' + (arg.skip + i) }))
           return { commits, hasMore: arg.skip + length < total }
         }
         if (name === 'selection.files') {
@@ -68,6 +70,19 @@ const restore = () => branchIs(topic) && selected() === '54,56' && file('src/cho
 async function run() {
   mount()
   await until(() => branchIs('HEAD') && $('.row'), 'first opening on HEAD')
+  panel.style.width = '320px'
+  await until(() => $('.row.two'), 'narrow commit layout')
+  const shortTitle = $('.row[data-index="2"] .text')
+  for (const index of [0, 1]) {
+    const row = $(`.row[data-index="${index}"]`)
+    const title = row.querySelector('.text')
+    expect(title.clientHeight >= shortTitle.clientHeight * 2, 'long titles wrap to a second line in narrow mode')
+    expect(title.title === title.textContent, 'the full narrow title is available on hover')
+    expect(row.querySelector('.meta').getBoundingClientRect().bottom <= row.getBoundingClientRect().bottom, 'author and date fit beneath the wrapped title')
+  }
+  panel.style.width = '800px'
+  await until(() => $('.row.columns'), 'return to the wide commit layout')
+  expect($('.row[data-index="1"] .text').clientHeight === $('.row[data-index="2"] .text').clientHeight, 'wide titles use one line')
   $('.node-row[data-key="' + topic + '"]').click()
   await until(() => branchIs(topic) && $('.row'), 'branch selected')
   $('.viewport').scrollTop = 20000

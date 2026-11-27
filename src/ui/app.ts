@@ -149,7 +149,7 @@ function onSections(): void {
 }
 
 // The visible rows depend on the log's own height, which the section splitters change too.
-// Below 520 px the log shows two lines per row; the row height follows so scrolling stays consistent.
+// Below 520 px the log stacks the message and metadata; the row height follows so scrolling stays consistent.
 const TWO_LINE_BELOW = 520
 let rowH = ROW_HEIGHT
 function fitRowHeight(): void {
@@ -325,7 +325,7 @@ function rowElement(index: number): HTMLElement {
   })
   const line = twoLine ? h('div', { class: 'line' }) : subject
   if (twoLine) subject.append(h('div', { class: 'stack' }, line, h('div', { class: 'meta' }, `${commit.author} \u00b7 ${relativeDate(commit.authorTime)}`)))
-  line.append(h('span', { class: 'text' }, commit.subject))
+  line.append(h('span', { class: 'text', title: twoLine ? commit.subject : undefined }, commit.subject))
   if (labels.length) {
     line.append(
       h(

@@ -344,9 +344,9 @@ are selected again. The Files section scrolls to the highlighted file. Press Ent
 ## Where it shows
 
 - **Right sidebar panel** "Git", the plugin's only view: the Branches, Commits, Files and Details
-  sections in one column; in a narrow column a commit takes two lines like a row of Orca's own lists
-  (the message, then author and date smaller and muted, with space between commits; the graph's node
-  level with the message and its lanes closer together, 10 px apart instead of 14).
+  sections in one column. In a narrow column the message wraps to two lines, with the full text on hover.
+  The smaller, muted author and date sit below it, and the graph's node aligns with the first line.
+  Its lanes are 10 px apart in this layout.
 - **A commit shown from another program**: the Workflow plugin's «Показать коммит в Git» opens this panel on the
   repository of a task's commit and selects the commit in Commits. The request waits in a private file the panel
   takes when it starts; the contract is in [docs/reveal.md](docs/reveal.md).
